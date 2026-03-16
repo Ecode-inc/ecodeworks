@@ -131,6 +131,26 @@ export function AIGuidePage({ apiKey }: AIGuidePageProps) {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-8 space-y-8">
+        {/* 문서 활용 가이드 (중요) */}
+        <section className="bg-green-50 rounded-xl border border-green-200 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-green-800 mb-2">문서 활용 가이드</h2>
+          <p className="text-sm text-green-700 mb-3">
+            이코드웍스에 등록된 문서(맛집, 회의록 등)를 검색/조회하여 답변에 활용할 수 있습니다.
+            <strong> 한글 검색 시 반드시 URL 인코딩</strong>하세요.
+          </p>
+          <div className="text-xs font-mono bg-white rounded-lg p-3 border border-green-100 space-y-2">
+            <p className="text-gray-500">1단계: 문서 검색 (한글은 URL 인코딩 필수)</p>
+            <p className="text-gray-800">/action/search-docs?key=KEY&q=맛집</p>
+            <p className="text-gray-500">2단계: 폴더 내 문서 탐색</p>
+            <p className="text-gray-800">/action/list-docs?key=KEY&parent_id=폴더ID</p>
+            <p className="text-gray-500">3단계: 문서 내용 읽기</p>
+            <p className="text-gray-800">/action/get-doc?key=KEY&id=문서ID</p>
+            <p className="text-gray-500">4단계: 문서 추가/수정</p>
+            <p className="text-gray-800">/action/create-doc?key=KEY&title=제목&content=내용&parent_id=폴더ID</p>
+            <p className="text-gray-800">/action/update-doc?key=KEY&id=문서ID&content=새내용</p>
+          </div>
+        </section>
+
         {/* 인증 */}
         <section className="bg-white rounded-xl border p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-800 mb-3">인증</h2>
@@ -200,6 +220,22 @@ export function AIGuidePage({ apiKey }: AIGuidePageProps) {
               <div>
                 <p className="text-gray-500 mb-1"># 매핑 목록 조회</p>
                 <code className="text-gray-800 break-all">{API_BASE}/action/list-telegram-mappings?key={apiKey}</code>
+              </div>
+              <div>
+                <p className="text-gray-500 mb-1"># 문서 검색 (맛집 등)</p>
+                <code className="text-gray-800 break-all">{API_BASE}/action/search-docs?key={apiKey}&q=%EB%A7%9B%EC%A7%91</code>
+              </div>
+              <div>
+                <p className="text-gray-500 mb-1"># 폴더 내 문서 목록 (parent_id=폴더ID)</p>
+                <code className="text-gray-800 break-all">{API_BASE}/action/list-docs?key={apiKey}&parent_id=FOLDER_ID</code>
+              </div>
+              <div>
+                <p className="text-gray-500 mb-1"># 문서 내용 읽기</p>
+                <code className="text-gray-800 break-all">{API_BASE}/action/get-doc?key={apiKey}&id=DOC_ID</code>
+              </div>
+              <div>
+                <p className="text-gray-500 mb-1"># 반복 일정 등록 (매주 금요일 14시 주간회의)</p>
+                <code className="text-gray-800 break-all">{API_BASE}/action/create-event?key={apiKey}&title=주간회의&start_at=2026-03-20T14:00:00%2B09:00&end_at=2026-03-20T15:00:00%2B09:00&visibility=company&freq=weekly&byDay=FR&until=2026-12-31</code>
               </div>
             </div>
           </div>
