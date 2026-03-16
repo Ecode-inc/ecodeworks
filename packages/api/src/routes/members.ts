@@ -126,13 +126,14 @@ membersRoutes.post('/', async (c) => {
   }, 201)
 })
 
-// Update member (CEO or admin only)
+// Update member (CEO/admin can update anyone, users can update own name)
 membersRoutes.patch('/:id', async (c) => {
   const user = c.get('user')
   const memberId = c.req.param('id')
+  const isSelf = memberId === user.id
 
-  if (!user.is_ceo && !user.is_admin) {
-    return c.json({ error: 'Only CEO or admin can update members' }, 403)
+  if (!user.is_ceo && !user.is_admin && !isSelf) {
+    return c.json({ error: 'Only CEO, admin, or self can update' }, 403)
   }
 
   // Verify member belongs to the same org
@@ -154,7 +155,13 @@ membersRoutes.patch('/:id', async (c) => {
   const values: unknown[] = []
 
   if (name !== undefined) { updates.push('name = ?'); values.push(name) }
-  if (position_id !== undefined) { updates.push('position_id = ?'); values.push(position_id) }
+  if (position_id !== undefined) {
+    // Only CEO/admin can change position
+    if (!user.is_ceo && !user.is_admin) {
+      return c.json({ error: 'Only CEO or admin can change position' }, 403)
+    }
+    updates.push('position_id = ?'); values.push(position_id)
+  }
   if (newIsAdmin !== undefined) {
     // Only CEO can grant/revoke admin
     if (!user.is_ceo) {

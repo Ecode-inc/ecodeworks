@@ -23,8 +23,9 @@ boardsRoutes.get('/', async (c) => {
     query += ` AND (
       visibility = 'company'
       OR (visibility = 'department' AND department_id IN (SELECT department_id FROM user_departments WHERE user_id = ?))
+      OR (visibility = 'personal' AND created_by = ?)
     )`
-    params.push(user.id)
+    params.push(user.id, user.id)
   }
 
   if (deptId) {
@@ -59,11 +60,19 @@ boardsRoutes.get('/:id', async (c) => {
 
 // Create board
 boardsRoutes.post('/', requirePermission('kanban', 'write'), async (c) => {
-  const deptId = c.req.query('dept_id')!
+  const user = c.get('user')
+  let deptId = c.req.query('dept_id') || ''
   const { name, visibility } = await c.req.json<{ name: string; visibility?: string }>()
   if (!name) return c.json({ error: 'name required' }, 400)
 
   const boardVisibility = visibility || 'department'
+
+  // Auto-resolve dept if not provided
+  if (!deptId) {
+    const userDept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(user.id).first<{ department_id: string }>()
+    deptId = userDept?.department_id || ''
+  }
+
   const boardId = generateId()
 
   // Create board with default columns
@@ -75,8 +84,8 @@ boardsRoutes.post('/', requirePermission('kanban', 'write'), async (c) => {
 
   await c.env.DB.batch([
     c.env.DB.prepare(
-      'INSERT INTO boards (id, department_id, name, visibility) VALUES (?, ?, ?, ?)'
-    ).bind(boardId, deptId, name, boardVisibility),
+      'INSERT INTO boards (id, department_id, name, visibility, created_by) VALUES (?, ?, ?, ?, ?)'
+    ).bind(boardId, deptId, name, boardVisibility, user.id),
     ...defaultColumns.map((col) =>
       c.env.DB.prepare(
         'INSERT INTO board_columns (id, board_id, name, color, order_index) VALUES (?, ?, ?, ?, ?)'

@@ -1729,6 +1729,33 @@ aiRoutes.get('/action/create-board', async (c) => {
   return c.json({ success: true, board })
 })
 
+// ── User actions (GET-based) ──────────────────────────────────
+
+// 사용자 이름 변경
+aiRoutes.get('/action/update-user-name', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'members:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const userId = c.req.query('user_id')
+  const tgUserId = c.req.query('telegram_user_id')
+  const name = c.req.query('name')
+  if (!name) return c.json({ error: 'name required' }, 400)
+
+  let targetUserId = userId
+  if (!targetUserId && tgUserId) {
+    const mapping = await c.env.DB.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, tgUserId).first<{ user_id: string }>()
+    if (mapping?.user_id) targetUserId = mapping.user_id
+  }
+  if (!targetUserId) return c.json({ error: 'user_id or telegram_user_id required' }, 400)
+
+  const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ? AND org_id = ?').bind(targetUserId, orgId).first()
+  if (!user) return c.json({ error: 'User not found' }, 404)
+
+  await c.env.DB.prepare('UPDATE users SET name = ? WHERE id = ?').bind(name, targetUserId).run()
+  const updated = await c.env.DB.prepare('SELECT id, name, email FROM users WHERE id = ?').bind(targetUserId).first()
+  return c.json({ success: true, user: updated })
+})
+
 // ── Document actions (GET-based) ──────────────────────────────
 
 // 문서 검색

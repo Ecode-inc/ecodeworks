@@ -1,0 +1,1 @@
+ALTER TABLE boards ADD COLUMN created_by TEXT DEFAULT '';

@@ -35,6 +35,12 @@ const getActions = [
     ],
   },
   {
+    category: '👥 사용자 관리',
+    items: [
+      { path: '/action/update-user-name', desc: '사용자 이름 변경', params: 'user_id or telegram_user_id, name' },
+    ],
+  },
+  {
     category: '⏰ 근태관리',
     items: [
       { path: '/action/clock-in', desc: '출근 기록 (시간 지정 가능)', params: 'telegram_user_id or user_id, time (예: 10:00), date (예: 2026-03-16), note' },

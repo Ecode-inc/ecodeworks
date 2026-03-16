@@ -71,9 +71,9 @@ export function DocsPage() {
   }
 
   const createDocument = async () => {
-    if (!newTitle || !currentDeptId) return
+    if (!newTitle) return
     try {
-      await docsApi.create(currentDeptId, {
+      await docsApi.create(currentDeptId || '', {
         title: newTitle,
         parent_id: newParentId || undefined,
         is_folder: newIsFolder,
