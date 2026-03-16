@@ -26,6 +26,7 @@ export function CalendarPage() {
   const [showModal, setShowModal] = useState(false)
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
   const [googleConnected, setGoogleConnected] = useState(false)
+  const [googleAvailable, setGoogleAvailable] = useState(false)
 
   const loadEvents = useCallback(async () => {
     const start = currentDate.startOf('month').subtract(7, 'day').toISOString()
@@ -41,7 +42,12 @@ export function CalendarPage() {
   useEffect(() => { loadEvents() }, [loadEvents])
 
   useEffect(() => {
-    calendarApi.googleStatus().then(r => setGoogleConnected(r.connected)).catch(() => {})
+    calendarApi.googleStatus().then(r => {
+      setGoogleConnected(r.connected)
+      setGoogleAvailable(r.available !== false)
+    }).catch(() => {
+      setGoogleAvailable(false)
+    })
   }, [])
 
   const handleGoogleSync = async () => {
@@ -104,14 +110,16 @@ export function CalendarPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {googleConnected ? (
-            <Button variant="secondary" size="sm" onClick={handleGoogleSync}>
-              <RefreshCw size={14} className="mr-1" /> Google 동기화
-            </Button>
-          ) : (
-            <Button variant="secondary" size="sm" onClick={handleGoogleConnect}>
-              Google Calendar 연결
-            </Button>
+          {googleAvailable && (
+            googleConnected ? (
+              <Button variant="secondary" size="sm" onClick={handleGoogleSync}>
+                <RefreshCw size={14} className="mr-1" /> Google 동기화
+              </Button>
+            ) : (
+              <Button variant="secondary" size="sm" onClick={handleGoogleConnect}>
+                Google Calendar 연결
+              </Button>
+            )
           )}
           <Button size="sm" onClick={() => { setEditingEvent(null); setShowModal(true) }}>
             <Plus size={14} className="mr-1" /> 일정 추가

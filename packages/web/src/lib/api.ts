@@ -126,7 +126,7 @@ export const calendarApi = {
     request<{ event: any }>(`/calendar/events/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteEvent: (id: string) =>
     request<{ success: boolean }>(`/calendar/events/${id}`, { method: 'DELETE' }),
-  googleStatus: () => request<{ connected: boolean; lastSyncedAt: string | null }>('/calendar/google/status'),
+  googleStatus: () => request<{ connected: boolean; available?: boolean; lastSyncedAt: string | null }>('/calendar/google/status'),
   googleConnect: () => request<{ authUrl: string }>('/calendar/google/connect', { method: 'POST' }),
   googleSync: (deptId: string) =>
     request<{ synced: number }>(`/calendar/google/sync?dept_id=${deptId}`, { method: 'POST' }),

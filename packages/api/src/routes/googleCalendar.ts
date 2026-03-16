@@ -10,8 +10,26 @@ export const googleCalendarRoutes = new Hono<{ Bindings: Env; Variables: Variabl
 
 googleCalendarRoutes.use('/*', authMiddleware)
 
+// Check if Google OAuth is configured
+googleCalendarRoutes.get('/status', async (c) => {
+  const user = c.get('user')
+
+  if (!c.env.GOOGLE_CLIENT_ID) {
+    return c.json({ connected: false, available: false, lastSyncedAt: null })
+  }
+
+  const sync = await c.env.DB.prepare(
+    'SELECT last_synced_at FROM google_calendar_sync WHERE user_id = ?'
+  ).bind(user.id).first()
+
+  return c.json({ connected: !!sync, available: true, lastSyncedAt: sync?.last_synced_at || null })
+})
+
 // Start OAuth2 flow
 googleCalendarRoutes.post('/connect', async (c) => {
+  if (!c.env.GOOGLE_CLIENT_ID) {
+    return c.json({ error: 'Google Calendar not configured' }, 503)
+  }
   const scopes = [
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/calendar.events',
@@ -196,12 +214,3 @@ googleCalendarRoutes.post('/sync', async (c) => {
   return c.json({ synced, nextSyncToken: !!data.nextSyncToken })
 })
 
-// Check connection status
-googleCalendarRoutes.get('/status', async (c) => {
-  const user = c.get('user')
-  const sync = await c.env.DB.prepare(
-    'SELECT last_synced_at FROM google_calendar_sync WHERE user_id = ?'
-  ).bind(user.id).first()
-
-  return c.json({ connected: !!sync, lastSyncedAt: sync?.last_synced_at || null })
-})
