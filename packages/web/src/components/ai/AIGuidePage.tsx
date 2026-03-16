@@ -55,7 +55,7 @@ const getActions = [
       { path: '/action/list-docs', desc: '문서/폴더 목록', params: 'dept_id (선택), parent_id (폴더 ID, 선택)' },
       { path: '/action/get-doc', desc: '문서 상세 (내용 포함)', params: 'id' },
       { path: '/action/create-doc', desc: '문서 생성', params: 'title, content, department_id (선택), parent_id (상위폴더, 선택), is_folder (true/false), visibility' },
-      { path: '/action/update-doc', desc: '문서 수정', params: 'id, title (선택), content (선택)' },
+      { path: '/action/update-doc', desc: '문서 수정', params: 'id, title (선택), content (전체 덮어쓰기), append (기존 내용에 추가)' },
     ],
   },
   {

@@ -1671,20 +1671,28 @@ aiRoutes.get('/action/update-doc', async (c) => {
   const docId = c.req.query('id')
   const title = c.req.query('title')
   const content = c.req.query('content')
+  const appendContent = c.req.query('append')  // append mode: add to existing content
 
   if (!docId) return c.json({ error: 'id required' }, 400)
 
+  // Always read current document first
   const existing = await c.env.DB.prepare(`
-    SELECT d.id FROM documents d
+    SELECT d.* FROM documents d
     JOIN departments dept ON dept.id = d.department_id
     WHERE d.id = ? AND dept.org_id = ?
-  `).bind(docId, orgId).first()
+  `).bind(docId, orgId).first<any>()
   if (!existing) return c.json({ error: 'Document not found' }, 404)
 
   const updates: string[] = []
   const values: unknown[] = []
   if (title) { updates.push('title = ?'); values.push(title) }
-  if (content !== undefined && content !== null) { updates.push('content = ?'); values.push(content) }
+  if (appendContent) {
+    // Append: add new content to existing (preserves existing data)
+    const newContent = existing.content ? `${existing.content}\n${appendContent}` : appendContent
+    updates.push('content = ?'); values.push(newContent)
+  } else if (content !== undefined && content !== null) {
+    updates.push('content = ?'); values.push(content)
+  }
 
   if (updates.length === 0) return c.json({ error: 'title or content required' }, 400)
 

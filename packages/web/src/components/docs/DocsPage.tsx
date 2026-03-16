@@ -72,13 +72,27 @@ export function DocsPage() {
   const saveDocument = async () => {
     if (!selectedDoc) return
     try {
-      const res = await docsApi.update(selectedDoc.id, { title: editTitle, content: editContent })
+      const res = await docsApi.update(selectedDoc.id, {
+        title: editTitle,
+        content: editContent,
+        expected_updated_at: selectedDoc.updated_at,  // optimistic lock
+      })
       setSelectedDoc(res.document)
       setEditing(false)
       loadDocuments()
       useToastStore.getState().addToast('success', '저장 완료')
     } catch (e: any) {
-      useToastStore.getState().addToast('error', '저장 실패', e.message)
+      if (e.message === 'conflict') {
+        // Conflict: reload latest version and notify user
+        useToastStore.getState().addToast('warning', '충돌 감지', '다른 사용자가 수정했습니다. 최신 버전을 불러옵니다.')
+        const latest = await docsApi.get(selectedDoc.id)
+        setSelectedDoc(latest.document)
+        setEditContent(latest.document.content || '')
+        setEditTitle(latest.document.title)
+        // Stay in editing mode so user can merge changes
+      } else {
+        useToastStore.getState().addToast('error', '저장 실패', e.message)
+      }
     }
   }
 

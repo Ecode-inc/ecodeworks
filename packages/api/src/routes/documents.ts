@@ -95,11 +95,31 @@ documentsRoutes.post('/', requirePermission('docs', 'write'), async (c) => {
   return c.json({ document: doc }, 201)
 })
 
-// Update document
+// Update document (with optimistic locking via expected_updated_at)
 documentsRoutes.patch('/:id', authMiddleware, async (c) => {
   const user = c.get('user')
   const docId = c.req.param('id')
-  const body = await c.req.json<{ title?: string; content?: string; parent_id?: string; visibility?: string; shared?: boolean }>()
+  const body = await c.req.json<{
+    title?: string
+    content?: string
+    parent_id?: string
+    visibility?: string
+    shared?: boolean
+    expected_updated_at?: string  // optimistic lock: reject if doc was modified since this timestamp
+  }>()
+
+  // Check current state first
+  const current = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first<any>()
+  if (!current) return c.json({ error: 'Document not found' }, 404)
+
+  // Optimistic locking: if caller provides expected_updated_at, check it matches
+  if (body.expected_updated_at && current.updated_at !== body.expected_updated_at) {
+    return c.json({
+      error: 'conflict',
+      message: '다른 사용자가 이 문서를 수정했습니다. 최신 버전을 확인해주세요.',
+      current_document: current,
+    }, 409)
+  }
 
   const updates: string[] = []
   const values: unknown[] = []

@@ -219,7 +219,7 @@ export const docsApi = {
   get: (id: string) => request<{ document: any }>(`/docs/${id}`),
   create: (deptId: string, data: { title: string; content?: string; parent_id?: string; is_folder?: boolean; visibility?: string; shared?: boolean }) =>
     request<{ document: any }>(`/docs?dept_id=${deptId}`, { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: { title?: string; content?: string; parent_id?: string; visibility?: string; shared?: boolean }) =>
+  update: (id: string, data: { title?: string; content?: string; parent_id?: string; visibility?: string; shared?: boolean; expected_updated_at?: string }) =>
     request<{ document: any }>(`/docs/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) =>
     request<{ success: boolean }>(`/docs/${id}`, { method: 'DELETE' }),
