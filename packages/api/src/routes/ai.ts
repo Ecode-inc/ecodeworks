@@ -54,6 +54,8 @@ aiRoutes.get('/openapi.json', (c) => {
             { name: 'dept_id', in: 'query', schema: { type: 'string' }, description: 'Filter by department ID' },
             { name: 'start', in: 'query', schema: { type: 'string', format: 'date-time' }, description: 'Start of date range (ISO 8601)' },
             { name: 'end', in: 'query', schema: { type: 'string', format: 'date-time' }, description: 'End of date range (ISO 8601)' },
+            { name: 'context', in: 'query', schema: { type: 'string', enum: ['group', 'private'] }, description: 'group=그룹방(개인일정 제외), private=1:1채팅(개인일정 포함)' },
+            { name: 'user_id', in: 'query', schema: { type: 'string' }, description: 'private context에서 개인일정을 볼 사용자 ID' },
           ],
           responses: {
             '200': {
@@ -460,11 +462,24 @@ aiRoutes.get('/calendar/events', async (c) => {
   const deptId = c.req.query('dept_id')
   const start = c.req.query('start')
   const end = c.req.query('end')
+  // context: 'group' = Telegram group (no personal events), 'private' = 1:1 chat (personal allowed)
+  const context = c.req.query('context')
+  // user_id: whose personal events to show in private context
+  const userId = c.req.query('user_id')
 
   let query = `SELECT e.* FROM events e
     JOIN departments d ON d.id = e.department_id
     WHERE d.org_id = ?`
   const params: unknown[] = [orgId]
+
+  if (context === 'group') {
+    // Group chat: never expose personal events
+    query += " AND e.visibility != 'personal'"
+  } else if (context === 'private' && userId) {
+    // Private 1:1: show personal events only for that user
+    query += " AND (e.visibility != 'personal' OR e.user_id = ?)"
+    params.push(userId)
+  }
 
   if (deptId) { query += ' AND e.department_id = ?'; params.push(deptId) }
   if (start) { query += ' AND e.end_at >= ?'; params.push(start) }

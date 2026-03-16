@@ -71,13 +71,15 @@ interface ToolDefinition {
 const TOOLS: ToolDefinition[] = [
   {
     name: 'list_calendar_events',
-    description: '캘린더 일정 목록 조회. 부서별, 날짜 범위로 필터링 가능.',
+    description: '캘린더 일정 목록 조회. context=group이면 개인일정 제외, context=private이면 해당 user_id의 개인일정 포함.',
     inputSchema: {
       type: 'object',
       properties: {
         dept_id: { type: 'string', description: '부서 ID (선택)' },
         start: { type: 'string', description: '시작일 ISO 8601 (선택)' },
         end: { type: 'string', description: '종료일 ISO 8601 (선택)' },
+        context: { type: 'string', enum: ['group', 'private'], description: 'group=그룹방(개인일정 제외), private=1:1(개인일정 포함)' },
+        user_id: { type: 'string', description: 'private context에서 개인일정을 볼 사용자 ID' },
       },
     },
   },
@@ -290,6 +292,14 @@ async function executeTool(
         JOIN departments d ON d.id = e.department_id
         WHERE d.org_id = ?`
       const params: unknown[] = [orgId]
+
+      // Privacy: group context hides personal events, private shows only for that user
+      if (args.context === 'group') {
+        query += " AND e.visibility != 'personal'"
+      } else if (args.context === 'private' && args.user_id) {
+        query += " AND (e.visibility != 'personal' OR e.user_id = ?)"
+        params.push(args.user_id)
+      }
 
       if (args.dept_id) { query += ' AND e.department_id = ?'; params.push(args.dept_id) }
       if (args.start) { query += ' AND e.end_at >= ?'; params.push(args.start) }
