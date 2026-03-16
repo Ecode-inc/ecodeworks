@@ -190,14 +190,28 @@ authRoutes.get('/me', authMiddleware, async (c) => {
     return c.json({ error: 'User not found' }, 404)
   }
 
-  // Get user's departments with roles
-  const { results: departments } = await c.env.DB.prepare(`
-    SELECT d.id, d.name, d.slug, d.color, ud.role
-    FROM user_departments ud
-    JOIN departments d ON d.id = ud.department_id
-    WHERE ud.user_id = ?
-    ORDER BY d.order_index
-  `).bind(authUser.id).all()
+  // CEO/admin sees ALL departments, others see only their own
+  let departments
+  if (authUser.is_ceo || authUser.is_admin) {
+    const { results } = await c.env.DB.prepare(`
+      SELECT d.id, d.name, d.slug, d.color, d.parent_id,
+             COALESCE(ud.role, '') as role
+      FROM departments d
+      LEFT JOIN user_departments ud ON ud.department_id = d.id AND ud.user_id = ?
+      WHERE d.org_id = ?
+      ORDER BY d.order_index
+    `).bind(authUser.id, authUser.org_id).all()
+    departments = results
+  } else {
+    const { results } = await c.env.DB.prepare(`
+      SELECT d.id, d.name, d.slug, d.color, d.parent_id, ud.role
+      FROM user_departments ud
+      JOIN departments d ON d.id = ud.department_id
+      WHERE ud.user_id = ?
+      ORDER BY d.order_index
+    `).bind(authUser.id).all()
+    departments = results
+  }
 
   return c.json({ user, departments })
 })

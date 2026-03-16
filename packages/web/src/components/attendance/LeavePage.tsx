@@ -25,6 +25,7 @@ const typeLabels: Record<string, string> = {
   half_day_pm: '오후반차',
   sick: '병가',
   special: '특별휴가',
+  remote: '재택근무',
 }
 
 const statusLabels: Record<string, string> = {
@@ -47,6 +48,7 @@ const leaveTypes = [
   { value: 'half_day_pm', label: '오후반차' },
   { value: 'sick', label: '병가' },
   { value: 'special', label: '특별휴가' },
+  { value: 'remote', label: '재택근무' },
 ]
 
 interface ApprovalStep {

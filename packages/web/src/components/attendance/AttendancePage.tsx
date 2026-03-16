@@ -345,10 +345,16 @@ function TeamAttendanceSection({ currentDeptId }: { currentDeptId: string | null
             onChange={e => setSelectedDeptId(e.target.value)}
             className="border rounded-lg px-3 py-1.5 text-sm"
           >
-            <option value="">{organization?.name || '전체'}</option>
-            {departments.map(d => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
+            {(() => {
+              const root = departments.find((d: any) => !d.parent_id)
+              const children = departments.filter((d: any) => d.parent_id)
+              return <>
+                <option value="">{root?.name || organization?.name || '전체'}</option>
+                {children.map(d => (
+                  <option key={d.id} value={d.id}>ㄴ {d.name}</option>
+                ))}
+              </>
+            })()}
           </select>
           <input
             type="date"

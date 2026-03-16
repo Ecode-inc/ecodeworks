@@ -72,7 +72,9 @@ async function updateAttendanceForLeave(
   leaveType: string
 ): Promise<void> {
   // Determine attendance status based on leave type
-  const status = (leaveType === 'half_day_am' || leaveType === 'half_day_pm') ? 'half_day' : 'vacation'
+  const status = leaveType === 'remote' ? 'remote'
+    : (leaveType === 'half_day_am' || leaveType === 'half_day_pm') ? 'half_day'
+    : 'vacation'
 
   // Generate dates between start and end (inclusive)
   const start = new Date(startDate)
@@ -275,7 +277,7 @@ leaveRoutes.post('/', async (c) => {
     return c.json({ error: 'type, start_date, end_date는 필수입니다' }, 400)
   }
 
-  const validTypes = ['vacation', 'half_day_am', 'half_day_pm', 'sick', 'special']
+  const validTypes = ['vacation', 'half_day_am', 'half_day_pm', 'sick', 'special', 'remote']
   if (!validTypes.includes(type)) {
     return c.json({ error: '유효하지 않은 휴가 유형입니다' }, 400)
   }
@@ -405,7 +407,7 @@ leaveRoutes.patch('/:id', async (c) => {
   const values: unknown[] = []
 
   if (body.type) {
-    const validTypes = ['vacation', 'half_day_am', 'half_day_pm', 'sick', 'special']
+    const validTypes = ['vacation', 'half_day_am', 'half_day_pm', 'sick', 'special', 'remote']
     if (!validTypes.includes(body.type)) {
       return c.json({ error: '유효하지 않은 휴가 유형입니다' }, 400)
     }
