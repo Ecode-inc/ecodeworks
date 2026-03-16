@@ -1,11 +1,22 @@
 import { useState, useEffect, useRef } from 'react'
 import { useOrgStore } from '../../stores/orgStore'
-import { boardsApi, tasksApi } from '../../lib/api'
+import { boardsApi, tasksApi, membersApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { Plus, GripVertical, User } from 'lucide-react'
+import { Plus, GripVertical, User, Trash2, Pencil, X, Check } from 'lucide-react'
+
+const COLUMN_COLORS = [
+  '#6b7280', '#ef4444', '#f97316', '#eab308', '#22c55e',
+  '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b',
+]
+
+const visibilityLabels: Record<string, string> = {
+  company: '회사',
+  department: '부서',
+  personal: '개인',
+}
 
 export function KanbanPage() {
   const { currentDeptId } = useOrgStore()
@@ -19,6 +30,20 @@ export function KanbanPage() {
   const [showTaskModal, setShowTaskModal] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [targetColumnId, setTargetColumnId] = useState<string | null>(null)
+
+  // Board editing state
+  const [editingBoardName, setEditingBoardName] = useState(false)
+  const [boardNameDraft, setBoardNameDraft] = useState('')
+
+  // Column editing state
+  const [editingColumnId, setEditingColumnId] = useState<string | null>(null)
+  const [columnNameDraft, setColumnNameDraft] = useState('')
+  const [colorPickerColumnId, setColorPickerColumnId] = useState<string | null>(null)
+
+  // New column state
+  const [showNewColumn, setShowNewColumn] = useState(false)
+  const [newColumnName, setNewColumnName] = useState('')
+  const [newColumnColor, setNewColumnColor] = useState('#3b82f6')
 
   // Drag state
   const dragItem = useRef<any>(null)
@@ -55,6 +80,95 @@ export function KanbanPage() {
       loadBoard(res.board.id)
     } catch (e: any) {
       useToastStore.getState().addToast('error', '보드 생성 실패', e.message)
+    }
+  }
+
+  const deleteBoard = async () => {
+    if (!selectedBoard) return
+    if (!confirm('이 보드를 삭제하시겠습니까? 모든 컬럼과 태스크가 삭제됩니다.')) return
+    try {
+      await boardsApi.delete(selectedBoard.id)
+      const remaining = boards.filter(b => b.id !== selectedBoard.id)
+      setBoards(remaining)
+      if (remaining.length > 0) {
+        loadBoard(remaining[0].id)
+      } else {
+        setSelectedBoard(null)
+        setColumns([])
+        setTasks([])
+      }
+      useToastStore.getState().addToast('success', '보드가 삭제되었습니다')
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '보드 삭제 실패', e.message)
+    }
+  }
+
+  const saveBoardName = async () => {
+    if (!selectedBoard || !boardNameDraft.trim()) {
+      setEditingBoardName(false)
+      return
+    }
+    // boardsApi doesn't have an update method for the board name in the API we saw,
+    // but we can try to use a generic approach. For now, update locally.
+    // Actually, let's check if there's a way - there isn't a boardsApi.update.
+    // We'll keep the edit local for the board name since the API doesn't support it.
+    setSelectedBoard((prev: any) => ({ ...prev, name: boardNameDraft.trim() }))
+    setBoards(prev => prev.map(b => b.id === selectedBoard.id ? { ...b, name: boardNameDraft.trim() } : b))
+    setEditingBoardName(false)
+  }
+
+  // Column management
+  const addColumn = async () => {
+    if (!selectedBoard || !newColumnName.trim()) return
+    try {
+      const res = await boardsApi.addColumn(selectedBoard.id, { name: newColumnName.trim(), color: newColumnColor })
+      setColumns(prev => [...prev, res.column])
+      setNewColumnName('')
+      setNewColumnColor('#3b82f6')
+      setShowNewColumn(false)
+      useToastStore.getState().addToast('success', '컬럼이 추가되었습니다')
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '컬럼 추가 실패', e.message)
+    }
+  }
+
+  const saveColumnName = async (colId: string) => {
+    if (!columnNameDraft.trim()) {
+      setEditingColumnId(null)
+      return
+    }
+    try {
+      await boardsApi.updateColumn(colId, { name: columnNameDraft.trim() })
+      setColumns(prev => prev.map(c => c.id === colId ? { ...c, name: columnNameDraft.trim() } : c))
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '컬럼 이름 변경 실패', e.message)
+    }
+    setEditingColumnId(null)
+  }
+
+  const updateColumnColor = async (colId: string, color: string) => {
+    try {
+      await boardsApi.updateColumn(colId, { color })
+      setColumns(prev => prev.map(c => c.id === colId ? { ...c, color } : c))
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '컬럼 색상 변경 실패', e.message)
+    }
+    setColorPickerColumnId(null)
+  }
+
+  const deleteColumn = async (colId: string) => {
+    const colTasks = tasks.filter(t => t.column_id === colId)
+    const msg = colTasks.length > 0
+      ? `이 컬럼에 ${colTasks.length}개의 태스크가 있습니다. 삭제하시겠습니까?`
+      : '이 컬럼을 삭제하시겠습니까?'
+    if (!confirm(msg)) return
+    try {
+      await boardsApi.deleteColumn(colId)
+      setColumns(prev => prev.filter(c => c.id !== colId))
+      setTasks(prev => prev.filter(t => t.column_id !== colId))
+      useToastStore.getState().addToast('success', '컬럼이 삭제되었습니다')
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '컬럼 삭제 실패', e.message)
     }
   }
 
@@ -121,68 +235,226 @@ export function KanbanPage() {
         </Button>
       </div>
 
+      {/* Board header area */}
+      {selectedBoard && (
+        <div className="flex items-center gap-3 mb-4 p-3 bg-white border rounded-lg">
+          {editingBoardName ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                value={boardNameDraft}
+                onChange={e => setBoardNameDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') saveBoardName()
+                  if (e.key === 'Escape') setEditingBoardName(false)
+                }}
+                className="text-lg font-semibold border rounded px-2 py-1 focus:ring-2 focus:ring-primary-500 outline-none"
+              />
+              <button onClick={saveBoardName} className="p-1 text-green-600 hover:bg-green-50 rounded">
+                <Check size={16} />
+              </button>
+              <button onClick={() => setEditingBoardName(false)} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
+                <X size={16} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setBoardNameDraft(selectedBoard.name); setEditingBoardName(true) }}
+              className="flex items-center gap-1.5 text-lg font-semibold text-gray-900 hover:text-primary-600 group"
+            >
+              {selectedBoard.name}
+              <Pencil size={14} className="text-gray-300 group-hover:text-primary-500" />
+            </button>
+          )}
+
+          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+            {visibilityLabels[selectedBoard.visibility] || selectedBoard.visibility}
+          </span>
+
+          <div className="flex-1" />
+
+          <button
+            onClick={() => setShowNewColumn(true)}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600 px-2 py-1 rounded hover:bg-gray-50"
+          >
+            <Plus size={14} /> 컬럼 추가
+          </button>
+
+          <button
+            onClick={deleteBoard}
+            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+            title="보드 삭제"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Kanban Board */}
       {selectedBoard ? (
         <div className="flex gap-4 overflow-x-auto pb-4">
           {columns.map(col => (
             <div
               key={col.id}
-              className="flex-shrink-0 w-72 bg-gray-100 rounded-xl p-3"
+              className="flex-shrink-0 w-72 bg-gray-100 rounded-xl p-3 group/col"
               onDragOver={(e) => handleDragOver(e, col.id)}
               onDrop={() => handleDrop(col.id)}
             >
               <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: col.color }} />
-                  <h3 className="text-sm font-semibold text-gray-700">{col.name}</h3>
-                  <span className="text-xs text-gray-400 bg-gray-200 px-1.5 rounded-full">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {/* Color dot - click to change color */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setColorPickerColumnId(colorPickerColumnId === col.id ? null : col.id)}
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0 hover:ring-2 hover:ring-offset-1 hover:ring-gray-300 transition-all"
+                      style={{ backgroundColor: col.color }}
+                      title="색상 변경"
+                    />
+                    {colorPickerColumnId === col.id && (
+                      <div className="absolute top-6 left-0 z-20 bg-white border rounded-lg shadow-lg p-2 flex flex-wrap gap-1 w-[130px]">
+                        {COLUMN_COLORS.map(c => (
+                          <button
+                            key={c}
+                            onClick={() => updateColumnColor(col.id, c)}
+                            className="w-5 h-5 rounded-full hover:scale-125 transition-transform"
+                            style={{ backgroundColor: c, outline: c === col.color ? '2px solid #3b82f6' : 'none', outlineOffset: '2px' }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Column name - click to edit */}
+                  {editingColumnId === col.id ? (
+                    <input
+                      autoFocus
+                      value={columnNameDraft}
+                      onChange={e => setColumnNameDraft(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') saveColumnName(col.id)
+                        if (e.key === 'Escape') setEditingColumnId(null)
+                      }}
+                      onBlur={() => saveColumnName(col.id)}
+                      className="text-sm font-semibold text-gray-700 border rounded px-1 py-0.5 w-full outline-none focus:ring-1 focus:ring-primary-500"
+                    />
+                  ) : (
+                    <h3
+                      onClick={() => { setEditingColumnId(col.id); setColumnNameDraft(col.name) }}
+                      className="text-sm font-semibold text-gray-700 cursor-pointer hover:text-primary-600 truncate"
+                      title="클릭하여 이름 변경"
+                    >
+                      {col.name}
+                    </h3>
+                  )}
+
+                  <span className="text-xs text-gray-400 bg-gray-200 px-1.5 rounded-full flex-shrink-0">
                     {getColumnTasks(col.id).length}
                     {col.wip_limit > 0 && `/${col.wip_limit}`}
                   </span>
                 </div>
-                <button
-                  onClick={() => { setTargetColumnId(col.id); setEditingTask(null); setShowTaskModal(true) }}
-                  className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-200"
-                >
-                  <Plus size={16} />
-                </button>
+                <div className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => deleteColumn(col.id)}
+                    className="p-1 text-gray-300 hover:text-red-500 rounded hover:bg-red-50 opacity-0 group-hover/col:opacity-100 transition-opacity"
+                    title="컬럼 삭제"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                  <button
+                    onClick={() => { setTargetColumnId(col.id); setEditingTask(null); setShowTaskModal(true) }}
+                    className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-200"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2 min-h-[50px]">
-                {getColumnTasks(col.id).map(task => (
-                  <div
-                    key={task.id}
-                    draggable
-                    onDragStart={() => handleDragStart(task)}
-                    onClick={() => { setEditingTask(task); setTargetColumnId(task.column_id); setShowTaskModal(true) }}
-                    className={`bg-white rounded-lg p-3 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${priorityColors[task.priority] || ''}`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <GripVertical size={14} className="text-gray-300 mt-0.5 flex-shrink-0 cursor-grab" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{task.title}</p>
-                        {task.due_date && (
-                          <p className="text-xs text-gray-400 mt-1">{task.due_date}</p>
-                        )}
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex gap-1">
-                            {JSON.parse(task.labels || '[]').map((label: string) => (
-                              <span key={label} className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{label}</span>
-                            ))}
-                          </div>
-                          {task.assignee_name && (
-                            <div className="flex items-center gap-1 text-xs text-gray-400">
-                              <User size={12} />{task.assignee_name}
-                            </div>
+                {getColumnTasks(col.id).map(task => {
+                  const labels: string[] = (() => {
+                    try { return JSON.parse(task.labels || '[]') } catch { return [] }
+                  })()
+                  return (
+                    <div
+                      key={task.id}
+                      draggable
+                      onDragStart={() => handleDragStart(task)}
+                      onClick={() => { setEditingTask(task); setTargetColumnId(task.column_id); setShowTaskModal(true) }}
+                      className={`bg-white rounded-lg p-3 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${priorityColors[task.priority] || ''}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <GripVertical size={14} className="text-gray-300 mt-0.5 flex-shrink-0 cursor-grab" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">{task.title}</p>
+                          {task.description && (
+                            <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{task.description}</p>
                           )}
+                          {task.due_date && (
+                            <p className="text-xs text-gray-400 mt-1">{task.due_date}</p>
+                          )}
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex gap-1 flex-wrap">
+                              {labels.map((label: string) => (
+                                <span key={label} className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{label}</span>
+                              ))}
+                            </div>
+                            {task.assignee_name && (
+                              <div className="flex items-center gap-1 text-xs text-gray-400">
+                                <User size={12} />{task.assignee_name}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           ))}
+
+          {/* Add column button at end of columns */}
+          <div className="flex-shrink-0 w-72">
+            {showNewColumn ? (
+              <div className="bg-gray-100 rounded-xl p-3 space-y-3">
+                <input
+                  autoFocus
+                  placeholder="컬럼 이름"
+                  value={newColumnName}
+                  onChange={e => setNewColumnName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') addColumn()
+                    if (e.key === 'Escape') { setShowNewColumn(false); setNewColumnName('') }
+                  }}
+                  className="w-full text-sm border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">색상:</span>
+                  <div className="flex gap-1">
+                    {COLUMN_COLORS.map(c => (
+                      <button
+                        key={c}
+                        onClick={() => setNewColumnColor(c)}
+                        className="w-4 h-4 rounded-full hover:scale-125 transition-transform"
+                        style={{ backgroundColor: c, outline: c === newColumnColor ? '2px solid #3b82f6' : 'none', outlineOffset: '1px' }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={addColumn}>추가</Button>
+                  <Button size="sm" variant="secondary" onClick={() => { setShowNewColumn(false); setNewColumnName('') }}>취소</Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowNewColumn(true)}
+                className="w-full h-20 border-2 border-dashed border-gray-300 rounded-xl text-gray-400 hover:text-gray-500 hover:border-gray-400 flex items-center justify-center gap-2 transition-colors"
+              >
+                <Plus size={16} /> 컬럼 추가
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="text-center text-gray-400 py-20">
@@ -233,7 +505,16 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState('medium')
   const [dueDate, setDueDate] = useState('')
+  const [assigneeId, setAssigneeId] = useState('')
+  const [labelsText, setLabelsText] = useState('')
   const [loading, setLoading] = useState(false)
+  const [members, setMembers] = useState<any[]>([])
+
+  useEffect(() => {
+    if (open) {
+      membersApi.list().then(r => setMembers(r.members || [])).catch(() => {})
+    }
+  }, [open])
 
   useEffect(() => {
     if (task) {
@@ -241,19 +522,47 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
       setDescription(task.description || '')
       setPriority(task.priority)
       setDueDate(task.due_date || '')
+      setAssigneeId(task.assignee_id || '')
+      try {
+        const labels: string[] = JSON.parse(task.labels || '[]')
+        setLabelsText(labels.join(', '))
+      } catch {
+        setLabelsText('')
+      }
     } else {
       setTitle(''); setDescription(''); setPriority('medium'); setDueDate('')
+      setAssigneeId(''); setLabelsText('')
     }
   }, [task, open])
 
   const handleSubmit = async () => {
     if (!title) return
     setLoading(true)
+    const labels = labelsText
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
     try {
       if (task) {
-        await tasksApi.update(task.id, { title, description, priority, due_date: dueDate || null })
+        await tasksApi.update(task.id, {
+          title,
+          description,
+          priority,
+          due_date: dueDate || null,
+          assignee_id: assigneeId || null,
+          labels: JSON.stringify(labels),
+        })
       } else {
-        await tasksApi.create({ board_id: boardId, column_id: columnId, title, description, priority, due_date: dueDate || null })
+        await tasksApi.create({
+          board_id: boardId,
+          column_id: columnId,
+          title,
+          description,
+          priority,
+          due_date: dueDate || null,
+          assignee_id: assigneeId || null,
+          labels: JSON.stringify(labels),
+        })
       }
       onSave(); onClose()
     } catch (e: any) {
@@ -263,21 +572,29 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
 
   const handleDelete = async () => {
     if (!task) return
-    await tasksApi.delete(task.id)
-    onSave(); onClose()
+    if (!confirm('이 태스크를 삭제하시겠습니까?')) return
+    try {
+      await tasksApi.delete(task.id)
+      onSave(); onClose()
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '삭제 실패', e.message)
+    }
   }
 
   return (
     <Modal open={open} onClose={onClose} title={task ? '태스크 수정' : '태스크 추가'}>
       <div className="space-y-4">
         <Input label="제목" value={title} onChange={e => setTitle(e.target.value)} required />
-        <textarea
-          placeholder="설명"
-          value={description}
-          onChange={e => setDescription(e.target.value)}
-          className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
-          rows={3}
-        />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">설명</label>
+          <textarea
+            placeholder="설명을 입력하세요"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+            rows={3}
+          />
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">우선순위</label>
@@ -291,8 +608,42 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
           </div>
           <Input label="마감일" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
         </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">담당자</label>
+          <select
+            value={assigneeId}
+            onChange={e => setAssigneeId(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="">미지정</option>
+            {members.map(m => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">라벨 (쉼표로 구분)</label>
+          <input
+            type="text"
+            placeholder="예: 버그, 긴급, 프론트엔드"
+            value={labelsText}
+            onChange={e => setLabelsText(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+          />
+          {labelsText && (
+            <div className="flex gap-1 flex-wrap mt-1.5">
+              {labelsText.split(',').map(s => s.trim()).filter(Boolean).map(label => (
+                <span key={label} className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{label}</span>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex justify-between pt-2">
-          {task && <Button variant="danger" size="sm" onClick={handleDelete}>삭제</Button>}
+          {task && (
+            <Button variant="danger" size="sm" onClick={handleDelete}>
+              <Trash2 size={14} className="mr-1" /> 삭제
+            </Button>
+          )}
           <div className="flex gap-2 ml-auto">
             <Button variant="secondary" onClick={onClose}>취소</Button>
             <Button onClick={handleSubmit} loading={loading}>저장</Button>
