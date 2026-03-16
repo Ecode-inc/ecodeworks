@@ -288,6 +288,7 @@ function MyAttendanceSection() {
 // Team Attendance Section
 // ──────────────────────────────────────────────────────────────
 function TeamAttendanceSection({ currentDeptId }: { currentDeptId: string | null }) {
+  const { organization } = useAuthStore()
   const [selectedDate, setSelectedDate] = useState(dayjs().format('YYYY-MM-DD'))
   const [selectedDeptId, setSelectedDeptId] = useState(currentDeptId || '')
   const [departments, setDepartments] = useState<DeptOption[]>([])
@@ -344,7 +345,7 @@ function TeamAttendanceSection({ currentDeptId }: { currentDeptId: string | null
             onChange={e => setSelectedDeptId(e.target.value)}
             className="border rounded-lg px-3 py-1.5 text-sm"
           >
-            <option value="">전체 부서</option>
+            <option value="">{organization?.name || '전체'}</option>
             {departments.map(d => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
