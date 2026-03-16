@@ -97,6 +97,24 @@ boardsRoutes.post('/', requirePermission('kanban', 'write'), async (c) => {
   return c.json({ board }, 201)
 })
 
+// Update board
+boardsRoutes.patch('/:id', authMiddleware, async (c) => {
+  const boardId = c.req.param('id')
+  const body = await c.req.json<{ name?: string; visibility?: string }>()
+
+  const updates: string[] = []
+  const values: unknown[] = []
+  if (body.name) { updates.push('name = ?'); values.push(body.name) }
+  if (body.visibility) { updates.push('visibility = ?'); values.push(body.visibility) }
+
+  if (updates.length === 0) return c.json({ error: 'No fields to update' }, 400)
+  values.push(boardId)
+
+  await c.env.DB.prepare(`UPDATE boards SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
+  const board = await c.env.DB.prepare('SELECT * FROM boards WHERE id = ?').bind(boardId).first()
+  return c.json({ board })
+})
+
 // Delete board
 boardsRoutes.delete('/:id', authMiddleware, async (c) => {
   const boardId = c.req.param('id')

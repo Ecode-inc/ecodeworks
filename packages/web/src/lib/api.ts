@@ -187,6 +187,8 @@ export const boardsApi = {
     request<{ board: any; columns: any[]; tasks: any[] }>(`/boards/${id}`),
   create: (deptId: string, name: string, visibility?: string) =>
     request<{ board: any }>(`/boards?dept_id=${deptId}`, { method: 'POST', body: JSON.stringify({ name, visibility }) }),
+  update: (id: string, data: { name?: string; visibility?: string }) =>
+    request<{ board: any }>(`/boards/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) =>
     request<{ success: boolean }>(`/boards/${id}`, { method: 'DELETE' }),
   addColumn: (boardId: string, data: { name: string; color?: string; wip_limit?: number }) =>

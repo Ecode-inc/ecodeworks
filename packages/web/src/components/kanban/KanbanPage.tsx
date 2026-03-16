@@ -108,13 +108,14 @@ export function KanbanPage() {
       setEditingBoardName(false)
       return
     }
-    // boardsApi doesn't have an update method for the board name in the API we saw,
-    // but we can try to use a generic approach. For now, update locally.
-    // Actually, let's check if there's a way - there isn't a boardsApi.update.
-    // We'll keep the edit local for the board name since the API doesn't support it.
-    setSelectedBoard((prev: any) => ({ ...prev, name: boardNameDraft.trim() }))
-    setBoards(prev => prev.map(b => b.id === selectedBoard.id ? { ...b, name: boardNameDraft.trim() } : b))
-    setEditingBoardName(false)
+    try {
+      const res = await boardsApi.update(selectedBoard.id, { name: boardNameDraft.trim() })
+      setSelectedBoard(res.board)
+      setBoards(prev => prev.map(b => b.id === selectedBoard.id ? { ...b, name: boardNameDraft.trim() } : b))
+      setEditingBoardName(false)
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '보드 이름 변경 실패', e.message)
+    }
   }
 
   // Column management
