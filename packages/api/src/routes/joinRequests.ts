@@ -10,14 +10,37 @@ export const joinRequestsRoutes = new Hono<{ Bindings: Env; Variables: Variables
 
 // ── Public endpoint (no auth) ──
 
+// Get departments for an org by slug (public, for the signup form)
+joinRequestsRoutes.get('/departments', async (c) => {
+  const orgSlug = c.req.query('orgSlug')
+  if (!orgSlug) {
+    return c.json({ error: 'orgSlug is required' }, 400)
+  }
+
+  const org = await c.env.DB.prepare(
+    'SELECT id FROM organizations WHERE slug = ?'
+  ).bind(orgSlug).first<{ id: string }>()
+
+  if (!org) {
+    return c.json({ error: 'Organization not found' }, 404)
+  }
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, name, color FROM departments WHERE org_id = ? ORDER BY name ASC'
+  ).bind(org.id).all<{ id: string; name: string; color: string }>()
+
+  return c.json({ departments: results ?? [] })
+})
+
 // Submit join request
 joinRequestsRoutes.post('/', async (c) => {
-  const { orgSlug, email, password, name, message } = await c.req.json<{
+  const { orgSlug, email, password, name, message, departmentId } = await c.req.json<{
     orgSlug: string
     email: string
     password: string
     name: string
     message?: string
+    departmentId?: string
   }>()
 
   if (!orgSlug || !email || !password || !name) {
@@ -59,8 +82,8 @@ joinRequestsRoutes.post('/', async (c) => {
   const passwordHash = await hashPassword(password)
 
   await c.env.DB.prepare(
-    'INSERT INTO join_requests (id, org_id, email, name, password_hash, message) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(id, org.id, email, name, passwordHash, message || '').run()
+    'INSERT INTO join_requests (id, org_id, email, name, password_hash, message, department_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, org.id, email, name, passwordHash, message || '', departmentId || '').run()
 
   return c.json({ success: true, message: 'Join request submitted successfully' }, 201)
 })
@@ -76,7 +99,7 @@ joinRequestsRoutes.get('/', authMiddleware, async (c) => {
   }
 
   const { results } = await c.env.DB.prepare(
-    "SELECT id, org_id, email, name, message, status, created_at FROM join_requests WHERE org_id = ? AND status = 'pending' ORDER BY created_at ASC"
+    "SELECT id, org_id, email, name, message, department_id, status, created_at FROM join_requests WHERE org_id = ? AND status = 'pending' ORDER BY created_at ASC"
   ).bind(user.org_id).all()
 
   return c.json({ requests: results })
@@ -106,24 +129,27 @@ joinRequestsRoutes.post('/:id/approve', authMiddleware, async (c) => {
     return c.json({ error: 'Only CEO or admin can approve join requests' }, 403)
   }
 
-  const { departmentId, role } = await c.req.json<{
-    departmentId: string
+  const { departmentId: overrideDeptId, role } = await c.req.json<{
+    departmentId?: string
     role?: 'head' | 'member'
   }>()
 
-  if (!departmentId) {
-    return c.json({ error: 'departmentId is required' }, 400)
-  }
-
   // Get the join request
   const joinRequest = await c.env.DB.prepare(
-    "SELECT id, org_id, email, name, password_hash, status FROM join_requests WHERE id = ? AND org_id = ? AND status = 'pending'"
+    "SELECT id, org_id, email, name, password_hash, department_id, status FROM join_requests WHERE id = ? AND org_id = ? AND status = 'pending'"
   ).bind(requestId, user.org_id).first<{
-    id: string; org_id: string; email: string; name: string; password_hash: string; status: string
+    id: string; org_id: string; email: string; name: string; password_hash: string; department_id: string; status: string
   }>()
 
   if (!joinRequest) {
     return c.json({ error: 'Join request not found or already processed' }, 404)
+  }
+
+  // Use override from approve body, or fall back to applicant's chosen department
+  const departmentId = overrideDeptId || joinRequest.department_id
+
+  if (!departmentId) {
+    return c.json({ error: 'departmentId is required' }, 400)
   }
 
   // Check if email already exists (could have been added in the meantime)

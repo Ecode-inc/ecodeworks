@@ -565,6 +565,7 @@ interface JoinRequestRow {
   email: string
   name: string
   message: string
+  department_id: string
   status: string
   created_at: string
 }
@@ -580,6 +581,14 @@ function JoinRequestsTab() {
     const [rRes, dRes] = await Promise.all([joinRequestApi.list(), deptApi.list()])
     setRequests(rRes.requests)
     setAllDepts(dRes.departments)
+    // Pre-select departments from applicant choices
+    const preSelected: Record<string, string> = {}
+    for (const req of rRes.requests) {
+      if (req.department_id) {
+        preSelected[req.id] = req.department_id
+      }
+    }
+    setSelectedDepts((prev) => ({ ...preSelected, ...prev }))
   }
 
   useEffect(() => { load() }, [])
@@ -633,6 +642,14 @@ function JoinRequestsTab() {
                 <p className="text-xs text-gray-400 mt-0.5">
                   {new Date(req.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
+                {req.department_id && (() => {
+                  const dept = allDepts.find((d) => d.id === req.department_id)
+                  return dept ? (
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      희망 부서: <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: (dept.color || '#6366f1') + '22', color: dept.color || '#6366f1' }}>{dept.name}</span>
+                    </p>
+                  ) : null
+                })()}
                 {req.message && (
                   <p className="text-sm text-gray-600 mt-1 bg-gray-50 rounded px-2 py-1">{req.message}</p>
                 )}

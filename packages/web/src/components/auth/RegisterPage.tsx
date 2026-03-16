@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, FormEvent } from 'react'
 import { useAuthStore } from '../../stores/authStore'
 import { useToastStore } from '../../stores/toastStore'
 import { joinRequestApi } from '../../lib/api'
@@ -18,10 +18,22 @@ export function RegisterPage({ onSwitchToLogin, orgSlug }: RegisterPageProps) {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [message, setMessage] = useState('')
+  const [departmentId, setDepartmentId] = useState('')
+  const [departments, setDepartments] = useState<{ id: string; name: string; color: string }[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
   const isJoinMode = !!orgSlug
+
+  useEffect(() => {
+    if (isJoinMode && orgSlug) {
+      joinRequestApi.departments(orgSlug).then((r) => {
+        setDepartments(r.departments)
+      }).catch(() => {
+        // Ignore errors - departments list is optional
+      })
+    }
+  }, [isJoinMode, orgSlug])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -35,7 +47,7 @@ export function RegisterPage({ onSwitchToLogin, orgSlug }: RegisterPageProps) {
       // Join request mode
       setSubmitting(true)
       try {
-        await joinRequestApi.submit({ orgSlug: orgSlug!, email, password, name, message: message || undefined })
+        await joinRequestApi.submit({ orgSlug: orgSlug!, email, password, name, message: message || undefined, departmentId: departmentId || undefined })
         setSubmitted(true)
       } catch (err: any) {
         useToastStore.getState().addToast('error', '가입 신청 실패', err.message)
@@ -131,6 +143,21 @@ export function RegisterPage({ onSwitchToLogin, orgSlug }: RegisterPageProps) {
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
           />
+          {isJoinMode && departments.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">부서 선택</label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                value={departmentId}
+                onChange={(e) => setDepartmentId(e.target.value)}
+              >
+                <option value="">부서를 선택해주세요 (선택)</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {isJoinMode && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">가입 사유 (선택)</label>
