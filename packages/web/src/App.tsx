@@ -50,12 +50,14 @@ export default function App() {
     restore()
   }, [])
 
-  // Auto-select first department
+  // Auto-select first department only on initial load (not when user selects "전체")
+  const initialDeptSet = useState(false)
   useEffect(() => {
-    if (departments.length > 0 && !currentDeptId) {
-      useOrgStore.getState().setCurrentDeptId(departments[0].id)
+    if (departments.length > 0 && !currentDeptId && !initialDeptSet[0]) {
+      initialDeptSet[1](true)
+      // Don't auto-select - let user see "전체 부서" by default
     }
-  }, [departments, currentDeptId])
+  }, [departments])
 
   // WebSocket connection
   useEffect(() => {
