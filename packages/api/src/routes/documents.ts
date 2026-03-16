@@ -39,7 +39,8 @@ documentsRoutes.get('/', async (c) => {
   if (parentId) {
     query += ' AND d.parent_id = ?'
     params.push(parentId)
-  } else if (deptId) {
+  } else {
+    // Root level: no parent
     query += ' AND d.parent_id IS NULL'
   }
 

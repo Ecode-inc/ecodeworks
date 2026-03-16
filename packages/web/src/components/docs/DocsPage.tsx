@@ -342,7 +342,6 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
     const params: { dept_id?: string; parent_id?: string } = {}
     if (deptId) params.dept_id = deptId
     if (parentId) params.parent_id = parentId
-    else if (deptId) params.parent_id = undefined // root level
 
     docsApi.list(params).then(res => {
       setDocs(res.documents || [])
