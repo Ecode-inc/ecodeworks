@@ -5,7 +5,7 @@ import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { FileText, Folder, FolderPlus, FilePlus, Search, ChevronRight, Clock, Share2, Building2, Users, UserIcon } from 'lucide-react'
+import { FileText, Folder, FolderPlus, FilePlus, Search, ChevronRight, Clock, Share2, Building2, Users, UserIcon, Trash2 } from 'lucide-react'
 
 export function DocsPage() {
   const { currentDeptId } = useOrgStore()
@@ -182,20 +182,41 @@ export function DocsPage() {
         {/* Document list */}
         <div className="space-y-0.5">
           {(searchResults || documents).map(doc => (
-            <button
+            <div
               key={doc.id}
-              onClick={() => doc.is_folder ? navigateToFolder(doc.id, doc.title) : openDocument(doc)}
-              className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-sm text-left hover:bg-gray-100 ${selectedDoc?.id === doc.id ? 'bg-primary-50 text-primary-700' : ''}`}
+              className={`group flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-sm hover:bg-gray-100 ${selectedDoc?.id === doc.id ? 'bg-primary-50 text-primary-700' : ''}`}
             >
-              {doc.is_folder ? <Folder size={16} className="text-amber-500 flex-shrink-0" /> : <FileText size={16} className="text-gray-400 flex-shrink-0" />}
-              <span className="truncate flex-1">{doc.title}</span>
-              <span className="flex items-center gap-0.5 flex-shrink-0">
-                {doc.visibility === 'company' && <span role="img" aria-label="회사 문서"><Building2 size={12} className="text-blue-500" /></span>}
-                {doc.visibility === 'personal' && <span role="img" aria-label="개인 문서"><UserIcon size={12} className="text-purple-500" /></span>}
-                {doc.visibility === 'department' && <span role="img" aria-label="부서 문서"><Users size={12} className="text-green-500" /></span>}
-                {doc.shared === 1 && <span role="img" aria-label="공유됨"><Share2 size={10} className="text-orange-400" /></span>}
-              </span>
-            </button>
+              <button
+                onClick={() => doc.is_folder ? navigateToFolder(doc.id, doc.title) : openDocument(doc)}
+                className="flex items-center gap-2 flex-1 min-w-0 text-left"
+              >
+                {doc.is_folder ? <Folder size={16} className="text-amber-500 flex-shrink-0" /> : <FileText size={16} className="text-gray-400 flex-shrink-0" />}
+                <span className="truncate flex-1">{doc.title}</span>
+                <span className="flex items-center gap-0.5 flex-shrink-0">
+                  {doc.visibility === 'company' && <Building2 size={12} className="text-blue-500" />}
+                  {doc.visibility === 'personal' && <UserIcon size={12} className="text-purple-500" />}
+                  {doc.visibility === 'department' && <Users size={12} className="text-green-500" />}
+                  {doc.shared === 1 && <Share2 size={10} className="text-orange-400" />}
+                </span>
+              </button>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation()
+                  if (!confirm(`"${doc.title}" ${doc.is_folder ? '폴더를 삭제하시겠습니까? 하위 문서도 모두 삭제됩니다.' : '을(를) 삭제하시겠습니까?'}`)) return
+                  try {
+                    await docsApi.delete(doc.id)
+                    if (selectedDoc?.id === doc.id) setSelectedDoc(null)
+                    loadDocuments()
+                  } catch (err: any) {
+                    useToastStore.getState().addToast('error', '삭제 실패', err.message)
+                  }
+                }}
+                className="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                title="삭제"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
           ))}
           {documents.length === 0 && !searchResults && (
             <p className="text-xs text-gray-400 text-center py-4">문서가 없습니다</p>
