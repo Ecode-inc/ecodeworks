@@ -1339,6 +1339,7 @@ aiRoutes.get('/action/list-telegram-mappings', async (c) => {
   return c.json({ mappings: results })
 })
 
+// clock-in: ?time=10:00 으로 시간 지정 가능, ?date=2026-03-16 으로 날짜 지정 가능
 aiRoutes.get('/action/clock-in', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'telegram:write') && !checkScope(scopes, 'attendance:write')) return c.json({ error: 'Insufficient scope' }, 403)
@@ -1346,6 +1347,8 @@ aiRoutes.get('/action/clock-in', async (c) => {
   const tgUserId = c.req.query('telegram_user_id')
   const directUserId = c.req.query('user_id')
   const note = c.req.query('note') || ''
+  const customTime = c.req.query('time')   // e.g. "10:00"
+  const customDate = c.req.query('date')   // e.g. "2026-03-16"
 
   let userId = directUserId
   if (!userId && tgUserId) {
@@ -1355,23 +1358,24 @@ aiRoutes.get('/action/clock-in', async (c) => {
   }
   if (!userId) return c.json({ error: 'user_id or telegram_user_id required' }, 400)
 
-  const today = new Date().toISOString().slice(0, 10)
-  const now = new Date().toISOString()
+  const date = customDate || new Date().toISOString().slice(0, 10)
+  const clockIn = customTime ? `${date}T${customTime}:00.000Z` : new Date().toISOString()
 
   const dept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(userId).first<{ department_id: string }>()
 
-  const existing = await c.env.DB.prepare('SELECT id FROM attendance_records WHERE org_id = ? AND user_id = ? AND date = ?').bind(orgId, userId, today).first()
+  const existing = await c.env.DB.prepare('SELECT id FROM attendance_records WHERE org_id = ? AND user_id = ? AND date = ?').bind(orgId, userId, date).first()
   if (existing) return c.json({ error: '이미 출근 기록이 있습니다', record: existing })
 
   const id = generateId()
   await c.env.DB.prepare(
     'INSERT INTO attendance_records (id, org_id, user_id, department_id, date, clock_in, clock_in_source, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, orgId, userId, dept?.department_id || null, today, now, 'telegram', note).run()
+  ).bind(id, orgId, userId, dept?.department_id || null, date, clockIn, 'telegram', note).run()
 
   const record = await c.env.DB.prepare('SELECT * FROM attendance_records WHERE id = ?').bind(id).first()
   return c.json({ success: true, record })
 })
 
+// clock-out: ?time=19:00 으로 시간 지정 가능
 aiRoutes.get('/action/clock-out', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'telegram:write') && !checkScope(scopes, 'attendance:write')) return c.json({ error: 'Insufficient scope' }, 403)
@@ -1379,6 +1383,8 @@ aiRoutes.get('/action/clock-out', async (c) => {
   const tgUserId = c.req.query('telegram_user_id')
   const directUserId = c.req.query('user_id')
   const note = c.req.query('note') || ''
+  const customTime = c.req.query('time')
+  const customDate = c.req.query('date')
 
   let userId = directUserId
   if (!userId && tgUserId) {
@@ -1388,14 +1394,57 @@ aiRoutes.get('/action/clock-out', async (c) => {
   }
   if (!userId) return c.json({ error: 'user_id or telegram_user_id required' }, 400)
 
-  const today = new Date().toISOString().slice(0, 10)
-  const now = new Date().toISOString()
+  const date = customDate || new Date().toISOString().slice(0, 10)
+  const clockOut = customTime ? `${date}T${customTime}:00.000Z` : new Date().toISOString()
 
-  const record = await c.env.DB.prepare('SELECT id, clock_out FROM attendance_records WHERE org_id = ? AND user_id = ? AND date = ?').bind(orgId, userId, today).first<{ id: string; clock_out: string | null }>()
-  if (!record) return c.json({ error: '오늘 출근 기록이 없습니다' }, 404)
+  const record = await c.env.DB.prepare('SELECT id, clock_out FROM attendance_records WHERE org_id = ? AND user_id = ? AND date = ?').bind(orgId, userId, date).first<{ id: string; clock_out: string | null }>()
+  if (!record) return c.json({ error: '해당 날짜 출근 기록이 없습니다' }, 404)
   if (record.clock_out) return c.json({ error: '이미 퇴근 기록이 있습니다' })
 
-  await c.env.DB.prepare("UPDATE attendance_records SET clock_out = ?, clock_out_source = 'telegram', note = CASE WHEN note = '' THEN ? ELSE note || ' | ' || ? END, updated_at = datetime('now') WHERE id = ?").bind(now, note, note, record.id).run()
+  await c.env.DB.prepare("UPDATE attendance_records SET clock_out = ?, clock_out_source = 'telegram', note = CASE WHEN note = '' THEN ? ELSE note || ' | ' || ? END, updated_at = datetime('now') WHERE id = ?").bind(clockOut, note, note, record.id).run()
+
+  const updated = await c.env.DB.prepare('SELECT * FROM attendance_records WHERE id = ?').bind(record.id).first()
+  return c.json({ success: true, record: updated })
+})
+
+// 근태 시간 수정: 이미 등록된 출퇴근 시간 변경
+aiRoutes.get('/action/update-attendance', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:write') && !checkScope(scopes, 'attendance:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const tgUserId = c.req.query('telegram_user_id')
+  const directUserId = c.req.query('user_id')
+  const date = c.req.query('date') || new Date().toISOString().slice(0, 10)
+  const clockInTime = c.req.query('clock_in')      // "10:00"
+  const clockOutTime = c.req.query('clock_out')     // "19:00"
+  const status = c.req.query('status')              // present, late, remote, vacation, etc.
+  const note = c.req.query('note')
+
+  let userId = directUserId
+  if (!userId && tgUserId) {
+    const mapping = await c.env.DB.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, tgUserId).first<{ user_id: string }>()
+    if (!mapping?.user_id) return c.json({ error: '매핑된 이코드 사용자를 찾을 수 없습니다' }, 404)
+    userId = mapping.user_id
+  }
+  if (!userId) return c.json({ error: 'user_id or telegram_user_id required' }, 400)
+
+  const record = await c.env.DB.prepare('SELECT id FROM attendance_records WHERE org_id = ? AND user_id = ? AND date = ?').bind(orgId, userId, date).first<{ id: string }>()
+  if (!record) return c.json({ error: '해당 날짜 근태 기록이 없습니다' }, 404)
+
+  const updates: string[] = []
+  const values: unknown[] = []
+
+  if (clockInTime) { updates.push('clock_in = ?'); values.push(`${date}T${clockInTime}:00.000Z`) }
+  if (clockOutTime) { updates.push('clock_out = ?'); values.push(`${date}T${clockOutTime}:00.000Z`) }
+  if (status) { updates.push('status = ?'); values.push(status) }
+  if (note !== undefined && note !== null) { updates.push('note = ?'); values.push(note) }
+
+  if (updates.length === 0) return c.json({ error: 'clock_in, clock_out, status, or note required' }, 400)
+
+  updates.push("updated_at = datetime('now')")
+  values.push(record.id)
+
+  await c.env.DB.prepare(`UPDATE attendance_records SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
 
   const updated = await c.env.DB.prepare('SELECT * FROM attendance_records WHERE id = ?').bind(record.id).first()
   return c.json({ success: true, record: updated })
