@@ -257,13 +257,47 @@ const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'resolve_telegram_user',
-    description: '텔레그램 사용자 -> 이코드 사용자 매핑 조회',
+    description: '텔레그램 사용자 -> 이코드 사용자 매핑 조회. telegram_user_id 또는 telegram_username(@없이)으로 검색.',
     inputSchema: {
       type: 'object',
       properties: {
-        telegram_user_id: { type: 'string' },
+        telegram_user_id: { type: 'string', description: '텔레그램 숫자 ID' },
+        telegram_username: { type: 'string', description: '텔레그램 username (@없이, 예: SL)' },
+      },
+    },
+  },
+  {
+    name: 'map_telegram_user',
+    description: '텔레그램 사용자를 이코드 사용자에 매핑 등록/수정. "@SL 은 ecode@e-code.kr 매핑해줘" 같은 요청 처리용. email로 이코드 사용자를 찾아서 매핑.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        telegram_user_id: { type: 'string', description: '텔레그램 숫자 ID' },
+        telegram_username: { type: 'string', description: '텔레그램 username (@없이)' },
+        telegram_display_name: { type: 'string', description: '텔레그램 표시 이름' },
+        email: { type: 'string', description: '매핑할 이코드 사용자 이메일' },
+        user_id: { type: 'string', description: '매핑할 이코드 사용자 ID (email 대신 사용 가능)' },
       },
       required: ['telegram_user_id'],
+    },
+  },
+  {
+    name: 'unmap_telegram_user',
+    description: '텔레그램 사용자 매핑 해제 (이코드 사용자 연결만 끊음, 기록은 유지)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        telegram_user_id: { type: 'string', description: '텔레그램 숫자 ID' },
+      },
+      required: ['telegram_user_id'],
+    },
+  },
+  {
+    name: 'list_telegram_mappings',
+    description: '모든 텔레그램-이코드 사용자 매핑 목록 조회',
+    inputSchema: {
+      type: 'object',
+      properties: {},
     },
   },
 ]
@@ -619,11 +653,21 @@ async function executeTool(
 
     case 'resolve_telegram_user': {
       if (!checkScope(scopes, 'telegram:read')) throw new Error('Insufficient scope: telegram:read required')
-      if (!args.telegram_user_id) throw new Error('telegram_user_id is required')
 
-      const mapping = await db.prepare(
-        'SELECT * FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1',
-      ).bind(orgId, args.telegram_user_id).first()
+      let mapping: Record<string, unknown> | null = null
+
+      // Search by telegram_user_id or telegram_username
+      if (args.telegram_user_id) {
+        mapping = await db.prepare(
+          'SELECT * FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1',
+        ).bind(orgId, args.telegram_user_id).first()
+      } else if (args.telegram_username) {
+        mapping = await db.prepare(
+          'SELECT * FROM telegram_user_mappings WHERE org_id = ? AND telegram_username = ? AND is_active = 1',
+        ).bind(orgId, args.telegram_username).first()
+      } else {
+        throw new Error('telegram_user_id or telegram_username is required')
+      }
 
       if (!mapping) return text({ mapping: null, user: null })
 
@@ -635,6 +679,83 @@ async function executeTool(
       }
 
       return text({ mapping, user })
+    }
+
+    case 'map_telegram_user': {
+      if (!checkScope(scopes, 'telegram:write')) throw new Error('Insufficient scope: telegram:write required')
+      if (!args.telegram_user_id) throw new Error('telegram_user_id is required')
+
+      // Resolve ecode user by email or user_id
+      let ecodeUserId: string | null = null
+      if (args.email) {
+        const user = await db.prepare(
+          'SELECT id FROM users WHERE org_id = ? AND email = ?',
+        ).bind(orgId, args.email).first<{ id: string }>()
+        if (!user) throw new Error(`이코드 사용자를 찾을 수 없습니다: ${args.email}`)
+        ecodeUserId = user.id
+      } else if (args.user_id) {
+        const user = await db.prepare(
+          'SELECT id FROM users WHERE org_id = ? AND id = ?',
+        ).bind(orgId, args.user_id).first<{ id: string }>()
+        if (!user) throw new Error(`이코드 사용자를 찾을 수 없습니다: ${args.user_id}`)
+        ecodeUserId = user.id
+      }
+
+      // Upsert mapping
+      const existing = await db.prepare(
+        'SELECT id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ?',
+      ).bind(orgId, args.telegram_user_id).first<{ id: string }>()
+
+      if (existing) {
+        // Update existing mapping
+        const updates: string[] = []
+        const vals: unknown[] = []
+        if (ecodeUserId !== null) { updates.push('user_id = ?'); vals.push(ecodeUserId) }
+        if (args.telegram_username) { updates.push('telegram_username = ?'); vals.push(args.telegram_username) }
+        if (args.telegram_display_name) { updates.push('telegram_display_name = ?'); vals.push(args.telegram_display_name) }
+        updates.push('is_active = 1')
+        vals.push(existing.id)
+        await db.prepare(`UPDATE telegram_user_mappings SET ${updates.join(', ')} WHERE id = ?`).bind(...vals).run()
+      } else {
+        // Create new mapping
+        const id = generateId()
+        await db.prepare(
+          'INSERT INTO telegram_user_mappings (id, org_id, telegram_user_id, telegram_username, telegram_display_name, user_id) VALUES (?, ?, ?, ?, ?, ?)',
+        ).bind(
+          id, orgId, args.telegram_user_id,
+          (args.telegram_username as string) || '',
+          (args.telegram_display_name as string) || '',
+          ecodeUserId,
+        ).run()
+      }
+
+      // Return the result
+      const result = await db.prepare(
+        'SELECT m.*, u.name as user_name, u.email as user_email FROM telegram_user_mappings m LEFT JOIN users u ON u.id = m.user_id WHERE m.org_id = ? AND m.telegram_user_id = ?',
+      ).bind(orgId, args.telegram_user_id).first()
+
+      return text({ mapping: result, message: ecodeUserId ? '매핑 완료' : '텔레그램 사용자 등록됨 (이코드 사용자 미연결)' })
+    }
+
+    case 'unmap_telegram_user': {
+      if (!checkScope(scopes, 'telegram:write')) throw new Error('Insufficient scope: telegram:write required')
+      if (!args.telegram_user_id) throw new Error('telegram_user_id is required')
+
+      await db.prepare(
+        'UPDATE telegram_user_mappings SET user_id = NULL WHERE org_id = ? AND telegram_user_id = ?',
+      ).bind(orgId, args.telegram_user_id).run()
+
+      return text({ success: true, message: '매핑 해제 완료' })
+    }
+
+    case 'list_telegram_mappings': {
+      if (!checkScope(scopes, 'telegram:read')) throw new Error('Insufficient scope: telegram:read required')
+
+      const { results } = await db.prepare(
+        'SELECT m.*, u.name as user_name, u.email as user_email FROM telegram_user_mappings m LEFT JOIN users u ON u.id = m.user_id WHERE m.org_id = ? AND m.is_active = 1 ORDER BY m.created_at',
+      ).bind(orgId).all()
+
+      return text({ mappings: results })
     }
 
     default:
