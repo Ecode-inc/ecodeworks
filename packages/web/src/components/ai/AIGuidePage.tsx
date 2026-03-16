@@ -43,6 +43,26 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
 }
 
 const API_BASE = 'https://ecode-internal-api.justin21lee.workers.dev/api/v1'
+const MCP_ENDPOINT = 'https://ecode-internal-api.justin21lee.workers.dev/api/mcp'
+
+const mcpTools = [
+  { name: 'list_calendar_events', desc: '캘린더 일정 목록 조회' },
+  { name: 'create_calendar_event', desc: '캘린더 일정 생성' },
+  { name: 'list_tasks', desc: '칸반 태스크 목록 조회' },
+  { name: 'create_task', desc: '칸반 태스크 생성' },
+  { name: 'update_task', desc: '칸반 태스크 수정' },
+  { name: 'list_boards', desc: '칸반 보드 목록' },
+  { name: 'get_board', desc: '보드 상세 (컬럼 포함)' },
+  { name: 'search_documents', desc: '문서 전문 검색' },
+  { name: 'get_document', desc: '문서 상세 조회' },
+  { name: 'create_document', desc: '문서 생성' },
+  { name: 'update_document', desc: '문서 수정' },
+  { name: 'list_members', desc: '조직 멤버 목록' },
+  { name: 'list_departments', desc: '부서 목록' },
+  { name: 'list_vault_credentials', desc: '비밀번호 금고 메타데이터 목록' },
+  { name: 'log_telegram_command', desc: '텔레그램 명령 로그 기록' },
+  { name: 'resolve_telegram_user', desc: '텔레그램 사용자 매핑 조회' },
+]
 
 const endpoints = [
   {
@@ -248,6 +268,55 @@ export function AIGuidePage({ apiKey }: AIGuidePageProps) {
             <ExternalLink size={16} />
             OpenAPI 3.0 Spec (JSON)
           </a>
+        </section>
+
+        {/* MCP (Model Context Protocol) */}
+        <section className="bg-white rounded-xl border border-purple-200 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-purple-800 mb-3">MCP (Model Context Protocol)</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            MCP를 통해 Claude Desktop, Cursor 등 AI 도구에서 ecode 플랫폼에 직접 접근할 수 있습니다.
+            JSON-RPC 2.0 기반의 Streamable HTTP transport를 사용합니다.
+          </p>
+
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">MCP Endpoint</h3>
+            <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-4 py-3 border">
+              <code className="text-sm font-mono text-gray-800 flex-1 select-all">{MCP_ENDPOINT}</code>
+              <CopyButton text={MCP_ENDPOINT} />
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Claude Desktop 설정</h3>
+            <p className="text-xs text-gray-500 mb-2">
+              <code className="bg-gray-100 px-1 py-0.5 rounded">claude_desktop_config.json</code>에 아래 내용을 추가하세요:
+            </p>
+            <CodeBlock language="json" code={`{
+  "mcpServers": {
+    "ecode": {
+      "url": "${MCP_ENDPOINT}",
+      "headers": {
+        "Authorization": "Bearer ${apiKey}"
+      }
+    }
+  }
+}`} />
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">사용 가능한 MCP Tools ({mcpTools.length})</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {mcpTools.map((tool) => (
+                <div key={tool.name} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50">
+                  <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-800">
+                    TOOL
+                  </span>
+                  <code className="text-xs font-mono text-gray-800">{tool.name}</code>
+                  <span className="text-xs text-gray-500 ml-auto hidden sm:inline">{tool.desc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
         {/* Footer */}

@@ -1,10 +1,16 @@
 {
-  "name": "ecode",
-  "short_name": "ecode",
-  "description": "통합 사내 솔루션",
+  "name": "이코드웍스",
+  "short_name": "이코드웍스",
+  "description": "간편한 조직통합관리 솔루션",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#3B82F6",
-  "icons": []
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
 }

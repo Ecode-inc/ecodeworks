@@ -5,7 +5,7 @@ import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
 
 interface LoginPageProps {
-  onSwitchToRegister: () => void
+  onSwitchToRegister: (orgSlug?: string | null) => void
 }
 
 /**
@@ -73,8 +73,8 @@ export function LoginPage({ onSwitchToRegister }: LoginPageProps) {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">ecode</h1>
-          <p className="text-gray-500 mt-2">통합 사내 솔루션</p>
+          <h1 className="text-3xl font-bold text-gray-900">이코드웍스</h1>
+          <p className="text-gray-500 mt-2">간편한 조직통합관리 솔루션</p>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white p-8 rounded-xl shadow-sm border space-y-4">
@@ -135,15 +135,27 @@ export function LoginPage({ onSwitchToRegister }: LoginPageProps) {
               다른 조직으로 로그인
             </button>
           )}
-          <p className="text-sm text-gray-500">
-            조직이 없으신가요?{' '}
-            <button
-              onClick={onSwitchToRegister}
-              className="text-primary-600 hover:text-primary-700 font-medium"
-            >
-              새 조직 만들기
-            </button>
-          </p>
+          {orgAutoDetected ? (
+            <p className="text-sm text-gray-500">
+              아직 멤버가 아니신가요?{' '}
+              <button
+                onClick={() => onSwitchToRegister(orgSlug)}
+                className="text-primary-600 hover:text-primary-700 font-medium"
+              >
+                가입 신청하기
+              </button>
+            </p>
+          ) : (
+            <p className="text-sm text-gray-500">
+              조직이 없으신가요?{' '}
+              <button
+                onClick={() => onSwitchToRegister(null)}
+                className="text-primary-600 hover:text-primary-700 font-medium"
+              >
+                새 조직 만들기
+              </button>
+            </p>
+          )}
         </div>
       </div>
     </div>

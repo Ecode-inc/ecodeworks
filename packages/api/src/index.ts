@@ -16,6 +16,8 @@ import { aiRoutes } from './routes/ai'
 import { aiKeysRoutes } from './routes/aiKeys'
 import { telegramRoutes } from './routes/telegram'
 import { superAdminRoutes } from './routes/superAdmin'
+import { joinRequestsRoutes } from './routes/joinRequests'
+import { mcpRoutes } from './routes/mcp'
 import { WebSocketRoom } from './durable/WebSocketRoom'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -68,6 +70,12 @@ app.route('/api/telegram', telegramRoutes)
 
 // Phase 9: Super Admin (SaaS management)
 app.route('/api/super', superAdminRoutes)
+
+// Phase 10: MCP (Model Context Protocol) server
+app.route('/api/mcp', mcpRoutes)
+
+// Join Requests
+app.route('/api/join-requests', joinRequestsRoutes)
 
 // File serving from R2
 app.get('/api/files/*', async (c) => {

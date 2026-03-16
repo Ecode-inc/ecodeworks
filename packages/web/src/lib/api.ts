@@ -302,6 +302,18 @@ export const superApi = {
   },
 }
 
+// Join Requests
+export const joinRequestApi = {
+  submit: (data: { orgSlug: string; email: string; password: string; name: string; message?: string }) =>
+    request<{ success: boolean; message: string }>('/join-requests', { method: 'POST', body: JSON.stringify(data) }),
+  list: () => request<{ requests: any[] }>('/join-requests'),
+  count: () => request<{ count: number }>('/join-requests/count'),
+  approve: (id: string, data: { departmentId: string; role?: string }) =>
+    request<{ member: any }>(`/join-requests/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  reject: (id: string) =>
+    request<{ success: boolean }>(`/join-requests/${id}/reject`, { method: 'POST' }),
+}
+
 // Telegram Integration
 export const telegramApi = {
   listChats: () => request<{ chats: any[] }>('/telegram/chats'),

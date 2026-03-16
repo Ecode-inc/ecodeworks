@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, FormEvent, ChangeEvent } from 'react'
 import { useAuthStore } from '../../stores/authStore'
 import { useToastStore } from '../../stores/toastStore'
-import { orgApi, deptApi, membersApi } from '../../lib/api'
+import { orgApi, deptApi, membersApi, joinRequestApi } from '../../lib/api'
 import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
-import { Pencil, Trash2, Plus, UserPlus, Upload } from 'lucide-react'
+import { Pencil, Trash2, Plus, UserPlus, Upload, Check, X } from 'lucide-react'
 
-type Tab = 'org' | 'departments' | 'members'
+type Tab = 'org' | 'departments' | 'members' | 'join-requests'
 
 // ──────────────────────────── Org Info Tab ────────────────────────────
 
@@ -557,16 +557,150 @@ function MembersTab() {
   )
 }
 
+// ──────────────────────────── Join Requests Tab ────────────────────────────
+
+interface JoinRequestRow {
+  id: string
+  org_id: string
+  email: string
+  name: string
+  message: string
+  status: string
+  created_at: string
+}
+
+function JoinRequestsTab() {
+  const [requests, setRequests] = useState<JoinRequestRow[]>([])
+  const [allDepts, setAllDepts] = useState<DeptRow[]>([])
+  const [selectedDepts, setSelectedDepts] = useState<Record<string, string>>({})
+  const [processing, setProcessing] = useState<string | null>(null)
+  const addToast = useToastStore((s) => s.addToast)
+
+  const load = async () => {
+    const [rRes, dRes] = await Promise.all([joinRequestApi.list(), deptApi.list()])
+    setRequests(rRes.requests)
+    setAllDepts(dRes.departments)
+  }
+
+  useEffect(() => { load() }, [])
+
+  const handleApprove = async (req: JoinRequestRow) => {
+    const deptId = selectedDepts[req.id]
+    if (!deptId) {
+      addToast('error', '부서를 선택해주세요')
+      return
+    }
+    setProcessing(req.id)
+    try {
+      await joinRequestApi.approve(req.id, { departmentId: deptId })
+      addToast('success', `${req.name}님의 가입이 승인되었습니다.`)
+      load()
+    } catch (err: any) {
+      addToast('error', '승인 실패', err.message)
+    } finally {
+      setProcessing(null)
+    }
+  }
+
+  const handleReject = async (req: JoinRequestRow) => {
+    if (!confirm(`${req.name}님의 가입 신청을 거절하시겠습니까?`)) return
+    setProcessing(req.id)
+    try {
+      await joinRequestApi.reject(req.id)
+      addToast('success', `${req.name}님의 가입 신청이 거절되었습니다.`)
+      load()
+    } catch (err: any) {
+      addToast('error', '거절 실패', err.message)
+    } finally {
+      setProcessing(null)
+    }
+  }
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-gray-700 mb-4">가입 신청 목록</h3>
+
+      <div className="border rounded-lg divide-y">
+        {requests.length === 0 && (
+          <p className="text-sm text-gray-400 p-4">대기 중인 가입 신청이 없습니다.</p>
+        )}
+        {requests.map((req) => (
+          <div key={req.id} className="px-4 py-4 space-y-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-800">{req.name}</span>
+                <span className="ml-2 text-xs text-gray-400">{req.email}</span>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {new Date(req.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </p>
+                {req.message && (
+                  <p className="text-sm text-gray-600 mt-1 bg-gray-50 rounded px-2 py-1">{req.message}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                className="text-sm border rounded-lg px-2 py-1.5 text-gray-600 flex-1 max-w-xs"
+                value={selectedDepts[req.id] || ''}
+                onChange={(e) => setSelectedDepts({ ...selectedDepts, [req.id]: e.target.value })}
+              >
+                <option value="">부서 선택</option>
+                {allDepts.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                onClick={() => handleApprove(req)}
+                loading={processing === req.id}
+                disabled={processing !== null && processing !== req.id}
+              >
+                <Check size={14} className="mr-1" /> 승인
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => handleReject(req)}
+                disabled={processing !== null && processing !== req.id}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                <X size={14} className="mr-1" /> 거절
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ──────────────────────────── Settings Page ────────────────────────────
 
 const tabs: { key: Tab; label: string }[] = [
   { key: 'org', label: '조직 정보' },
   { key: 'departments', label: '부서 관리' },
   { key: 'members', label: '멤버 관리' },
+  { key: 'join-requests', label: '가입 신청' },
 ]
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('org')
+  const [joinRequestCount, setJoinRequestCount] = useState(0)
+  const { user } = useAuthStore()
+
+  useEffect(() => {
+    if (user?.is_ceo || user?.is_admin) {
+      joinRequestApi.count().then((r) => setJoinRequestCount(r.count)).catch(() => {})
+    }
+  }, [user])
+
+  // Refresh count when switching to the join-requests tab
+  useEffect(() => {
+    if (activeTab === 'join-requests' && (user?.is_ceo || user?.is_admin)) {
+      joinRequestApi.count().then((r) => setJoinRequestCount(r.count)).catch(() => {})
+    }
+  }, [activeTab, user])
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -578,13 +712,18 @@ export function SettingsPage() {
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors relative ${
               activeTab === t.key
                 ? 'border-primary-600 text-primary-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             {t.label}
+            {t.key === 'join-requests' && joinRequestCount > 0 && (
+              <span className="ml-1.5 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-500 rounded-full">
+                {joinRequestCount}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -592,6 +731,7 @@ export function SettingsPage() {
       {activeTab === 'org' && <OrgInfoTab />}
       {activeTab === 'departments' && <DepartmentsTab />}
       {activeTab === 'members' && <MembersTab />}
+      {activeTab === 'join-requests' && <JoinRequestsTab />}
     </div>
   )
 }

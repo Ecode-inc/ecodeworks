@@ -24,6 +24,7 @@ export default function App() {
   const { currentDeptId } = useOrgStore()
   const { connect, disconnect } = useWSStore()
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [joinOrgSlug, setJoinOrgSlug] = useState<string | null>(null)
   const location = useLocation()
 
   // AI API Guide page when ?key= is present
@@ -80,9 +81,12 @@ export default function App() {
     return (
       <>
         {authMode === 'login' ? (
-          <LoginPage onSwitchToRegister={() => setAuthMode('register')} />
+          <LoginPage onSwitchToRegister={(orgSlug?: string | null) => {
+            setJoinOrgSlug(orgSlug || null)
+            setAuthMode('register')
+          }} />
         ) : (
-          <RegisterPage onSwitchToLogin={() => setAuthMode('login')} />
+          <RegisterPage onSwitchToLogin={() => { setJoinOrgSlug(null); setAuthMode('login') }} orgSlug={joinOrgSlug} />
         )}
         <ToastContainer />
       </>

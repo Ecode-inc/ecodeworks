@@ -111,12 +111,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <div className={theme === 'dark' ? 'bg-white/90 rounded px-1.5 py-0.5' : ''}>
               <img
                 src={`${apiBase}${organization.logo_url.replace(/^\/api/, '')}`}
-                alt={organization.name || 'ecode'}
+                alt={organization?.name || '이코드웍스'}
                 className="h-7 max-w-[120px] object-contain"
               />
             </div>
           ) : (
-            <span className={`text-lg font-bold ${themeStyles.logoText}`}>ecode</span>
+            <span className={`text-lg font-bold ${themeStyles.logoText}`}>이코드웍스</span>
           )
         )}
         <button
