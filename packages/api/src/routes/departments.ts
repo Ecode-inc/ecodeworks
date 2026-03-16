@@ -14,7 +14,7 @@ departmentsRoutes.get('/', async (c) => {
   const user = c.get('user')
 
   const { results } = await c.env.DB.prepare(
-    'SELECT id, name, slug, color, order_index, created_at FROM departments WHERE org_id = ? ORDER BY order_index'
+    'SELECT id, name, slug, color, order_index, parent_id, created_at FROM departments WHERE org_id = ? ORDER BY order_index'
   ).bind(user.org_id).all()
 
   return c.json({ departments: results })
@@ -27,7 +27,7 @@ departmentsRoutes.post('/', async (c) => {
     return c.json({ error: 'Only CEO or admin can create departments' }, 403)
   }
 
-  const { name, color } = await c.req.json<{ name: string; color?: string }>()
+  const { name, color, parent_id } = await c.req.json<{ name: string; color?: string; parent_id?: string }>()
   if (!name) {
     return c.json({ error: 'Name is required' }, 400)
   }
@@ -42,8 +42,8 @@ departmentsRoutes.post('/', async (c) => {
 
   await c.env.DB.batch([
     c.env.DB.prepare(
-      'INSERT INTO departments (id, org_id, name, slug, color, order_index) VALUES (?, ?, ?, ?, ?, ?)'
-    ).bind(id, user.org_id, name, slug, color || '#3B82F6', (maxOrder?.max_idx ?? -1) + 1),
+      'INSERT INTO departments (id, org_id, name, slug, color, order_index, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).bind(id, user.org_id, name, slug, color || '#3B82F6', (maxOrder?.max_idx ?? -1) + 1, parent_id || null),
     // Default permissions
     ...['calendar', 'kanban', 'docs', 'vault', 'qa'].map(mod =>
       c.env.DB.prepare(
@@ -53,7 +53,7 @@ departmentsRoutes.post('/', async (c) => {
   ])
 
   const dept = await c.env.DB.prepare(
-    'SELECT id, name, slug, color, order_index, created_at FROM departments WHERE id = ?'
+    'SELECT id, name, slug, color, order_index, parent_id, created_at FROM departments WHERE id = ?'
   ).bind(id).first()
 
   return c.json({ department: dept }, 201)
@@ -92,7 +92,7 @@ departmentsRoutes.patch('/:id', async (c) => {
   ).bind(...values).run()
 
   const dept = await c.env.DB.prepare(
-    'SELECT id, name, slug, color, order_index, created_at FROM departments WHERE id = ?'
+    'SELECT id, name, slug, color, order_index, parent_id, created_at FROM departments WHERE id = ?'
   ).bind(deptId).first()
 
   return c.json({ department: dept })

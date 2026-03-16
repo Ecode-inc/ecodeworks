@@ -239,6 +239,36 @@ interface DeptRow {
   name: string
   slug: string
   color: string
+  parent_id?: string | null
+}
+
+function renderDeptTree(
+  depts: DeptRow[],
+  parentId: string | null,
+  depth: number,
+  onEdit: (d: DeptRow) => void,
+  onDelete: (id: string) => void,
+): React.ReactNode[] {
+  const children = depts.filter(d => (d.parent_id || null) === parentId)
+  return children.map(d => (
+    <div key={d.id}>
+      <div className="flex items-center justify-between px-4 py-3" style={{ paddingLeft: `${16 + depth * 24}px` }}>
+        <div className="flex items-center gap-3">
+          <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: d.color || '#6366f1' }} />
+          <span className={`text-sm font-medium ${depth === 0 ? 'text-gray-900 font-semibold' : 'text-gray-700'}`}>{d.name}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => onEdit(d)} className="p-1.5 rounded hover:bg-gray-100 text-gray-500">
+            <Pencil size={15} />
+          </button>
+          <button onClick={() => onDelete(d.id)} className="p-1.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600">
+            <Trash2 size={15} />
+          </button>
+        </div>
+      </div>
+      {renderDeptTree(depts, d.id, depth + 1, onEdit, onDelete)}
+    </div>
+  ))
 }
 
 function DepartmentsTab() {
@@ -311,23 +341,7 @@ function DepartmentsTab() {
         {depts.length === 0 && (
           <p className="text-sm text-gray-400 p-4">등록된 부서가 없습니다.</p>
         )}
-        {depts.map((d) => (
-          <div key={d.id} className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-3">
-              <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: d.color || '#6366f1' }} />
-              <span className="text-sm font-medium text-gray-800">{d.name}</span>
-              <span className="text-xs text-gray-400">{d.slug}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <button onClick={() => openEdit(d)} className="p-1.5 rounded hover:bg-gray-100 text-gray-500">
-                <Pencil size={15} />
-              </button>
-              <button onClick={() => handleDelete(d.id)} className="p-1.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600">
-                <Trash2 size={15} />
-              </button>
-            </div>
-          </div>
-        ))}
+        {renderDeptTree(depts, null, 0, openEdit, handleDelete)}
       </div>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editId ? '부서 수정' : '부서 추가'}>
@@ -634,8 +648,8 @@ function MembersTab() {
                     <span className="ml-1.5 text-xs text-gray-500">{m.position_name}</span>
                   )}
                   <span className="ml-2 text-xs text-gray-400">{m.email}</span>
-                  {m.is_ceo && <span className="ml-2 text-xs font-semibold text-amber-600">CEO</span>}
-                  {m.is_admin && !m.is_ceo && <span className="ml-2 text-xs font-semibold text-blue-600">Admin</span>}
+                  {!!m.is_ceo && <span className="ml-2 text-xs font-semibold text-amber-600">CEO</span>}
+                  {!!m.is_admin && !m.is_ceo && <span className="ml-2 text-xs font-semibold text-blue-600">Admin</span>}
                 </div>
                 <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
                   <input
