@@ -29,6 +29,21 @@
 - 리뷰어가 확인하지 않은 코드는 머지하지 않는다
 - 배포 전 반드시 `npx tsc --noEmit` 통과 확인
 
+#### 문서화 에이전트 필수 규칙
+
+**API 엔드포인트가 추가/변경될 때마다** 반드시 다음 파일을 업데이트해야 한다:
+
+1. **`packages/web/src/components/ai/AIGuidePage.tsx`** — AI 가이드 페이지
+   - `getActions` 배열: GET Action 엔드포인트 (web_fetch 호환)
+   - `getReadEndpoints` 배열: GET 조회 엔드포인트
+   - `postEndpoints` 배열: POST/PATCH 엔드포인트
+   - `mcpTools` 배열: MCP 도구 목록
+   - 이 페이지는 `https://work.e-code.kr/?key=API_KEY`로 접근되며, 오픈클로(AI봇)가 참조하는 유일한 문서이다
+2. **`packages/api/src/routes/mcp.ts`** — MCP 도구 정의 (`TOOLS` 배열 + switch case)
+3. **`CLAUDE.md`** — 이 파일의 AI API 섹션
+
+**이 가이드가 최신이 아니면 오픈클로가 새 기능을 사용할 수 없다.**
+
 ### 기술 스택
 
 - **Backend**: Cloudflare Workers + Hono + D1 (SQLite) + R2
