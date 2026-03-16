@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useOrgStore } from '../../stores/orgStore'
-import { calendarApi, membersApi, attendanceApi } from '../../lib/api'
+import { calendarApi, membersApi, attendanceApi, docsApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, RefreshCw, FileText, X, Search } from 'lucide-react'
 import dayjs from 'dayjs'
 
 type Visibility = 'personal' | 'department' | 'company' | 'shared'
@@ -17,6 +17,18 @@ interface SharedTarget {
   target_id: string | null
 }
 
+interface LinkedDoc {
+  id: string
+  title: string
+}
+
+interface RecurrenceRule {
+  freq: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  interval: number
+  byDay?: string[]
+  until?: string
+}
+
 interface CalendarEvent {
   id: string
   title: string
@@ -25,8 +37,13 @@ interface CalendarEvent {
   all_day: number
   color: string
   description: string
+  recurrence_rule?: string | null
   visibility?: Visibility
   shared_targets?: SharedTarget[]
+  document_count?: number
+  documents?: LinkedDoc[]
+  is_recurring?: boolean
+  recurring_parent_id?: string
 }
 
 interface OrgMember {
@@ -43,6 +60,7 @@ export function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [showModal, setShowModal] = useState(false)
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
+  const [prefillDate, setPrefillDate] = useState<string | null>(null)
   const [googleConnected, setGoogleConnected] = useState(false)
   const [googleAvailable, setGoogleAvailable] = useState(false)
   const [showAttendance, setShowAttendance] = useState(false)
@@ -103,6 +121,32 @@ export function CalendarPage() {
     }
   }
 
+  const handleDayClick = (day: dayjs.Dayjs) => {
+    setEditingEvent(null)
+    setPrefillDate(day.format('YYYY-MM-DD'))
+    setShowModal(true)
+  }
+
+  const handleEventClick = (evt: CalendarEvent, e: React.MouseEvent) => {
+    e.stopPropagation()
+    // For recurring occurrences, load the parent event for editing
+    if (evt.is_recurring && evt.recurring_parent_id) {
+      // Find the original event (the one without _ suffix) or use parent id
+      const parentId = evt.recurring_parent_id
+      const parentEvent = events.find(ev => ev.id === parentId)
+      if (parentEvent) {
+        setEditingEvent(parentEvent)
+      } else {
+        // Use the occurrence data but with parent id
+        setEditingEvent({ ...evt, id: parentId })
+      }
+    } else {
+      setEditingEvent(evt)
+    }
+    setPrefillDate(null)
+    setShowModal(true)
+  }
+
   const daysInMonth = () => {
     const startOfMonth = currentDate.startOf('month')
     const startDay = startOfMonth.day()
@@ -160,7 +204,7 @@ export function CalendarPage() {
               </Button>
             )
           )}
-          <Button size="sm" onClick={() => { setEditingEvent(null); setShowModal(true) }}>
+          <Button size="sm" onClick={() => { setEditingEvent(null); setPrefillDate(null); setShowModal(true) }}>
             <Plus size={14} className="mr-1" /> 일정 추가
           </Button>
         </div>
@@ -198,7 +242,8 @@ export function CalendarPage() {
             return (
               <div
                 key={i}
-                className={`min-h-[100px] border-b border-r p-1 ${!isCurrentMonth ? 'bg-gray-50' : ''}`}
+                className={`min-h-[100px] border-b border-r p-1 cursor-pointer hover:bg-gray-50 transition-colors ${!isCurrentMonth ? 'bg-gray-50' : ''}`}
+                onClick={() => handleDayClick(day)}
               >
                 <div className={`text-xs mb-1 ${isToday ? 'w-6 h-6 bg-primary-600 text-white rounded-full flex items-center justify-center' : isCurrentMonth ? 'text-gray-700' : 'text-gray-400'}`}>
                   {day.date()}
@@ -206,11 +251,14 @@ export function CalendarPage() {
                 {dayEvents.slice(0, 3).map(evt => (
                   <button
                     key={evt.id}
-                    onClick={() => { setEditingEvent(evt); setShowModal(true) }}
-                    className="w-full text-left text-xs px-1 py-0.5 rounded truncate mb-0.5 text-white"
+                    onClick={(e) => handleEventClick(evt, e)}
+                    className="w-full text-left text-xs px-1 py-0.5 rounded truncate mb-0.5 text-white flex items-center gap-0.5"
                     style={{ backgroundColor: evt.color || '#3B82F6' }}
                   >
-                    {evt.title}
+                    {(evt.document_count && evt.document_count > 0) ? (
+                      <FileText size={10} className="shrink-0" />
+                    ) : null}
+                    <span className="truncate">{evt.title}</span>
                   </button>
                 ))}
                 {dayEvents.length > 3 && (
@@ -243,10 +291,11 @@ export function CalendarPage() {
       {/* Event Modal */}
       <EventModal
         open={showModal}
-        onClose={() => setShowModal(false)}
+        onClose={() => { setShowModal(false); setPrefillDate(null) }}
         event={editingEvent}
         deptId={currentDeptId}
         onSave={loadEvents}
+        prefillDate={prefillDate}
       />
     </div>
   )
@@ -259,12 +308,30 @@ const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
   { value: 'shared', label: '선택공유' },
 ]
 
-function EventModal({ open, onClose, event, deptId, onSave }: {
+const FREQ_OPTIONS: { value: RecurrenceRule['freq']; label: string }[] = [
+  { value: 'daily', label: '매일' },
+  { value: 'weekly', label: '매주' },
+  { value: 'monthly', label: '매월' },
+  { value: 'yearly', label: '매년' },
+]
+
+const DAYS_OF_WEEK = [
+  { value: 'MO', label: '월' },
+  { value: 'TU', label: '화' },
+  { value: 'WE', label: '수' },
+  { value: 'TH', label: '목' },
+  { value: 'FR', label: '금' },
+  { value: 'SA', label: '토' },
+  { value: 'SU', label: '일' },
+]
+
+function EventModal({ open, onClose, event, deptId, onSave, prefillDate }: {
   open: boolean
   onClose: () => void
   event: CalendarEvent | null
   deptId: string | null
   onSave: () => void
+  prefillDate: string | null
 }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -278,6 +345,20 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
   const [shareWithExecutives, setShareWithExecutives] = useState(false)
   const [members, setMembers] = useState<OrgMember[]>([])
   const [membersLoaded, setMembersLoaded] = useState(false)
+
+  // Document linking state
+  const [linkedDocs, setLinkedDocs] = useState<LinkedDoc[]>([])
+  const [docSearchQuery, setDocSearchQuery] = useState('')
+  const [docSearchResults, setDocSearchResults] = useState<LinkedDoc[]>([])
+  const [docSearchLoading, setDocSearchLoading] = useState(false)
+  const [showDocSearch, setShowDocSearch] = useState(false)
+
+  // Recurrence state
+  const [recurrenceEnabled, setRecurrenceEnabled] = useState(false)
+  const [recurrenceFreq, setRecurrenceFreq] = useState<RecurrenceRule['freq']>('weekly')
+  const [recurrenceInterval, setRecurrenceInterval] = useState(1)
+  const [recurrenceByDay, setRecurrenceByDay] = useState<string[]>([])
+  const [recurrenceUntil, setRecurrenceUntil] = useState('')
 
   useEffect(() => {
     if (event) {
@@ -307,26 +388,63 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
         setSharedTargetIds([])
         setShareWithExecutives(false)
       }
+      // Restore linked documents
+      setLinkedDocs(event.documents || [])
+      // Restore recurrence
+      if (event.recurrence_rule) {
+        try {
+          const rule: RecurrenceRule = JSON.parse(event.recurrence_rule)
+          setRecurrenceEnabled(true)
+          setRecurrenceFreq(rule.freq)
+          setRecurrenceInterval(rule.interval || 1)
+          setRecurrenceByDay(rule.byDay || [])
+          setRecurrenceUntil(rule.until || '')
+        } catch {
+          setRecurrenceEnabled(false)
+          setRecurrenceFreq('weekly')
+          setRecurrenceInterval(1)
+          setRecurrenceByDay([])
+          setRecurrenceUntil('')
+        }
+      } else {
+        setRecurrenceEnabled(false)
+        setRecurrenceFreq('weekly')
+        setRecurrenceInterval(1)
+        setRecurrenceByDay([])
+        setRecurrenceUntil('')
+      }
     } else {
       setTitle('')
       setDescription('')
-      setStartAt(dayjs().format('YYYY-MM-DDTHH:mm'))
-      setEndAt(dayjs().add(1, 'hour').format('YYYY-MM-DDTHH:mm'))
+      if (prefillDate) {
+        setStartAt(prefillDate + 'T09:00')
+        setEndAt(prefillDate + 'T10:00')
+      } else {
+        setStartAt(dayjs().format('YYYY-MM-DDTHH:mm'))
+        setEndAt(dayjs().add(1, 'hour').format('YYYY-MM-DDTHH:mm'))
+      }
       setAllDay(false)
-      setColor('#3B82F6')  // department default
+      setColor('#3B82F6')
       setVisibility('department')
       setSharedTargetIds([])
       setShareWithExecutives(false)
+      setLinkedDocs([])
+      setRecurrenceEnabled(false)
+      setRecurrenceFreq('weekly')
+      setRecurrenceInterval(1)
+      setRecurrenceByDay([])
+      setRecurrenceUntil('')
     }
-  }, [event, open])
+    setDocSearchQuery('')
+    setDocSearchResults([])
+    setShowDocSearch(false)
+  }, [event, open, prefillDate])
 
   const handleAllDayToggle = (checked: boolean) => {
     if (checked) {
-      // Convert datetime-local to date format
       setStartAt(startAt.slice(0, 10))
       setEndAt(endAt.slice(0, 10))
     } else {
-      // Convert date to datetime-local format, add default times
       setStartAt(startAt.slice(0, 10) + 'T09:00')
       setEndAt(endAt.slice(0, 10) + 'T10:00')
     }
@@ -349,6 +467,46 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
     )
   }
 
+  // Document search
+  const handleDocSearch = async (query: string) => {
+    setDocSearchQuery(query)
+    if (!query.trim()) {
+      setDocSearchResults([])
+      return
+    }
+    setDocSearchLoading(true)
+    try {
+      const res = await docsApi.search(query, deptId || undefined)
+      const docs = (res.documents || [])
+        .filter((d: any) => !d.is_folder)
+        .map((d: any) => ({ id: d.id, title: d.title }))
+      setDocSearchResults(docs)
+    } catch {
+      setDocSearchResults([])
+    } finally {
+      setDocSearchLoading(false)
+    }
+  }
+
+  const addLinkedDoc = (doc: LinkedDoc) => {
+    if (!linkedDocs.find(d => d.id === doc.id)) {
+      setLinkedDocs(prev => [...prev, doc])
+    }
+    setDocSearchQuery('')
+    setDocSearchResults([])
+  }
+
+  const removeLinkedDoc = (docId: string) => {
+    setLinkedDocs(prev => prev.filter(d => d.id !== docId))
+  }
+
+  // Recurrence toggle
+  const toggleRecurrenceDay = (day: string) => {
+    setRecurrenceByDay(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    )
+  }
+
   const handleSubmit = async () => {
     if (!title || !deptId) return
     setLoading(true)
@@ -356,13 +514,29 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
       let finalStartAt: string
       let finalEndAt: string
       if (allDay) {
-        // Set start to beginning of day, end to end of day
         finalStartAt = new Date(startAt + 'T00:00:00').toISOString()
         finalEndAt = new Date(endAt + 'T23:59:59').toISOString()
       } else {
         finalStartAt = new Date(startAt).toISOString()
         finalEndAt = new Date(endAt).toISOString()
       }
+
+      // Build recurrence rule
+      let recurrenceRule: string | undefined
+      if (recurrenceEnabled) {
+        const rule: RecurrenceRule = {
+          freq: recurrenceFreq,
+          interval: recurrenceInterval,
+        }
+        if (recurrenceFreq === 'weekly' && recurrenceByDay.length > 0) {
+          rule.byDay = recurrenceByDay
+        }
+        if (recurrenceUntil) {
+          rule.until = recurrenceUntil
+        }
+        recurrenceRule = JSON.stringify(rule)
+      }
+
       const data: Record<string, unknown> = {
         title,
         description,
@@ -371,6 +545,8 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
         all_day: allDay,
         color,
         visibility,
+        recurrence_rule: recurrenceRule || null,
+        document_ids: linkedDocs.map(d => d.id),
       }
       if (visibility === 'shared') {
         data.shared_target_ids = sharedTargetIds
@@ -402,7 +578,7 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={event ? '일정 수정' : '일정 추가'}>
+    <Modal open={open} onClose={onClose} title={event ? '일정 수정' : '일정 추가'} width="max-w-lg">
       <div className="space-y-4">
         <Input label="제목" value={title} onChange={e => setTitle(e.target.value)} required />
         <label className="flex items-center gap-2 text-sm">
@@ -413,7 +589,8 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
           <Input label="시작" type={allDay ? 'date' : 'datetime-local'} value={startAt} onChange={e => setStartAt(e.target.value)} />
           <Input label="종료" type={allDay ? 'date' : 'datetime-local'} value={endAt} onChange={e => setEndAt(e.target.value)} />
         </div>
-        {/* Visibility selector - placed before color so default color updates */}
+
+        {/* Visibility selector */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">공개 범위</label>
           <div className="grid grid-cols-2 gap-2">
@@ -423,12 +600,11 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
                 type="button"
                 onClick={() => {
                   setVisibility(opt.value)
-                  // Set default color based on visibility
                   const defaultColors: Record<string, string> = {
-                    personal: '#8B5CF6',   // purple
-                    department: '#3B82F6', // blue
-                    company: '#10B981',    // green
-                    shared: '#F59E0B',     // amber
+                    personal: '#8B5CF6',
+                    department: '#3B82F6',
+                    company: '#10B981',
+                    shared: '#F59E0B',
                   }
                   if (!event) setColor(defaultColors[opt.value] || '#3B82F6')
                 }}
@@ -479,6 +655,190 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
             </div>
           </div>
         )}
+
+        {/* Recurrence section */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">반복</label>
+          <div className="flex items-center gap-2 mb-2">
+            <button
+              type="button"
+              onClick={() => setRecurrenceEnabled(false)}
+              className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                !recurrenceEnabled
+                  ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300'
+              }`}
+            >
+              반복 안 함
+            </button>
+            <button
+              type="button"
+              onClick={() => setRecurrenceEnabled(true)}
+              className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                recurrenceEnabled
+                  ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300'
+              }`}
+            >
+              반복 설정
+            </button>
+          </div>
+          {recurrenceEnabled && (
+            <div className="border rounded-lg p-3 space-y-3 bg-gray-50">
+              {/* Frequency */}
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">주기</label>
+                <div className="flex gap-1">
+                  {FREQ_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setRecurrenceFreq(opt.value)}
+                      className={`px-3 py-1 text-sm rounded-md border transition-colors ${
+                        recurrenceFreq === opt.value
+                          ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium'
+                          : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Interval */}
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-500">매</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={recurrenceInterval}
+                  onChange={e => setRecurrenceInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-16 px-2 py-1 text-sm border rounded-md"
+                />
+                <span className="text-xs text-gray-500">
+                  {recurrenceFreq === 'daily' ? '일' : recurrenceFreq === 'weekly' ? '주' : recurrenceFreq === 'monthly' ? '개월' : '년'}마다
+                </span>
+              </div>
+
+              {/* Day of week checkboxes (for weekly) */}
+              {recurrenceFreq === 'weekly' && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">요일 선택</label>
+                  <div className="flex gap-1">
+                    {DAYS_OF_WEEK.map(d => (
+                      <button
+                        key={d.value}
+                        type="button"
+                        onClick={() => toggleRecurrenceDay(d.value)}
+                        className={`w-8 h-8 text-xs rounded-full border transition-colors ${
+                          recurrenceByDay.includes(d.value)
+                            ? 'border-primary-500 bg-primary-500 text-white font-medium'
+                            : 'border-gray-300 text-gray-500 hover:border-gray-400'
+                        }`}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Until date */}
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">종료 날짜</label>
+                <input
+                  type="date"
+                  value={recurrenceUntil}
+                  onChange={e => setRecurrenceUntil(e.target.value)}
+                  className="px-3 py-1.5 text-sm border rounded-md w-full"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Document linking section */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">문서 연결</label>
+          {/* Linked document chips */}
+          {linkedDocs.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {linkedDocs.map(doc => (
+                <span
+                  key={doc.id}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-md border border-blue-200"
+                >
+                  <FileText size={12} />
+                  <span className="max-w-[150px] truncate">{doc.title}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeLinkedDoc(doc.id)}
+                    className="text-blue-400 hover:text-blue-600"
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {/* Search toggle */}
+          {!showDocSearch ? (
+            <button
+              type="button"
+              onClick={() => setShowDocSearch(true)}
+              className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+            >
+              <Plus size={14} /> 문서 추가
+            </button>
+          ) : (
+            <div className="border rounded-lg p-2 bg-gray-50 space-y-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={docSearchQuery}
+                  onChange={e => handleDocSearch(e.target.value)}
+                  placeholder="문서 제목 검색..."
+                  className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  autoFocus
+                />
+              </div>
+              {docSearchLoading && (
+                <p className="text-xs text-gray-400 px-1">검색 중...</p>
+              )}
+              {docSearchResults.length > 0 && (
+                <div className="max-h-32 overflow-y-auto space-y-0.5">
+                  {docSearchResults.map(doc => (
+                    <button
+                      key={doc.id}
+                      type="button"
+                      onClick={() => addLinkedDoc(doc)}
+                      className={`w-full text-left text-sm px-2 py-1.5 rounded hover:bg-gray-100 flex items-center gap-2 ${
+                        linkedDocs.find(d => d.id === doc.id) ? 'opacity-50' : ''
+                      }`}
+                      disabled={!!linkedDocs.find(d => d.id === doc.id)}
+                    >
+                      <FileText size={14} className="text-gray-400 shrink-0" />
+                      <span className="truncate">{doc.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {docSearchQuery && !docSearchLoading && docSearchResults.length === 0 && (
+                <p className="text-xs text-gray-400 px-1">검색 결과 없음</p>
+              )}
+              <button
+                type="button"
+                onClick={() => { setShowDocSearch(false); setDocSearchQuery(''); setDocSearchResults([]) }}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                닫기
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Color picker with shortcuts */}
         <div>

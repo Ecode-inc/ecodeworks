@@ -6,6 +6,180 @@ import { generateId } from '../lib/id'
 
 type Variables = { user: AuthUser }
 
+interface RecurrenceRule {
+  freq: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  interval: number
+  byDay?: string[]    // "MO","TU","WE","TH","FR","SA","SU"
+  until?: string       // "YYYY-MM-DD"
+}
+
+const DAY_MAP: Record<string, number> = {
+  SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6,
+}
+
+function parseDate(s: string): Date {
+  return new Date(s)
+}
+
+function addDays(d: Date, n: number): Date {
+  const r = new Date(d)
+  r.setDate(r.getDate() + n)
+  return r
+}
+
+function addMonths(d: Date, n: number): Date {
+  const r = new Date(d)
+  r.setMonth(r.getMonth() + n)
+  return r
+}
+
+function addYears(d: Date, n: number): Date {
+  const r = new Date(d)
+  r.setFullYear(r.getFullYear() + n)
+  return r
+}
+
+function toDateStr(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * Expand recurring events into individual occurrences within a date range.
+ */
+function expandRecurringEvents(events: any[], rangeStart: string, rangeEnd: string): any[] {
+  const result: any[] = []
+  const rStart = parseDate(rangeStart)
+  const rEnd = parseDate(rangeEnd)
+
+  for (const ev of events) {
+    if (!ev.recurrence_rule) {
+      result.push(ev)
+      continue
+    }
+
+    let rule: RecurrenceRule
+    try {
+      rule = JSON.parse(ev.recurrence_rule)
+    } catch {
+      // Invalid rule, just include as-is
+      result.push(ev)
+      continue
+    }
+
+    const eventStart = parseDate(ev.start_at)
+    const eventEnd = parseDate(ev.end_at)
+    const durationMs = eventEnd.getTime() - eventStart.getTime()
+
+    const untilDate = rule.until ? parseDate(rule.until + 'T23:59:59') : rEnd
+    const effectiveEnd = untilDate < rEnd ? untilDate : rEnd
+    const interval = rule.interval || 1
+
+    if (rule.freq === 'weekly' && rule.byDay?.length) {
+      // For weekly with byDay: iterate week by week, check each target day
+      const targetDays = rule.byDay.map(d => DAY_MAP[d]).filter(d => d !== undefined)
+
+      // Start from the beginning of the week containing eventStart
+      let cursor = new Date(eventStart)
+      // Go to start of week (Sunday)
+      cursor.setDate(cursor.getDate() - cursor.getDay())
+
+      let weekCount = 0
+      while (cursor <= effectiveEnd) {
+        if (weekCount % interval === 0) {
+          for (const targetDay of targetDays) {
+            const occDate = new Date(cursor)
+            occDate.setDate(occDate.getDate() + targetDay)
+            // Set to same time as original event
+            occDate.setHours(eventStart.getHours(), eventStart.getMinutes(), eventStart.getSeconds(), eventStart.getMilliseconds())
+
+            // Must be >= original event start and within range
+            if (occDate < eventStart) continue
+            if (occDate > effectiveEnd) continue
+
+            const occEnd = new Date(occDate.getTime() + durationMs)
+
+            // Check if occurrence overlaps with the requested range
+            if (occEnd < rStart) continue
+            if (occDate > rEnd) continue
+
+            const occStartStr = occDate.toISOString()
+            const occEndStr = occEnd.toISOString()
+            const occDateStr = toDateStr(occDate)
+
+            result.push({
+              ...ev,
+              id: `${ev.id}_${occDateStr}`,
+              start_at: occStartStr,
+              end_at: occEndStr,
+              is_recurring: true,
+              recurring_parent_id: ev.id,
+            })
+          }
+        }
+        // Advance to next week
+        cursor.setDate(cursor.getDate() + 7)
+        weekCount++
+      }
+    } else {
+      // daily, weekly (without byDay), monthly, yearly
+      let cursor = new Date(eventStart)
+      let iterations = 0
+      const maxIterations = 3660 // safety limit (~10 years of daily)
+
+      while (cursor <= effectiveEnd && iterations < maxIterations) {
+        const occEnd = new Date(cursor.getTime() + durationMs)
+
+        // Check overlap with range
+        if (occEnd >= rStart && cursor <= rEnd) {
+          const occStartStr = cursor.toISOString()
+          const occEndStr = occEnd.toISOString()
+          const occDateStr = toDateStr(cursor)
+
+          if (iterations === 0) {
+            // First occurrence is the original event
+            result.push({
+              ...ev,
+              is_recurring: true,
+              recurring_parent_id: ev.id,
+            })
+          } else {
+            result.push({
+              ...ev,
+              id: `${ev.id}_${occDateStr}`,
+              start_at: occStartStr,
+              end_at: occEndStr,
+              is_recurring: true,
+              recurring_parent_id: ev.id,
+            })
+          }
+        }
+
+        // Advance cursor
+        iterations++
+        switch (rule.freq) {
+          case 'daily':
+            cursor = addDays(cursor, interval)
+            break
+          case 'weekly':
+            cursor = addDays(cursor, 7 * interval)
+            break
+          case 'monthly':
+            cursor = addMonths(cursor, interval)
+            break
+          case 'yearly':
+            cursor = addYears(cursor, interval)
+            break
+        }
+      }
+    }
+  }
+
+  return result
+}
+
 export const calendarRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 calendarRoutes.use('/*', authMiddleware)
@@ -93,7 +267,68 @@ calendarRoutes.get('/events', async (c) => {
     }
   }
 
-  return c.json({ events: results })
+  // Attach document counts and documents for all events
+  const allEvents = results || []
+  if (allEvents.length > 0) {
+    const eventIds = allEvents.map((ev: any) => ev.id)
+    const placeholders = eventIds.map(() => '?').join(',')
+    const { results: docLinks } = await c.env.DB.prepare(
+      `SELECT ed.event_id, ed.document_id, d.title
+       FROM event_documents ed
+       JOIN documents d ON d.id = ed.document_id
+       WHERE ed.event_id IN (${placeholders})`
+    ).bind(...eventIds).all()
+
+    const docMap = new Map<string, { id: string; title: string }[]>()
+    for (const dl of docLinks || []) {
+      const link = dl as any
+      const arr = docMap.get(link.event_id) || []
+      arr.push({ id: link.document_id, title: link.title })
+      docMap.set(link.event_id, arr)
+    }
+    for (const ev of allEvents) {
+      const docs = docMap.get((ev as any).id) || []
+      ;(ev as any).document_count = docs.length
+      ;(ev as any).documents = docs
+    }
+  }
+
+  // Expand recurring events
+  let expandedEvents = allEvents as any[]
+  if (start && end) {
+    expandedEvents = expandRecurringEvents(expandedEvents, start, end)
+  }
+
+  return c.json({ events: expandedEvents })
+})
+
+// Get single event detail
+calendarRoutes.get('/events/:id', async (c) => {
+  const eventId = c.req.param('id')
+
+  const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(eventId).first<any>()
+  if (!event) return c.json({ error: 'Event not found' }, 404)
+
+  // Attach documents
+  const { results: docLinks } = await c.env.DB.prepare(
+    `SELECT ed.document_id, d.title
+     FROM event_documents ed
+     JOIN documents d ON d.id = ed.document_id
+     WHERE ed.event_id = ?`
+  ).bind(eventId).all()
+
+  event.documents = (docLinks || []).map((dl: any) => ({ id: dl.document_id, title: dl.title }))
+  event.document_count = event.documents.length
+
+  // Attach shared targets
+  if (event.visibility === 'shared') {
+    const { results: targets } = await c.env.DB.prepare(
+      'SELECT * FROM event_shared_targets WHERE event_id = ?'
+    ).bind(eventId).all()
+    event.shared_targets = targets || []
+  }
+
+  return c.json({ event })
 })
 
 // Create event
@@ -111,7 +346,8 @@ calendarRoutes.post('/events', requirePermission('calendar', 'write'), async (c)
     attendee_ids?: string[]
     visibility?: 'personal' | 'department' | 'company' | 'shared'
     shared_target_ids?: string[]       // user IDs for selective sharing
-    share_with_executives?: boolean    // share with executives (임원진)
+    share_with_executives?: boolean    // share with executives
+    document_ids?: string[]
   }>()
 
   if (!body.title || !body.start_at || !body.end_at) {
@@ -162,6 +398,17 @@ calendarRoutes.post('/events', requirePermission('calendar', 'write'), async (c)
     }
   }
 
+  // Add document links
+  if (body.document_ids?.length) {
+    for (const docId of body.document_ids) {
+      stmts.push(
+        c.env.DB.prepare(
+          'INSERT INTO event_documents (event_id, document_id) VALUES (?, ?)'
+        ).bind(id, docId)
+      )
+    }
+  }
+
   await c.env.DB.batch(stmts)
 
   const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first()
@@ -192,16 +439,22 @@ calendarRoutes.patch('/events/:id', authMiddleware, async (c) => {
     }
   }
 
-  if (updates.length === 0) return c.json({ error: 'No fields to update' }, 400)
+  if (updates.length === 0 && !('document_ids' in body)) return c.json({ error: 'No fields to update' }, 400)
 
-  updates.push("updated_at = datetime('now')")
+  if (updates.length > 0) {
+    updates.push("updated_at = datetime('now')")
+  }
   values.push(eventId)
 
-  const stmts: D1PreparedStatement[] = [
-    c.env.DB.prepare(
-      `UPDATE events SET ${updates.join(', ')} WHERE id = ?`
-    ).bind(...values),
-  ]
+  const stmts: D1PreparedStatement[] = []
+
+  if (updates.length > 0) {
+    stmts.push(
+      c.env.DB.prepare(
+        `UPDATE events SET ${updates.join(', ')} WHERE id = ?`
+      ).bind(...values),
+    )
+  }
 
   // If visibility changed to 'shared', update shared targets
   const newVisibility = body['visibility'] as string | undefined
@@ -238,7 +491,31 @@ calendarRoutes.patch('/events/:id', authMiddleware, async (c) => {
     )
   }
 
-  await c.env.DB.batch(stmts)
+  // Update document links
+  if ('document_ids' in body) {
+    const documentIds = body.document_ids as string[] | undefined
+    // Delete old links
+    stmts.push(
+      c.env.DB.prepare('DELETE FROM event_documents WHERE event_id = ?').bind(eventId)
+    )
+    // Insert new links
+    if (documentIds?.length) {
+      for (const docId of documentIds) {
+        stmts.push(
+          c.env.DB.prepare(
+            'INSERT INTO event_documents (event_id, document_id) VALUES (?, ?)'
+          ).bind(eventId, docId)
+        )
+      }
+    }
+  }
+
+  if (stmts.length > 0) {
+    await c.env.DB.batch(stmts)
+  }
+
+  // Suppress unused variable warning
+  void user
 
   const updated = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(eventId).first()
   broadcastToDept(c.env, event.department_id, 'event:updated', updated)
