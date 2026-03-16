@@ -372,7 +372,13 @@ export function KanbanPage() {
               <div className="space-y-2 min-h-[50px]">
                 {getColumnTasks(col.id).map(task => {
                   const labels: string[] = (() => {
-                    try { return JSON.parse(task.labels || '[]') } catch { return [] }
+                    try {
+                      if (Array.isArray(task.labels)) return task.labels
+                      let parsed = JSON.parse(task.labels || '[]')
+                      // Handle double-encoded: "\"[]\"" → "[]" → []
+                      if (typeof parsed === 'string') parsed = JSON.parse(parsed)
+                      return Array.isArray(parsed) ? parsed : []
+                    } catch { return [] }
                   })()
                   return (
                     <div
@@ -524,8 +530,9 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
       setDueDate(task.due_date || '')
       setAssigneeId(task.assignee_id || '')
       try {
-        const labels: string[] = JSON.parse(task.labels || '[]')
-        setLabelsText(labels.join(', '))
+        let raw = Array.isArray(task.labels) ? task.labels : JSON.parse(task.labels || '[]')
+        if (typeof raw === 'string') raw = JSON.parse(raw)
+        setLabelsText(Array.isArray(raw) ? raw.join(', ') : '')
       } catch {
         setLabelsText('')
       }
