@@ -548,13 +548,18 @@ aiRoutes.post('/calendar/events', async (c) => {
     .bind(body.department_id, orgId).first()
   if (!dept) return c.json({ error: 'Department not found in organization' }, 404)
 
+  // Get a real user_id for FK
+  const ceoUser = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+  const apiUserId = ceoUser?.id || (await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>())?.id || ''
+
   const id = generateId()
   await c.env.DB.prepare(`
     INSERT INTO events (id, department_id, user_id, title, description, start_at, end_at, all_day, color, created_at, updated_at)
-    VALUES (?, ?, 'ai-api', ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
   `).bind(
     id,
     body.department_id,
+    apiUserId,
     body.title,
     body.description || '',
     body.start_at,
@@ -873,17 +878,21 @@ aiRoutes.post('/docs', async (c) => {
     .bind(body.department_id, orgId).first()
   if (!dept) return c.json({ error: 'Department not found in organization' }, 404)
 
+  const docCeoUser = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+  const docApiUserId = docCeoUser?.id || (await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>())?.id || ''
+
   const id = generateId()
   await c.env.DB.prepare(`
     INSERT INTO documents (id, department_id, parent_id, title, content, is_folder, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'ai-api', datetime('now'), datetime('now'))
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
   `).bind(
     id,
     body.department_id,
     body.parent_id || null,
     body.title,
     body.content || '',
-    body.is_folder ? 1 : 0
+    body.is_folder ? 1 : 0,
+    docApiUserId,
   ).run()
 
   const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first()
@@ -1481,24 +1490,48 @@ aiRoutes.get('/action/create-event', async (c) => {
 
   if (!title || !startAt || !endAt) return c.json({ error: 'title, start_at, end_at required' }, 400)
 
-  // Resolve user
-  let userId = directUserId || 'ai-api'
+  // Resolve user (must be a real user for FK constraint)
+  let userId = directUserId || null
   if (tgUserId) {
     const mapping = await c.env.DB.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, tgUserId).first<{ user_id: string }>()
     if (mapping?.user_id) userId = mapping.user_id
   }
+  // Fallback: use org's first user (CEO)
+  if (!userId) {
+    const firstUser = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+    if (!firstUser) {
+      const anyUser = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>()
+      userId = anyUser?.id || null
+    } else {
+      userId = firstUser.id
+    }
+  }
+  if (!userId) return c.json({ error: 'No user found in organization' }, 400)
 
   // If no dept_id, find user's first department
   let effectiveDeptId = deptId
-  if (!effectiveDeptId && userId !== 'ai-api') {
+  if (!effectiveDeptId) {
     const dept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(userId).first<{ department_id: string }>()
     effectiveDeptId = dept?.department_id || ''
   }
 
+  // Recurrence: freq, interval, byDay (comma-separated), until
+  const freq = c.req.query('freq')       // daily, weekly, monthly, yearly
+  const interval = c.req.query('interval') || '1'
+  const byDay = c.req.query('byDay')     // e.g. "MO,TU,FR"
+  const until = c.req.query('until')     // e.g. "2026-08-31"
+  let recurrenceRule: string | null = null
+  if (freq) {
+    const rule: Record<string, unknown> = { freq, interval: parseInt(interval) }
+    if (byDay) rule.byDay = byDay.split(',')
+    if (until) rule.until = until
+    recurrenceRule = JSON.stringify(rule)
+  }
+
   const id = generateId()
   await c.env.DB.prepare(
-    "INSERT INTO events (id, department_id, user_id, title, start_at, end_at, all_day, color, visibility, importance, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
-  ).bind(id, effectiveDeptId, userId, title, startAt, endAt, allDay ? 1 : 0, color, visibility, importance).run()
+    "INSERT INTO events (id, department_id, user_id, title, start_at, end_at, all_day, color, visibility, importance, recurrence_rule, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+  ).bind(id, effectiveDeptId, userId, title, startAt, endAt, allDay ? 1 : 0, color, visibility, importance, recurrenceRule).run()
 
   const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first()
   return c.json({ success: true, event })
@@ -1616,10 +1649,14 @@ aiRoutes.get('/action/create-doc', async (c) => {
     effectiveDeptId = dept?.id || ''
   }
 
+  // Get real user for FK
+  const docCeo = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+  const creatorId = docCeo?.id || (await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>())?.id || ''
+
   const id = generateId()
   await c.env.DB.prepare(
-    "INSERT INTO documents (id, department_id, parent_id, title, content, is_folder, created_by, visibility, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'ai-api', ?, datetime('now'), datetime('now'))"
-  ).bind(id, effectiveDeptId, parentId || null, title, content, isFolder ? 1 : 0, visibility).run()
+    "INSERT INTO documents (id, department_id, parent_id, title, content, is_folder, created_by, visibility, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+  ).bind(id, effectiveDeptId, parentId || null, title, content, isFolder ? 1 : 0, creatorId, visibility).run()
 
   const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first()
   return c.json({ success: true, document: doc })

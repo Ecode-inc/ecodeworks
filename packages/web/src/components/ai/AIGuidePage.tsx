@@ -45,7 +45,7 @@ const getActions = [
   {
     category: '📅 캘린더',
     items: [
-      { path: '/action/create-event', desc: '일정 생성 (개인일정 지원)', params: 'telegram_user_id or user_id, title, start_at (+09:00), end_at, all_day, color, visibility (personal/department/company), importance (normal/important), department_id (선택)' },
+      { path: '/action/create-event', desc: '일정 생성 (개인/반복 지원)', params: 'telegram_user_id or user_id, title, start_at (+09:00), end_at, all_day, color, visibility (personal/department/company), importance (normal/important), department_id (선택), freq (daily/weekly/monthly), byDay (MO,TU,FR), interval, until (2026-08-31)' },
     ],
   },
   {
