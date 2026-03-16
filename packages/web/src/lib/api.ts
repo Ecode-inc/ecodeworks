@@ -253,6 +253,27 @@ export const qaApi = {
   stats: () => request<{ stats: any }>('/qa/stats'),
 }
 
+// Attendance
+export const attendanceApi = {
+  today: () => request<{ record: any }>('/attendance/today'),
+  clockIn: (data?: { note?: string }) =>
+    request<{ record: any }>('/attendance/clock-in', { method: 'POST', body: JSON.stringify(data || {}) }),
+  clockOut: (data?: { note?: string }) =>
+    request<{ record: any }>('/attendance/clock-out', { method: 'POST', body: JSON.stringify(data || {}) }),
+  my: (params: { month?: string; start?: string; end?: string }) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString()
+    return request<{ records: any[] }>(`/attendance/my${qs ? '?' + qs : ''}`)
+  },
+  team: (params: { dept_id?: string; date?: string; month?: string }) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString()
+    return request<{ records: any[] }>(`/attendance/team${qs ? '?' + qs : ''}`)
+  },
+  stats: (params: { dept_id?: string; month?: string }) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString()
+    return request<{ stats: any }>(`/attendance/stats${qs ? '?' + qs : ''}`)
+  },
+}
+
 // AI API Key Management
 export const aiApi = {
   listKeys: () => request<{ keys: any[] }>('/ai/keys'),

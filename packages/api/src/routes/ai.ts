@@ -1073,6 +1073,131 @@ aiRoutes.get('/telegram/resolve-user', async (c) => {
 })
 
 // ──────────────────────────────────────────────────────────────
+// Attendance (via Telegram / AI)
+// ──────────────────────────────────────────────────────────────
+aiRoutes.post('/attendance/clock-in', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'attendance:write') && !checkScope(scopes, 'telegram:write')) {
+    return c.json({ error: 'Insufficient scope: attendance:write required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const body = await c.req.json<{
+    user_id?: string
+    telegram_user_id?: string
+    source?: string
+    note?: string
+  }>()
+
+  let userId = body.user_id
+  if (!userId && body.telegram_user_id) {
+    const mapping = await c.env.DB.prepare(
+      'SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1'
+    ).bind(orgId, body.telegram_user_id).first<{ user_id: string }>()
+    if (!mapping) return c.json({ error: 'Telegram user not mapped' }, 404)
+    userId = mapping.user_id
+  }
+
+  if (!userId) return c.json({ error: 'user_id or telegram_user_id required' }, 400)
+
+  const today = new Date().toISOString().slice(0, 10)
+  const now = new Date().toISOString()
+  const source = body.source || 'telegram'
+
+  const existing = await c.env.DB.prepare(
+    'SELECT * FROM attendance_records WHERE org_id = ? AND user_id = ? AND date = ?'
+  ).bind(orgId, userId, today).first()
+
+  if (existing && existing.clock_in) {
+    return c.json({ error: 'Already clocked in', record: existing }, 409)
+  }
+
+  const dept = await c.env.DB.prepare(
+    'SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1'
+  ).bind(userId).first<{ department_id: string }>()
+
+  const id = generateId()
+  await c.env.DB.prepare(`
+    INSERT INTO attendance_records (id, org_id, user_id, department_id, date, clock_in, clock_in_source, status, note)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'present', ?)
+  `).bind(id, orgId, userId, dept?.department_id || null, today, now, source, body.note || '').run()
+
+  const record = await c.env.DB.prepare('SELECT * FROM attendance_records WHERE id = ?').bind(id).first()
+  return c.json({ record }, 201)
+})
+
+aiRoutes.post('/attendance/clock-out', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'attendance:write') && !checkScope(scopes, 'telegram:write')) {
+    return c.json({ error: 'Insufficient scope: attendance:write required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const body = await c.req.json<{
+    user_id?: string
+    telegram_user_id?: string
+    source?: string
+    note?: string
+  }>()
+
+  let userId = body.user_id
+  if (!userId && body.telegram_user_id) {
+    const mapping = await c.env.DB.prepare(
+      'SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1'
+    ).bind(orgId, body.telegram_user_id).first<{ user_id: string }>()
+    if (!mapping) return c.json({ error: 'Telegram user not mapped' }, 404)
+    userId = mapping.user_id
+  }
+
+  if (!userId) return c.json({ error: 'user_id or telegram_user_id required' }, 400)
+
+  const today = new Date().toISOString().slice(0, 10)
+  const now = new Date().toISOString()
+  const source = body.source || 'telegram'
+
+  const existing = await c.env.DB.prepare(
+    'SELECT * FROM attendance_records WHERE org_id = ? AND user_id = ? AND date = ?'
+  ).bind(orgId, userId, today).first()
+
+  if (!existing) return c.json({ error: 'No clock-in record for today' }, 404)
+  if (existing.clock_out) return c.json({ error: 'Already clocked out', record: existing }, 409)
+
+  await c.env.DB.prepare(
+    `UPDATE attendance_records SET clock_out = ?, clock_out_source = ?, note = ?, updated_at = datetime('now') WHERE id = ?`
+  ).bind(now, source, body.note || (existing.note as string) || '', existing.id).run()
+
+  const record = await c.env.DB.prepare('SELECT * FROM attendance_records WHERE id = ?').bind(existing.id).first()
+  return c.json({ record })
+})
+
+aiRoutes.get('/attendance/team', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'attendance:read') && !checkScope(scopes, 'telegram:read')) {
+    return c.json({ error: 'Insufficient scope: attendance:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const deptId = c.req.query('dept_id')
+  const date = c.req.query('date') || new Date().toISOString().slice(0, 10)
+
+  let query = `
+    SELECT ar.*, u.name as user_name, u.email as user_email
+    FROM attendance_records ar
+    JOIN users u ON u.id = ar.user_id
+    WHERE ar.org_id = ? AND ar.date = ?`
+  const params: unknown[] = [orgId, date]
+
+  if (deptId) {
+    query += ' AND ar.department_id = ?'
+    params.push(deptId)
+  }
+
+  query += ' ORDER BY u.name LIMIT 200'
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ records: results })
+})
+
+// ──────────────────────────────────────────────────────────────
 // API key management (requires admin scope)
 // ──────────────────────────────────────────────────────────────
 aiRoutes.post('/keys', async (c) => {

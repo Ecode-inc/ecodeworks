@@ -19,6 +19,7 @@ import { superAdminRoutes } from './routes/superAdmin'
 import { joinRequestsRoutes } from './routes/joinRequests'
 import { positionsRoutes } from './routes/positions'
 import { mcpRoutes } from './routes/mcp'
+import { attendanceRoutes } from './routes/attendance'
 import { WebSocketRoom } from './durable/WebSocketRoom'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -74,6 +75,9 @@ app.route('/api/super', superAdminRoutes)
 
 // Phase 10: MCP (Model Context Protocol) server
 app.route('/api/mcp', mcpRoutes)
+
+// Attendance
+app.route('/api/attendance', attendanceRoutes)
 
 // Positions
 app.route('/api/positions', positionsRoutes)

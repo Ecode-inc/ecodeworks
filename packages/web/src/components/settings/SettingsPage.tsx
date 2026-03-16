@@ -568,13 +568,23 @@ function MembersTab() {
     }
   }
 
-  const handleAddDept = async (memberId: string, deptId: string) => {
+  const handleAddDept = async (memberId: string, deptId: string, role: string = 'member') => {
     try {
-      await membersApi.addDepartment(memberId, deptId)
+      await membersApi.addDepartment(memberId, deptId, role)
       addToast('success', '부서가 배정되었습니다.')
       load()
     } catch (err: any) {
       addToast('error', '배정 실패', err.message)
+    }
+  }
+
+  const handleChangeDeptRole = async (memberId: string, deptId: string, newRole: string) => {
+    try {
+      await membersApi.addDepartment(memberId, deptId, newRole)
+      addToast('success', '부서 역할이 변경되었습니다.')
+      load()
+    } catch (err: any) {
+      addToast('error', '역할 변경 실패', err.message)
     }
   }
 
@@ -664,6 +674,19 @@ function MembersTab() {
                     style={{ backgroundColor: (d.color || '#6366f1') + '22', color: d.color || '#6366f1' }}
                   >
                     {d.name}
+                    {d.role === 'head' && (
+                      <span className="font-bold text-amber-600" title="부서장">★</span>
+                    )}
+                    <select
+                      className="bg-transparent text-xs border-none outline-none cursor-pointer pl-0.5"
+                      style={{ color: d.color || '#6366f1' }}
+                      value={d.role}
+                      onChange={(e) => handleChangeDeptRole(m.id, d.id, e.target.value)}
+                      title="역할 변경"
+                    >
+                      <option value="member">멤버</option>
+                      <option value="head">부서장</option>
+                    </select>
                     <button
                       onClick={() => handleRemoveDept(m.id, d.id)}
                       className="hover:text-red-600 font-bold leading-none"

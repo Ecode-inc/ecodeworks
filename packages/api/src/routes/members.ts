@@ -16,14 +16,33 @@ membersRoutes.get('/', async (c) => {
 
   const { results } = await c.env.DB.prepare(`
     SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.position_id, u.created_at,
-           p.name as position_name, p.level as position_level
+           p.name as position_name, p.level as position_level,
+           GROUP_CONCAT(d.id || '::' || d.name || '::' || COALESCE(d.color,'') || '::' || ud.role, '|||') as dept_info
     FROM users u
     LEFT JOIN positions p ON p.id = u.position_id
+    LEFT JOIN user_departments ud ON ud.user_id = u.id
+    LEFT JOIN departments d ON d.id = ud.department_id
     WHERE u.org_id = ?
+    GROUP BY u.id
     ORDER BY u.created_at
   `).bind(user.org_id).all()
 
-  return c.json({ members: results })
+  const members = results.map((row: any) => {
+    const departments: { id: string; name: string; color: string; role: string }[] = []
+    if (row.dept_info) {
+      const parts = (row.dept_info as string).split('|||')
+      for (const part of parts) {
+        const [id, name, color, role] = part.split('::')
+        if (id && name) {
+          departments.push({ id, name, color: color || '', role: role || 'member' })
+        }
+      }
+    }
+    const { dept_info: _, ...rest } = row
+    return { ...rest, departments }
+  })
+
+  return c.json({ members })
 })
 
 // Get member with departments

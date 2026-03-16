@@ -13,6 +13,7 @@ import { KanbanPage } from './components/kanban/KanbanPage'
 import { DocsPage } from './components/docs/DocsPage'
 import { VaultPage } from './components/vault/VaultPage'
 import { QAPage } from './components/qa/QAPage'
+import { AttendancePage } from './components/attendance/AttendancePage'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { AIPage } from './components/ai/AIPage'
 import { AIGuidePage } from './components/ai/AIGuidePage'
@@ -99,6 +100,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/attendance" element={<AttendancePage />} />
         <Route path="/kanban" element={<KanbanPage />} />
         <Route path="/docs" element={<DocsPage />} />
         <Route path="/vault" element={<VaultPage />} />

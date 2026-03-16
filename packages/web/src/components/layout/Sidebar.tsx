@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Calendar,
+  Clock,
   KanbanSquare,
   FileText,
   KeyRound,
@@ -22,6 +23,7 @@ interface SidebarProps {
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: '대시보드' },
   { path: '/calendar', icon: Calendar, label: '캘린더' },
+  { path: '/attendance', icon: Clock, label: '근태관리' },
   { path: '/kanban', icon: KanbanSquare, label: '칸반' },
   { path: '/docs', icon: FileText, label: '문서' },
   { path: '/vault', icon: KeyRound, label: '비밀번호 금고' },

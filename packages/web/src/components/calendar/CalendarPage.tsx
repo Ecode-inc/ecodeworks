@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useOrgStore } from '../../stores/orgStore'
-import { calendarApi, membersApi } from '../../lib/api'
+import { calendarApi, membersApi, attendanceApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
@@ -45,6 +45,8 @@ export function CalendarPage() {
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
   const [googleConnected, setGoogleConnected] = useState(false)
   const [googleAvailable, setGoogleAvailable] = useState(false)
+  const [showAttendance, setShowAttendance] = useState(false)
+  const [attendanceRecords, setAttendanceRecords] = useState<{date: string; status: string}[]>([])
 
   const loadEvents = useCallback(async () => {
     const start = currentDate.startOf('month').subtract(7, 'day').toISOString()
@@ -67,6 +69,16 @@ export function CalendarPage() {
       setGoogleAvailable(false)
     })
   }, [])
+
+  useEffect(() => {
+    if (!showAttendance) return
+    const month = currentDate.format('YYYY-MM')
+    attendanceApi.my({ month }).then(res => {
+      setAttendanceRecords((res.records as {date: string; status: string}[]) || [])
+    }).catch(() => {
+      setAttendanceRecords([])
+    })
+  }, [showAttendance, currentDate])
 
   const handleGoogleSync = async () => {
     if (!currentDeptId) {
@@ -128,6 +140,15 @@ export function CalendarPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none mr-2">
+            <input
+              type="checkbox"
+              checked={showAttendance}
+              onChange={e => setShowAttendance(e.target.checked)}
+              className="rounded"
+            />
+            근태 표시
+          </label>
           {googleAvailable && (
             googleConnected ? (
               <Button variant="secondary" size="sm" onClick={handleGoogleSync}>
@@ -195,6 +216,24 @@ export function CalendarPage() {
                 {dayEvents.length > 3 && (
                   <span className="text-xs text-gray-400">+{dayEvents.length - 3}</span>
                 )}
+                {showAttendance && (() => {
+                  const dayStr = day.format('YYYY-MM-DD')
+                  const aRec = attendanceRecords.find(r => r.date === dayStr)
+                  if (!aRec) return null
+                  const dotColorMap: Record<string, string> = {
+                    present: 'bg-green-500',
+                    late: 'bg-yellow-500',
+                    half_day: 'bg-orange-500',
+                    absent: 'bg-red-500',
+                    remote: 'bg-blue-500',
+                    vacation: 'bg-purple-500',
+                  }
+                  return (
+                    <div className="flex justify-center mt-0.5">
+                      <span className={`w-2 h-2 rounded-full ${dotColorMap[aRec.status] || 'bg-gray-400'}`} title={aRec.status} />
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}
