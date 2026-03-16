@@ -15,7 +15,7 @@ membersRoutes.get('/', async (c) => {
   const user = c.get('user')
 
   const { results } = await c.env.DB.prepare(`
-    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.created_at
+    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.created_at
     FROM users u
     WHERE u.org_id = ?
     ORDER BY u.created_at
@@ -30,7 +30,7 @@ membersRoutes.get('/:id', async (c) => {
   const memberId = c.req.param('id')
 
   const member = await c.env.DB.prepare(
-    'SELECT id, email, name, avatar_url, is_ceo, created_at FROM users WHERE id = ? AND org_id = ?'
+    'SELECT id, email, name, avatar_url, is_ceo, is_admin, created_at FROM users WHERE id = ? AND org_id = ?'
   ).bind(memberId, user.org_id).first()
 
   if (!member) {
@@ -65,13 +65,13 @@ membersRoutes.post('/', async (c) => {
   }
 
   // Check permissions
-  if (!user.is_ceo) {
+  if (!user.is_ceo && !user.is_admin) {
     const membership = await c.env.DB.prepare(
       'SELECT role FROM user_departments WHERE user_id = ? AND department_id = ?'
     ).bind(user.id, departmentId).first<{ role: string }>()
 
     if (membership?.role !== 'head') {
-      return c.json({ error: 'Only CEO or department head can invite members' }, 403)
+      return c.json({ error: 'Only CEO, admin, or department head can invite members' }, 403)
     }
   }
 
@@ -100,6 +100,57 @@ membersRoutes.post('/', async (c) => {
   }, 201)
 })
 
+// Update member (CEO or admin only)
+membersRoutes.patch('/:id', async (c) => {
+  const user = c.get('user')
+  const memberId = c.req.param('id')
+
+  if (!user.is_ceo && !user.is_admin) {
+    return c.json({ error: 'Only CEO or admin can update members' }, 403)
+  }
+
+  // Verify member belongs to the same org
+  const member = await c.env.DB.prepare(
+    'SELECT id FROM users WHERE id = ? AND org_id = ?'
+  ).bind(memberId, user.org_id).first()
+
+  if (!member) {
+    return c.json({ error: 'Member not found' }, 404)
+  }
+
+  const { name, is_admin: newIsAdmin } = await c.req.json<{
+    name?: string
+    is_admin?: number
+  }>()
+
+  const updates: string[] = []
+  const values: unknown[] = []
+
+  if (name !== undefined) { updates.push('name = ?'); values.push(name) }
+  if (newIsAdmin !== undefined) {
+    // Only CEO can grant/revoke admin
+    if (!user.is_ceo) {
+      return c.json({ error: 'Only CEO can change admin status' }, 403)
+    }
+    updates.push('is_admin = ?'); values.push(newIsAdmin)
+  }
+
+  if (updates.length === 0) {
+    return c.json({ error: 'No fields to update' }, 400)
+  }
+
+  values.push(memberId, user.org_id)
+  await c.env.DB.prepare(
+    `UPDATE users SET ${updates.join(', ')} WHERE id = ? AND org_id = ?`
+  ).bind(...values).run()
+
+  const updated = await c.env.DB.prepare(
+    'SELECT id, email, name, avatar_url, is_ceo, is_admin, created_at FROM users WHERE id = ? AND org_id = ?'
+  ).bind(memberId, user.org_id).first()
+
+  return c.json({ member: updated })
+})
+
 // Add member to department
 membersRoutes.post('/:id/departments', async (c) => {
   const user = c.get('user')
@@ -110,8 +161,8 @@ membersRoutes.post('/:id/departments', async (c) => {
     role?: 'head' | 'member'
   }>()
 
-  if (!user.is_ceo) {
-    return c.json({ error: 'Only CEO can assign departments' }, 403)
+  if (!user.is_ceo && !user.is_admin) {
+    return c.json({ error: 'Only CEO or admin can assign departments' }, 403)
   }
 
   await c.env.DB.prepare(
@@ -125,8 +176,8 @@ membersRoutes.post('/:id/departments', async (c) => {
 // Remove member from department
 membersRoutes.delete('/:id/departments/:deptId', async (c) => {
   const user = c.get('user')
-  if (!user.is_ceo) {
-    return c.json({ error: 'Only CEO can remove department assignments' }, 403)
+  if (!user.is_ceo && !user.is_admin) {
+    return c.json({ error: 'Only CEO or admin can remove department assignments' }, 403)
   }
 
   const memberId = c.req.param('id')

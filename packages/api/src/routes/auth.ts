@@ -72,14 +72,14 @@ authRoutes.post('/register', async (c) => {
 
   // Generate tokens
   const accessToken = await signJWT(
-    { sub: userId, org: orgId, email, name, is_ceo: true },
+    { sub: userId, org: orgId, email, name, is_ceo: true, is_admin: true },
     c.env.JWT_SECRET,
     ACCESS_TOKEN_EXPIRES
   )
   const refreshToken = await generateRefreshToken(c.env.DB, userId)
 
   return c.json({
-    user: { id: userId, email, name, is_ceo: true, org_id: orgId },
+    user: { id: userId, email, name, is_ceo: true, is_admin: true, org_id: orgId },
     organization: { id: orgId, name: orgName, slug },
     accessToken,
     refreshToken,
@@ -108,22 +108,22 @@ authRoutes.post('/login', async (c) => {
 
   // Find user
   const user = await c.env.DB.prepare(
-    'SELECT id, email, password_hash, name, is_ceo FROM users WHERE org_id = ? AND email = ?'
-  ).bind(org.id, email).first<{ id: string; email: string; password_hash: string; name: string; is_ceo: number }>()
+    'SELECT id, email, password_hash, name, is_ceo, is_admin FROM users WHERE org_id = ? AND email = ?'
+  ).bind(org.id, email).first<{ id: string; email: string; password_hash: string; name: string; is_ceo: number; is_admin: number }>()
 
   if (!user || !(await verifyPassword(password, user.password_hash))) {
     return c.json({ error: 'Invalid email or password' }, 401)
   }
 
   const accessToken = await signJWT(
-    { sub: user.id, org: org.id, email: user.email, name: user.name, is_ceo: !!user.is_ceo },
+    { sub: user.id, org: org.id, email: user.email, name: user.name, is_ceo: !!user.is_ceo, is_admin: !!user.is_admin },
     c.env.JWT_SECRET,
     ACCESS_TOKEN_EXPIRES
   )
   const refreshToken = await generateRefreshToken(c.env.DB, user.id)
 
   return c.json({
-    user: { id: user.id, email: user.email, name: user.name, is_ceo: !!user.is_ceo, org_id: org.id },
+    user: { id: user.id, email: user.email, name: user.name, is_ceo: !!user.is_ceo, is_admin: !!user.is_admin, org_id: org.id },
     organization: { id: org.id, name: org.name, slug: org.slug },
     accessToken,
     refreshToken,
@@ -157,15 +157,15 @@ authRoutes.post('/refresh', async (c) => {
 
   // Get user
   const user = await c.env.DB.prepare(
-    'SELECT id, org_id, email, name, is_ceo FROM users WHERE id = ?'
-  ).bind(stored.user_id).first<{ id: string; org_id: string; email: string; name: string; is_ceo: number }>()
+    'SELECT id, org_id, email, name, is_ceo, is_admin FROM users WHERE id = ?'
+  ).bind(stored.user_id).first<{ id: string; org_id: string; email: string; name: string; is_ceo: number; is_admin: number }>()
 
   if (!user) {
     return c.json({ error: 'User not found' }, 404)
   }
 
   const accessToken = await signJWT(
-    { sub: user.id, org: user.org_id, email: user.email, name: user.name, is_ceo: !!user.is_ceo },
+    { sub: user.id, org: user.org_id, email: user.email, name: user.name, is_ceo: !!user.is_ceo, is_admin: !!user.is_admin },
     c.env.JWT_SECRET,
     ACCESS_TOKEN_EXPIRES
   )
@@ -179,7 +179,7 @@ authRoutes.get('/me', authMiddleware, async (c) => {
   const authUser = c.get('user')
 
   const user = await c.env.DB.prepare(
-    'SELECT id, org_id, email, name, avatar_url, is_ceo FROM users WHERE id = ?'
+    'SELECT id, org_id, email, name, avatar_url, is_ceo, is_admin FROM users WHERE id = ?'
   ).bind(authUser.id).first()
 
   if (!user) {

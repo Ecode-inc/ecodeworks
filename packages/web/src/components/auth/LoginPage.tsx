@@ -20,17 +20,18 @@ function detectOrgSlug(): string | null {
 
   // Custom domain → slug mapping (add entries as needed)
   const domainMap: Record<string, string> = {
-    'app.ecode.co.kr': '이코드',
-    'ecode.co.kr': '이코드',
+    'work.e-code.kr': '이코드',
     'ecode-internal.pages.dev': '이코드',
   }
   if (domainMap[host]) return domainMap[host]
 
-  // Subdomain detection: xxx.ecode.co.kr etc.
+  // Subdomain detection: xxx.example.com etc.
   // Skip *.pages.dev (project name, not org slug)
+  // Skip *.e-code.kr (handled by domainMap above)
   const parts = host.split('.')
   const isPagesDev = host.endsWith('.pages.dev')
-  if (parts.length >= 3 && !isPagesDev) {
+  const isEcodeKr = host.endsWith('.e-code.kr')
+  if (parts.length >= 3 && !isPagesDev && !isEcodeKr) {
     const sub = parts[0]
     if (sub !== 'www') {
       return sub
@@ -47,6 +48,7 @@ export function LoginPage({ onSwitchToRegister }: LoginPageProps) {
   const [orgSlug, setOrgSlug] = useState(detected || '')
   const [email, setEmail] = useState(localStorage.getItem('lastEmail') || '')
   const [password, setPassword] = useState('')
+  const [rememberLogin, setRememberLogin] = useState(localStorage.getItem('rememberLogin') === 'true')
   const orgAutoDetected = !!detected
 
   const handleSubmit = async (e: FormEvent) => {
@@ -55,7 +57,13 @@ export function LoginPage({ onSwitchToRegister }: LoginPageProps) {
       await login(email, password, orgSlug)
       // Save for next time
       localStorage.setItem('lastOrgSlug', orgSlug)
-      localStorage.setItem('lastEmail', email)
+      if (rememberLogin) {
+        localStorage.setItem('lastEmail', email)
+        localStorage.setItem('rememberLogin', 'true')
+      } else {
+        localStorage.removeItem('lastEmail')
+        localStorage.removeItem('rememberLogin')
+      }
     } catch (err: any) {
       useToastStore.getState().addToast('error', '로그인 실패', err.message)
     }
@@ -101,6 +109,15 @@ export function LoginPage({ onSwitchToRegister }: LoginPageProps) {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={rememberLogin}
+              onChange={(e) => setRememberLogin(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            로그인 정보 저장
+          </label>
           <Button type="submit" loading={loading} className="w-full">
             로그인
           </Button>

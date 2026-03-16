@@ -95,6 +95,30 @@ export const orgApi = {
   get: () => request<{ organization: any }>('/organizations'),
   update: (data: { name: string }) =>
     request<{ organization: any }>('/organizations', { method: 'PATCH', body: JSON.stringify(data) }),
+  updateSlug: (slug: string) =>
+    request<{ organization: any }>('/organizations/slug', { method: 'PATCH', body: JSON.stringify({ slug }) }),
+  uploadLogo: async (file: File): Promise<{ logo_url: string }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const headers: Record<string, string> = {}
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`
+    }
+
+    const res = await fetch(`${API_BASE}/organizations/logo`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    })
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error((error as any).error || `HTTP ${res.status}`)
+    }
+
+    return res.json()
+  },
 }
 
 // Departments
@@ -120,6 +144,8 @@ export const membersApi = {
     request<{ success: boolean }>(`/members/${id}/departments`, { method: 'POST', body: JSON.stringify({ departmentId, role }) }),
   removeDepartment: (id: string, deptId: string) =>
     request<{ success: boolean }>(`/members/${id}/departments/${deptId}`, { method: 'DELETE' }),
+  update: (id: string, data: { is_admin?: boolean }) =>
+    request<{ member: any }>(`/members/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 }
 
 // Calendar
@@ -212,4 +238,37 @@ export const qaApi = {
   issues: (projectId: string, status?: string) =>
     request<{ issues: any[] }>(`/qa/projects/${projectId}/issues${status ? `?status=${status}` : ''}`),
   stats: () => request<{ stats: any }>('/qa/stats'),
+}
+
+// AI API Key Management
+export const aiApi = {
+  listKeys: () => request<{ keys: any[] }>('/ai/keys'),
+  createKey: (data: { name: string; scopes: string[] }) =>
+    request<{ id: string; name: string; key: string; prefix: string; scopes: string[] }>('/ai/keys', { method: 'POST', body: JSON.stringify(data) }),
+  deleteKey: (id: string) =>
+    request<{ success: boolean }>(`/ai/keys/${id}`, { method: 'DELETE' }),
+}
+
+// Telegram Integration
+export const telegramApi = {
+  listChats: () => request<{ chats: any[] }>('/telegram/chats'),
+  createChat: (data: { chat_id: string; chat_type: string; chat_title: string }) =>
+    request<{ chat: any }>('/telegram/chats', { method: 'POST', body: JSON.stringify(data) }),
+  updateChat: (id: string, data: any) =>
+    request<{ chat: any }>(`/telegram/chats/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteChat: (id: string) =>
+    request<{ success: boolean }>(`/telegram/chats/${id}`, { method: 'DELETE' }),
+  listMappings: () => request<{ mappings: any[] }>('/telegram/mappings'),
+  createMapping: (data: any) =>
+    request<{ mapping: any }>('/telegram/mappings', { method: 'POST', body: JSON.stringify(data) }),
+  updateMapping: (id: string, data: any) =>
+    request<{ mapping: any }>(`/telegram/mappings/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteMapping: (id: string) =>
+    request<{ success: boolean }>(`/telegram/mappings/${id}`, { method: 'DELETE' }),
+  listLogs: (params?: { chat_id?: string; telegram_user_id?: string; limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams(
+      Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => [k, String(v)])
+    ).toString()
+    return request<{ logs: any[] }>(`/telegram/logs${qs ? '?' + qs : ''}`)
+  },
 }

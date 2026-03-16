@@ -242,11 +242,16 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
 
   useEffect(() => {
     if (event) {
+      const isAllDay = !!event.all_day
       setTitle(event.title)
       setDescription(event.description || '')
-      setStartAt(dayjs(event.start_at).format('YYYY-MM-DDTHH:mm'))
-      setEndAt(dayjs(event.end_at).format('YYYY-MM-DDTHH:mm'))
-      setAllDay(!!event.all_day)
+      setStartAt(isAllDay
+        ? dayjs(event.start_at).format('YYYY-MM-DD')
+        : dayjs(event.start_at).format('YYYY-MM-DDTHH:mm'))
+      setEndAt(isAllDay
+        ? dayjs(event.end_at).format('YYYY-MM-DD')
+        : dayjs(event.end_at).format('YYYY-MM-DDTHH:mm'))
+      setAllDay(isAllDay)
       setColor(event.color || '#3B82F6')
       setVisibility(event.visibility || 'department')
       // Restore shared targets from event
@@ -276,6 +281,19 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
     }
   }, [event, open])
 
+  const handleAllDayToggle = (checked: boolean) => {
+    if (checked) {
+      // Convert datetime-local to date format
+      setStartAt(startAt.slice(0, 10))
+      setEndAt(endAt.slice(0, 10))
+    } else {
+      // Convert date to datetime-local format, add default times
+      setStartAt(startAt.slice(0, 10) + 'T09:00')
+      setEndAt(endAt.slice(0, 10) + 'T10:00')
+    }
+    setAllDay(checked)
+  }
+
   // Load members when 'shared' visibility is selected
   useEffect(() => {
     if (visibility === 'shared' && !membersLoaded) {
@@ -296,11 +314,21 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
     if (!title || !deptId) return
     setLoading(true)
     try {
+      let finalStartAt: string
+      let finalEndAt: string
+      if (allDay) {
+        // Set start to beginning of day, end to end of day
+        finalStartAt = new Date(startAt + 'T00:00:00').toISOString()
+        finalEndAt = new Date(endAt + 'T23:59:59').toISOString()
+      } else {
+        finalStartAt = new Date(startAt).toISOString()
+        finalEndAt = new Date(endAt).toISOString()
+      }
       const data: Record<string, unknown> = {
         title,
         description,
-        start_at: new Date(startAt).toISOString(),
-        end_at: new Date(endAt).toISOString(),
+        start_at: finalStartAt,
+        end_at: finalEndAt,
         all_day: allDay,
         color,
         visibility,
@@ -338,14 +366,14 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
     <Modal open={open} onClose={onClose} title={event ? '일정 수정' : '일정 추가'}>
       <div className="space-y-4">
         <Input label="제목" value={title} onChange={e => setTitle(e.target.value)} required />
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="시작" type="datetime-local" value={startAt} onChange={e => setStartAt(e.target.value)} />
-          <Input label="종료" type="datetime-local" value={endAt} onChange={e => setEndAt(e.target.value)} />
-        </div>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={allDay} onChange={e => setAllDay(e.target.checked)} className="rounded" />
+          <input type="checkbox" checked={allDay} onChange={e => handleAllDayToggle(e.target.checked)} className="rounded" />
           종일
         </label>
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="시작" type={allDay ? 'date' : 'datetime-local'} value={startAt} onChange={e => setStartAt(e.target.value)} />
+          <Input label="종료" type={allDay ? 'date' : 'datetime-local'} value={endAt} onChange={e => setEndAt(e.target.value)} />
+        </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">색상</label>
           <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-10 h-8 rounded cursor-pointer" />

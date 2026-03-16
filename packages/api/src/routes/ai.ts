@@ -1,3 +1,21 @@
+/**
+ * AI API Routes
+ *
+ * SAFETY RESTRICTIONS:
+ * - DELETE operations are BLOCKED on all resources (no bulk or single delete)
+ * - Vault passwords are NEVER exposed; only metadata (service_name, url, created_at) is accessible
+ * - User/member/department/organization modifications are BLOCKED
+ * - DROP/TRUNCATE or any destructive data operations are not available
+ *
+ * Available scopes:
+ *   calendar:read, calendar:write
+ *   kanban:read, kanban:write
+ *   docs:read, docs:write
+ *   vault:read (metadata only, no decryption)
+ *   members:read
+ *   departments:read
+ */
+
 import { Hono } from 'hono'
 import type { Env } from '../types'
 import { apiKeyMiddleware } from '../middleware/apiKey'
@@ -14,44 +32,401 @@ aiRoutes.get('/openapi.json', (c) => {
     info: {
       title: 'ecode Internal API',
       version: '1.0.0',
-      description: 'AI assistant API for ecode internal platform',
+      description: [
+        'AI assistant API for ecode internal platform.',
+        '',
+        'SAFETY RESTRICTIONS:',
+        '- DELETE operations are BLOCKED on all resources',
+        '- Vault passwords are NEVER exposed (metadata only)',
+        '- User/member/department/organization modifications are BLOCKED',
+        '- DROP/TRUNCATE or any destructive data operations are not available',
+      ].join('\n'),
     },
     servers: [{ url: '/api/v1' }],
     paths: {
+      // ── Calendar ──────────────────────────────────────────────
       '/calendar/events': {
         get: {
           summary: 'List calendar events',
+          operationId: 'listCalendarEvents',
+          tags: ['Calendar'],
           parameters: [
-            { name: 'dept_id', in: 'query', schema: { type: 'string' } },
-            { name: 'start', in: 'query', schema: { type: 'string', format: 'date-time' } },
-            { name: 'end', in: 'query', schema: { type: 'string', format: 'date-time' } },
+            { name: 'dept_id', in: 'query', schema: { type: 'string' }, description: 'Filter by department ID' },
+            { name: 'start', in: 'query', schema: { type: 'string', format: 'date-time' }, description: 'Start of date range (ISO 8601)' },
+            { name: 'end', in: 'query', schema: { type: 'string', format: 'date-time' }, description: 'End of date range (ISO 8601)' },
           ],
-          responses: { '200': { description: 'List of events' } },
+          responses: {
+            '200': {
+              description: 'List of calendar events',
+              content: { 'application/json': { schema: { type: 'object', properties: {
+                events: { type: 'array', items: { '$ref': '#/components/schemas/CalendarEvent' } },
+              } } } },
+            },
+          },
+        },
+        post: {
+          summary: 'Create a calendar event',
+          operationId: 'createCalendarEvent',
+          tags: ['Calendar'],
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { '$ref': '#/components/schemas/CalendarEventInput' } } },
+          },
+          responses: {
+            '201': { description: 'Event created', content: { 'application/json': { schema: { '$ref': '#/components/schemas/CalendarEvent' } } } },
+          },
         },
       },
+      '/calendar/events/{id}': {
+        get: {
+          summary: 'Get a calendar event by ID',
+          operationId: 'getCalendarEvent',
+          tags: ['Calendar'],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: { '200': { description: 'Calendar event detail' } },
+        },
+        patch: {
+          summary: 'Update a calendar event',
+          operationId: 'updateCalendarEvent',
+          tags: ['Calendar'],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { '$ref': '#/components/schemas/CalendarEventInput' } } },
+          },
+          responses: { '200': { description: 'Event updated' } },
+        },
+      },
+      // ── Tasks ─────────────────────────────────────────────────
       '/tasks': {
         get: {
           summary: 'List tasks',
+          operationId: 'listTasks',
+          tags: ['Tasks'],
           parameters: [
-            { name: 'board_id', in: 'query', schema: { type: 'string' } },
-            { name: 'assignee_id', in: 'query', schema: { type: 'string' } },
+            { name: 'board_id', in: 'query', schema: { type: 'string' }, description: 'Filter by board ID' },
+            { name: 'assignee_id', in: 'query', schema: { type: 'string' }, description: 'Filter by assignee user ID' },
           ],
-          responses: { '200': { description: 'List of tasks' } },
+          responses: {
+            '200': {
+              description: 'List of tasks',
+              content: { 'application/json': { schema: { type: 'object', properties: {
+                tasks: { type: 'array', items: { '$ref': '#/components/schemas/Task' } },
+              } } } },
+            },
+          },
+        },
+        post: {
+          summary: 'Create a task',
+          operationId: 'createTask',
+          tags: ['Tasks'],
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { '$ref': '#/components/schemas/TaskInput' } } },
+          },
+          responses: { '201': { description: 'Task created' } },
         },
       },
+      '/tasks/{id}': {
+        get: {
+          summary: 'Get a task by ID',
+          operationId: 'getTask',
+          tags: ['Tasks'],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: { '200': { description: 'Task detail' } },
+        },
+        patch: {
+          summary: 'Update a task',
+          operationId: 'updateTask',
+          tags: ['Tasks'],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { '$ref': '#/components/schemas/TaskInput' } } },
+          },
+          responses: { '200': { description: 'Task updated' } },
+        },
+      },
+      // ── Boards ────────────────────────────────────────────────
+      '/boards': {
+        get: {
+          summary: 'List boards',
+          operationId: 'listBoards',
+          tags: ['Boards'],
+          parameters: [
+            { name: 'dept_id', in: 'query', schema: { type: 'string' }, description: 'Filter by department ID' },
+          ],
+          responses: {
+            '200': {
+              description: 'List of boards',
+              content: { 'application/json': { schema: { type: 'object', properties: {
+                boards: { type: 'array', items: { '$ref': '#/components/schemas/Board' } },
+              } } } },
+            },
+          },
+        },
+      },
+      '/boards/{id}': {
+        get: {
+          summary: 'Get a board with columns',
+          operationId: 'getBoard',
+          tags: ['Boards'],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: { '200': { description: 'Board detail with columns' } },
+        },
+      },
+      // ── Documents ─────────────────────────────────────────────
       '/docs/search': {
         get: {
-          summary: 'Search documents',
+          summary: 'Search documents by full-text query',
+          operationId: 'searchDocuments',
+          tags: ['Documents'],
           parameters: [
-            { name: 'q', in: 'query', required: true, schema: { type: 'string' } },
+            { name: 'q', in: 'query', required: true, schema: { type: 'string' }, description: 'Search query' },
           ],
-          responses: { '200': { description: 'Search results' } },
+          responses: {
+            '200': {
+              description: 'Search results with snippets',
+              content: { 'application/json': { schema: { type: 'object', properties: {
+                documents: { type: 'array', items: { '$ref': '#/components/schemas/DocumentSearchResult' } },
+              } } } },
+            },
+          },
+        },
+      },
+      '/docs/{id}': {
+        get: {
+          summary: 'Get a document by ID',
+          operationId: 'getDocument',
+          tags: ['Documents'],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: { '200': { description: 'Document detail' } },
+        },
+        patch: {
+          summary: 'Update a document',
+          operationId: 'updateDocument',
+          tags: ['Documents'],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { '$ref': '#/components/schemas/DocumentInput' } } },
+          },
+          responses: { '200': { description: 'Document updated' } },
+        },
+      },
+      '/docs': {
+        post: {
+          summary: 'Create a document',
+          operationId: 'createDocument',
+          tags: ['Documents'],
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { '$ref': '#/components/schemas/DocumentInput' } } },
+          },
+          responses: { '201': { description: 'Document created' } },
+        },
+      },
+      // ── Vault (metadata only) ─────────────────────────────────
+      '/vault/credentials': {
+        get: {
+          summary: 'List vault credential metadata (NO passwords or decrypted data)',
+          operationId: 'listVaultCredentials',
+          tags: ['Vault'],
+          parameters: [
+            { name: 'dept_id', in: 'query', schema: { type: 'string' }, description: 'Filter by department ID' },
+          ],
+          responses: {
+            '200': {
+              description: 'List of credential metadata (service_name, url, created_at only)',
+              content: { 'application/json': { schema: { type: 'object', properties: {
+                credentials: { type: 'array', items: { '$ref': '#/components/schemas/VaultCredentialMeta' } },
+              } } } },
+            },
+          },
+        },
+      },
+      // ── Members ───────────────────────────────────────────────
+      '/members': {
+        get: {
+          summary: 'List organization members',
+          operationId: 'listMembers',
+          tags: ['Members'],
+          responses: {
+            '200': {
+              description: 'List of members',
+              content: { 'application/json': { schema: { type: 'object', properties: {
+                members: { type: 'array', items: { '$ref': '#/components/schemas/Member' } },
+              } } } },
+            },
+          },
+        },
+      },
+      // ── Departments ───────────────────────────────────────────
+      '/departments': {
+        get: {
+          summary: 'List organization departments',
+          operationId: 'listDepartments',
+          tags: ['Departments'],
+          responses: {
+            '200': {
+              description: 'List of departments',
+              content: { 'application/json': { schema: { type: 'object', properties: {
+                departments: { type: 'array', items: { '$ref': '#/components/schemas/Department' } },
+              } } } },
+            },
+          },
         },
       },
     },
     components: {
       securitySchemes: {
         apiKey: { type: 'http', scheme: 'bearer' },
+      },
+      schemas: {
+        CalendarEvent: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            department_id: { type: 'string' },
+            user_id: { type: 'string' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            start_at: { type: 'string', format: 'date-time' },
+            end_at: { type: 'string', format: 'date-time' },
+            all_day: { type: 'integer', enum: [0, 1] },
+            color: { type: 'string' },
+            visibility: { type: 'string', enum: ['personal', 'department', 'company', 'shared'] },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        CalendarEventInput: {
+          type: 'object',
+          required: ['title', 'start_at', 'end_at', 'department_id'],
+          properties: {
+            department_id: { type: 'string' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            start_at: { type: 'string', format: 'date-time' },
+            end_at: { type: 'string', format: 'date-time' },
+            all_day: { type: 'boolean' },
+            color: { type: 'string' },
+            visibility: { type: 'string', enum: ['personal', 'department', 'company', 'shared'] },
+          },
+        },
+        Task: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            board_id: { type: 'string' },
+            column_id: { type: 'string' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            assignee_id: { type: 'string', nullable: true },
+            assignee_name: { type: 'string', nullable: true },
+            priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] },
+            labels: { type: 'string', description: 'JSON array of label strings' },
+            due_date: { type: 'string', nullable: true, format: 'date' },
+            order_index: { type: 'integer' },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        TaskInput: {
+          type: 'object',
+          required: ['board_id', 'column_id', 'title'],
+          properties: {
+            board_id: { type: 'string' },
+            column_id: { type: 'string' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            assignee_id: { type: 'string', nullable: true },
+            priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] },
+            labels: { type: 'string', description: 'JSON array of label strings' },
+            due_date: { type: 'string', nullable: true, format: 'date' },
+            order_index: { type: 'integer' },
+          },
+        },
+        Board: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            department_id: { type: 'string' },
+            name: { type: 'string' },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        DocumentSearchResult: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            title: { type: 'string' },
+            department_id: { type: 'string' },
+            created_at: { type: 'string', format: 'date-time' },
+            snippet: { type: 'string', description: 'Highlighted snippet from content' },
+          },
+        },
+        Document: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            department_id: { type: 'string' },
+            parent_id: { type: 'string', nullable: true },
+            title: { type: 'string' },
+            content: { type: 'string' },
+            is_folder: { type: 'integer', enum: [0, 1] },
+            order_index: { type: 'integer' },
+            created_by: { type: 'string' },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        DocumentInput: {
+          type: 'object',
+          required: ['department_id', 'title'],
+          properties: {
+            department_id: { type: 'string' },
+            parent_id: { type: 'string', nullable: true },
+            title: { type: 'string' },
+            content: { type: 'string' },
+            is_folder: { type: 'boolean' },
+          },
+        },
+        VaultCredentialMeta: {
+          type: 'object',
+          description: 'Metadata only - passwords and encrypted fields are NEVER returned',
+          properties: {
+            id: { type: 'string' },
+            department_id: { type: 'string' },
+            service_name: { type: 'string' },
+            url: { type: 'string' },
+            created_by: { type: 'string' },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        Member: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            email: { type: 'string' },
+            avatar_url: { type: 'string', nullable: true },
+            is_ceo: { type: 'integer', enum: [0, 1] },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        Department: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            slug: { type: 'string' },
+            color: { type: 'string' },
+            order_index: { type: 'integer' },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
       },
     },
     security: [{ apiKey: [] }],
@@ -65,11 +440,20 @@ function checkScope(scopes: string[], required: string): boolean {
   return scopes.includes('*') || scopes.includes(required)
 }
 
+// ──────────────────────────────────────────────────────────────
+// Safety: Block ALL DELETE operations via AI API
+// ──────────────────────────────────────────────────────────────
+aiRoutes.delete('/*', (c) => {
+  return c.json({ error: 'DELETE operations are not allowed via AI API' }, 403)
+})
+
+// ──────────────────────────────────────────────────────────────
 // Calendar events
+// ──────────────────────────────────────────────────────────────
 aiRoutes.get('/calendar/events', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'calendar:read')) {
-    return c.json({ error: 'Insufficient scope' }, 403)
+    return c.json({ error: 'Insufficient scope: calendar:read required' }, 403)
   }
 
   const orgId = c.get('apiKeyOrgId')
@@ -91,11 +475,122 @@ aiRoutes.get('/calendar/events', async (c) => {
   return c.json({ events: results })
 })
 
+aiRoutes.get('/calendar/events/:id', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'calendar:read')) {
+    return c.json({ error: 'Insufficient scope: calendar:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const id = c.req.param('id')
+
+  const event = await c.env.DB.prepare(`
+    SELECT e.* FROM events e
+    JOIN departments d ON d.id = e.department_id
+    WHERE e.id = ? AND d.org_id = ?
+  `).bind(id, orgId).first()
+
+  if (!event) return c.json({ error: 'Event not found' }, 404)
+  return c.json({ event })
+})
+
+aiRoutes.post('/calendar/events', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'calendar:write')) {
+    return c.json({ error: 'Insufficient scope: calendar:write required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const body = await c.req.json<{
+    department_id: string
+    title: string
+    description?: string
+    start_at: string
+    end_at: string
+    all_day?: boolean
+    color?: string
+    visibility?: string
+  }>()
+
+  if (!body.department_id || !body.title || !body.start_at || !body.end_at) {
+    return c.json({ error: 'department_id, title, start_at, end_at are required' }, 400)
+  }
+
+  // Verify department belongs to org
+  const dept = await c.env.DB.prepare('SELECT id FROM departments WHERE id = ? AND org_id = ?')
+    .bind(body.department_id, orgId).first()
+  if (!dept) return c.json({ error: 'Department not found in organization' }, 404)
+
+  const id = generateId()
+  await c.env.DB.prepare(`
+    INSERT INTO events (id, department_id, user_id, title, description, start_at, end_at, all_day, color, created_at, updated_at)
+    VALUES (?, ?, 'ai-api', ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+  `).bind(
+    id,
+    body.department_id,
+    body.title,
+    body.description || '',
+    body.start_at,
+    body.end_at,
+    body.all_day ? 1 : 0,
+    body.color || '#3B82F6'
+  ).run()
+
+  const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first()
+  return c.json({ event }, 201)
+})
+
+aiRoutes.patch('/calendar/events/:id', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'calendar:write')) {
+    return c.json({ error: 'Insufficient scope: calendar:write required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const id = c.req.param('id')
+
+  // Verify event belongs to org
+  const existing = await c.env.DB.prepare(`
+    SELECT e.id FROM events e
+    JOIN departments d ON d.id = e.department_id
+    WHERE e.id = ? AND d.org_id = ?
+  `).bind(id, orgId).first()
+  if (!existing) return c.json({ error: 'Event not found' }, 404)
+
+  const body = await c.req.json<Record<string, unknown>>()
+  const allowedFields = ['title', 'description', 'start_at', 'end_at', 'all_day', 'color', 'visibility']
+  const sets: string[] = []
+  const params: unknown[] = []
+
+  for (const field of allowedFields) {
+    if (body[field] !== undefined) {
+      if (field === 'all_day') {
+        sets.push(`${field} = ?`)
+        params.push(body[field] ? 1 : 0)
+      } else {
+        sets.push(`${field} = ?`)
+        params.push(body[field])
+      }
+    }
+  }
+
+  if (sets.length === 0) return c.json({ error: 'No valid fields to update' }, 400)
+
+  sets.push("updated_at = datetime('now')")
+  params.push(id)
+
+  await c.env.DB.prepare(`UPDATE events SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run()
+  const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first()
+  return c.json({ event })
+})
+
+// ──────────────────────────────────────────────────────────────
 // Tasks
+// ──────────────────────────────────────────────────────────────
 aiRoutes.get('/tasks', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'kanban:read')) {
-    return c.json({ error: 'Insufficient scope' }, 403)
+    return c.json({ error: 'Insufficient scope: kanban:read required' }, 403)
   }
 
   const orgId = c.get('apiKeyOrgId')
@@ -117,11 +612,178 @@ aiRoutes.get('/tasks', async (c) => {
   return c.json({ tasks: results })
 })
 
-// Search docs
+aiRoutes.get('/tasks/:id', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:read')) {
+    return c.json({ error: 'Insufficient scope: kanban:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const id = c.req.param('id')
+
+  const task = await c.env.DB.prepare(`
+    SELECT t.*, u.name as assignee_name FROM tasks t
+    JOIN boards b ON b.id = t.board_id
+    JOIN departments d ON d.id = b.department_id
+    LEFT JOIN users u ON u.id = t.assignee_id
+    WHERE t.id = ? AND d.org_id = ?
+  `).bind(id, orgId).first()
+
+  if (!task) return c.json({ error: 'Task not found' }, 404)
+  return c.json({ task })
+})
+
+aiRoutes.post('/tasks', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:write')) {
+    return c.json({ error: 'Insufficient scope: kanban:write required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const body = await c.req.json<{
+    board_id: string
+    column_id: string
+    title: string
+    description?: string
+    assignee_id?: string
+    priority?: string
+    labels?: string
+    due_date?: string
+    order_index?: number
+  }>()
+
+  if (!body.board_id || !body.column_id || !body.title) {
+    return c.json({ error: 'board_id, column_id, title are required' }, 400)
+  }
+
+  // Verify board belongs to org
+  const board = await c.env.DB.prepare(`
+    SELECT b.id FROM boards b
+    JOIN departments d ON d.id = b.department_id
+    WHERE b.id = ? AND d.org_id = ?
+  `).bind(body.board_id, orgId).first()
+  if (!board) return c.json({ error: 'Board not found in organization' }, 404)
+
+  // Verify column belongs to board
+  const col = await c.env.DB.prepare('SELECT id FROM board_columns WHERE id = ? AND board_id = ?')
+    .bind(body.column_id, body.board_id).first()
+  if (!col) return c.json({ error: 'Column not found in board' }, 404)
+
+  const id = generateId()
+  await c.env.DB.prepare(`
+    INSERT INTO tasks (id, board_id, column_id, title, description, assignee_id, priority, labels, due_date, order_index, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+  `).bind(
+    id,
+    body.board_id,
+    body.column_id,
+    body.title,
+    body.description || '',
+    body.assignee_id || null,
+    body.priority || 'medium',
+    body.labels || '[]',
+    body.due_date || null,
+    body.order_index ?? 0
+  ).run()
+
+  const task = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(id).first()
+  return c.json({ task }, 201)
+})
+
+aiRoutes.patch('/tasks/:id', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:write')) {
+    return c.json({ error: 'Insufficient scope: kanban:write required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const id = c.req.param('id')
+
+  // Verify task belongs to org
+  const existing = await c.env.DB.prepare(`
+    SELECT t.id FROM tasks t
+    JOIN boards b ON b.id = t.board_id
+    JOIN departments d ON d.id = b.department_id
+    WHERE t.id = ? AND d.org_id = ?
+  `).bind(id, orgId).first()
+  if (!existing) return c.json({ error: 'Task not found' }, 404)
+
+  const body = await c.req.json<Record<string, unknown>>()
+  const allowedFields = ['title', 'description', 'column_id', 'assignee_id', 'priority', 'labels', 'due_date', 'order_index']
+  const sets: string[] = []
+  const params: unknown[] = []
+
+  for (const field of allowedFields) {
+    if (body[field] !== undefined) {
+      sets.push(`${field} = ?`)
+      params.push(body[field])
+    }
+  }
+
+  if (sets.length === 0) return c.json({ error: 'No valid fields to update' }, 400)
+
+  sets.push("updated_at = datetime('now')")
+  params.push(id)
+
+  await c.env.DB.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run()
+  const task = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(id).first()
+  return c.json({ task })
+})
+
+// ──────────────────────────────────────────────────────────────
+// Boards (read-only)
+// ──────────────────────────────────────────────────────────────
+aiRoutes.get('/boards', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:read')) {
+    return c.json({ error: 'Insufficient scope: kanban:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const deptId = c.req.query('dept_id')
+
+  let query = `SELECT b.* FROM boards b
+    JOIN departments d ON d.id = b.department_id
+    WHERE d.org_id = ?`
+  const params: unknown[] = [orgId]
+
+  if (deptId) { query += ' AND b.department_id = ?'; params.push(deptId) }
+
+  query += ' ORDER BY b.created_at DESC LIMIT 100'
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ boards: results })
+})
+
+aiRoutes.get('/boards/:id', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:read')) {
+    return c.json({ error: 'Insufficient scope: kanban:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const id = c.req.param('id')
+
+  const board = await c.env.DB.prepare(`
+    SELECT b.* FROM boards b
+    JOIN departments d ON d.id = b.department_id
+    WHERE b.id = ? AND d.org_id = ?
+  `).bind(id, orgId).first()
+  if (!board) return c.json({ error: 'Board not found' }, 404)
+
+  const { results: columns } = await c.env.DB.prepare(
+    'SELECT * FROM board_columns WHERE board_id = ? ORDER BY order_index'
+  ).bind(id).all()
+
+  return c.json({ board, columns })
+})
+
+// ──────────────────────────────────────────────────────────────
+// Documents
+// ──────────────────────────────────────────────────────────────
 aiRoutes.get('/docs/search', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'docs:read')) {
-    return c.json({ error: 'Insufficient scope' }, 403)
+    return c.json({ error: 'Insufficient scope: docs:read required' }, 403)
   }
 
   const orgId = c.get('apiKeyOrgId')
@@ -141,7 +803,278 @@ aiRoutes.get('/docs/search', async (c) => {
   return c.json({ documents: results })
 })
 
-// API key management (requires auth middleware instead - handled in separate route)
+aiRoutes.get('/docs/:id', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) {
+    return c.json({ error: 'Insufficient scope: docs:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const id = c.req.param('id')
+
+  const doc = await c.env.DB.prepare(`
+    SELECT d.* FROM documents d
+    JOIN departments dept ON dept.id = d.department_id
+    WHERE d.id = ? AND dept.org_id = ?
+  `).bind(id, orgId).first()
+
+  if (!doc) return c.json({ error: 'Document not found' }, 404)
+  return c.json({ document: doc })
+})
+
+aiRoutes.post('/docs', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) {
+    return c.json({ error: 'Insufficient scope: docs:write required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const body = await c.req.json<{
+    department_id: string
+    title: string
+    content?: string
+    parent_id?: string
+    is_folder?: boolean
+  }>()
+
+  if (!body.department_id || !body.title) {
+    return c.json({ error: 'department_id and title are required' }, 400)
+  }
+
+  // Verify department belongs to org
+  const dept = await c.env.DB.prepare('SELECT id FROM departments WHERE id = ? AND org_id = ?')
+    .bind(body.department_id, orgId).first()
+  if (!dept) return c.json({ error: 'Department not found in organization' }, 404)
+
+  const id = generateId()
+  await c.env.DB.prepare(`
+    INSERT INTO documents (id, department_id, parent_id, title, content, is_folder, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'ai-api', datetime('now'), datetime('now'))
+  `).bind(
+    id,
+    body.department_id,
+    body.parent_id || null,
+    body.title,
+    body.content || '',
+    body.is_folder ? 1 : 0
+  ).run()
+
+  const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first()
+  return c.json({ document: doc }, 201)
+})
+
+aiRoutes.patch('/docs/:id', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) {
+    return c.json({ error: 'Insufficient scope: docs:write required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const id = c.req.param('id')
+
+  // Verify document belongs to org
+  const existing = await c.env.DB.prepare(`
+    SELECT d.id FROM documents d
+    JOIN departments dept ON dept.id = d.department_id
+    WHERE d.id = ? AND dept.org_id = ?
+  `).bind(id, orgId).first()
+  if (!existing) return c.json({ error: 'Document not found' }, 404)
+
+  const body = await c.req.json<Record<string, unknown>>()
+  const allowedFields = ['title', 'content', 'parent_id', 'order_index']
+  const sets: string[] = []
+  const params: unknown[] = []
+
+  for (const field of allowedFields) {
+    if (body[field] !== undefined) {
+      sets.push(`${field} = ?`)
+      params.push(body[field])
+    }
+  }
+
+  if (sets.length === 0) return c.json({ error: 'No valid fields to update' }, 400)
+
+  sets.push("updated_at = datetime('now')")
+  params.push(id)
+
+  await c.env.DB.prepare(`UPDATE documents SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run()
+  const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first()
+  return c.json({ document: doc })
+})
+
+// ──────────────────────────────────────────────────────────────
+// Vault credentials (metadata only - NO passwords)
+// ──────────────────────────────────────────────────────────────
+aiRoutes.get('/vault/credentials', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'vault:read')) {
+    return c.json({ error: 'Insufficient scope: vault:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const deptId = c.req.query('dept_id')
+
+  let query = `SELECT c.id, c.department_id, c.service_name, c.url, c.created_by, c.created_at, c.updated_at
+    FROM credentials c
+    JOIN departments d ON d.id = c.department_id
+    WHERE d.org_id = ?`
+  const params: unknown[] = [orgId]
+
+  if (deptId) { query += ' AND c.department_id = ?'; params.push(deptId) }
+
+  query += ' ORDER BY c.service_name LIMIT 100'
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ credentials: results })
+})
+
+// ──────────────────────────────────────────────────────────────
+// Members (read-only)
+// ──────────────────────────────────────────────────────────────
+aiRoutes.get('/members', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'members:read')) {
+    return c.json({ error: 'Insufficient scope: members:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, name, email, avatar_url, is_ceo, created_at FROM users WHERE org_id = ? ORDER BY name'
+  ).bind(orgId).all()
+
+  return c.json({ members: results })
+})
+
+// ──────────────────────────────────────────────────────────────
+// Departments (read-only)
+// ──────────────────────────────────────────────────────────────
+aiRoutes.get('/departments', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'departments:read')) {
+    return c.json({ error: 'Insufficient scope: departments:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, name, slug, color, order_index, created_at FROM departments WHERE org_id = ? ORDER BY order_index'
+  ).bind(orgId).all()
+
+  return c.json({ departments: results })
+})
+
+// ──────────────────────────────────────────────────────────────
+// API key management (requires admin scope)
+// ──────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
+// Telegram
+// ──────────────────────────────────────────────────────────────
+
+// List telegram chats
+aiRoutes.get('/telegram/chats', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:read')) {
+    return c.json({ error: 'Insufficient scope: telegram:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM telegram_chats WHERE org_id = ? ORDER BY created_at DESC'
+  ).bind(orgId).all()
+
+  return c.json({ chats: results })
+})
+
+// List telegram user mappings
+aiRoutes.get('/telegram/mappings', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:read')) {
+    return c.json({ error: 'Insufficient scope: telegram:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM telegram_user_mappings WHERE org_id = ? ORDER BY created_at DESC'
+  ).bind(orgId).all()
+
+  return c.json({ mappings: results })
+})
+
+// Log a telegram command
+aiRoutes.post('/telegram/logs', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:write')) {
+    return c.json({ error: 'Insufficient scope: telegram:write required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const body = await c.req.json<{
+    chat_id: string
+    telegram_user_id: string
+    user_id?: string
+    command: string
+    args?: string
+    response_summary?: string
+  }>()
+
+  if (!body.chat_id || !body.telegram_user_id || !body.command) {
+    return c.json({ error: 'chat_id, telegram_user_id, and command are required' }, 400)
+  }
+
+  const id = generateId()
+  await c.env.DB.prepare(`
+    INSERT INTO telegram_command_log (id, org_id, chat_id, telegram_user_id, user_id, command, args, response_summary)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    id,
+    orgId,
+    body.chat_id,
+    body.telegram_user_id,
+    body.user_id || null,
+    body.command,
+    body.args || '',
+    body.response_summary || ''
+  ).run()
+
+  const log = await c.env.DB.prepare('SELECT * FROM telegram_command_log WHERE id = ?').bind(id).first()
+  return c.json({ log }, 201)
+})
+
+// Resolve telegram user to ecode user
+aiRoutes.get('/telegram/resolve-user', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:read')) {
+    return c.json({ error: 'Insufficient scope: telegram:read required' }, 403)
+  }
+
+  const orgId = c.get('apiKeyOrgId')
+  const telegramUserId = c.req.query('telegram_user_id')
+
+  if (!telegramUserId) {
+    return c.json({ error: 'telegram_user_id query parameter is required' }, 400)
+  }
+
+  const mapping = await c.env.DB.prepare(
+    'SELECT * FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1'
+  ).bind(orgId, telegramUserId).first()
+
+  if (!mapping) {
+    return c.json({ mapping: null, user: null })
+  }
+
+  let user = null
+  if (mapping.user_id) {
+    user = await c.env.DB.prepare(
+      'SELECT id, name, email, avatar_url, is_ceo, created_at FROM users WHERE id = ? AND org_id = ?'
+    ).bind(mapping.user_id, orgId).first()
+  }
+
+  return c.json({ mapping, user })
+})
+
+// ──────────────────────────────────────────────────────────────
+// API key management (requires admin scope)
+// ──────────────────────────────────────────────────────────────
 aiRoutes.post('/keys', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'admin')) {

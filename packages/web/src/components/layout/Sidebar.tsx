@@ -6,9 +6,12 @@ import {
   FileText,
   KeyRound,
   Bug,
+  Settings,
+  Bot,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react'
+import { useAuthStore } from '../../stores/authStore'
 
 interface SidebarProps {
   collapsed: boolean
@@ -27,6 +30,14 @@ const navItems = [
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
+  const organization = useAuthStore((s) => s.organization)
+  const showSettings = user?.is_ceo || user?.is_admin
+  const apiBase = import.meta.env.VITE_API_URL || '/api'
+
+  const allItems = showSettings
+    ? [...navItems, { path: '/ai', icon: Bot, label: 'AI' }, { path: '/settings', icon: Settings, label: '설정' }]
+    : navItems
 
   return (
     <aside
@@ -37,7 +48,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Logo */}
       <div className="flex items-center h-14 px-4 border-b border-gray-800">
         {!collapsed && (
-          <span className="text-lg font-bold text-white">ecode</span>
+          organization?.logo_url ? (
+            <img
+              src={`${apiBase}${organization.logo_url.replace(/^\/api/, '')}`}
+              alt={organization.name || 'ecode'}
+              className="h-8 max-w-[120px] object-contain"
+            />
+          ) : (
+            <span className="text-lg font-bold text-white">ecode</span>
+          )
         )}
         <button
           onClick={onToggle}
@@ -49,7 +68,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 py-2">
-        {navItems.map((item) => {
+        {allItems.map((item) => {
           const active = location.pathname === item.path ||
             (item.path !== '/' && location.pathname.startsWith(item.path))
 

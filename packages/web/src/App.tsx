@@ -13,6 +13,8 @@ import { KanbanPage } from './components/kanban/KanbanPage'
 import { DocsPage } from './components/docs/DocsPage'
 import { VaultPage } from './components/vault/VaultPage'
 import { QAPage } from './components/qa/QAPage'
+import { SettingsPage } from './components/settings/SettingsPage'
+import { AIPage } from './components/ai/AIPage'
 import { ToastContainer } from './components/ui/Toast'
 
 export default function App() {
@@ -77,6 +79,8 @@ export default function App() {
         <Route path="/docs" element={<DocsPage />} />
         <Route path="/vault" element={<VaultPage />} />
         <Route path="/qa" element={<QAPage />} />
+        <Route path="/ai" element={<AIPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
       <ToastContainer />
     </AppShell>

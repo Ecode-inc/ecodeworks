@@ -4,6 +4,7 @@ export interface User {
   name: string
   avatar_url: string | null
   is_ceo: boolean
+  is_admin: boolean
   org_id: string
 }
 
@@ -11,6 +12,7 @@ export interface Organization {
   id: string
   name: string
   slug: string
+  logo_url?: string
 }
 
 export interface Department {

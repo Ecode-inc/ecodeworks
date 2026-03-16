@@ -13,6 +13,8 @@ import { documentsRoutes } from './routes/documents'
 import { credentialsRoutes } from './routes/credentials'
 import { qaRoutes } from './routes/qa'
 import { aiRoutes } from './routes/ai'
+import { aiKeysRoutes } from './routes/aiKeys'
+import { telegramRoutes } from './routes/telegram'
 import { WebSocketRoom } from './durable/WebSocketRoom'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -58,6 +60,21 @@ app.route('/api/qa', qaRoutes)
 
 // Phase 7: AI API
 app.route('/api/v1', aiRoutes)
+app.route('/api/ai/keys', aiKeysRoutes)
+
+// Phase 8: Telegram integration
+app.route('/api/telegram', telegramRoutes)
+
+// File serving from R2
+app.get('/api/files/*', async (c) => {
+  const key = c.req.path.replace('/api/files/', '')
+  const object = await c.env.FILES.get(key)
+  if (!object) return c.json({ error: 'Not found' }, 404)
+  const headers = new Headers()
+  object.writeHttpMetadata(headers)
+  headers.set('Cache-Control', 'public, max-age=86400')
+  return new Response(object.body, { headers })
+})
 
 // WebSocket upgrade (department-scoped rooms)
 app.get('/ws', async (c) => {

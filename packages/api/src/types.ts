@@ -36,6 +36,7 @@ export interface User {
   name: string
   avatar_url: string | null
   is_ceo: number
+  is_admin: number
   created_at: string
 }
 
@@ -65,6 +66,7 @@ export interface JWTPayload {
   email: string
   name: string
   is_ceo: boolean
+  is_admin: boolean
   iat: number
   exp: number
 }
@@ -76,6 +78,7 @@ export interface AuthUser {
   email: string
   name: string
   is_ceo: boolean
+  is_admin: boolean
 }
 
 // Module names for RBAC

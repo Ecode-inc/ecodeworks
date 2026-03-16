@@ -23,8 +23,8 @@ departmentsRoutes.get('/', async (c) => {
 // Create department
 departmentsRoutes.post('/', async (c) => {
   const user = c.get('user')
-  if (!user.is_ceo) {
-    return c.json({ error: 'Only CEO can create departments' }, 403)
+  if (!user.is_ceo && !user.is_admin) {
+    return c.json({ error: 'Only CEO or admin can create departments' }, 403)
   }
 
   const { name, color } = await c.req.json<{ name: string; color?: string }>()
@@ -64,8 +64,8 @@ departmentsRoutes.patch('/:id', async (c) => {
   const user = c.get('user')
   const deptId = c.req.param('id')
 
-  // Check if user is CEO or department head
-  if (!user.is_ceo) {
+  // Check if user is CEO, admin, or department head
+  if (!user.is_ceo && !user.is_admin) {
     const membership = await c.env.DB.prepare(
       'SELECT role FROM user_departments WHERE user_id = ? AND department_id = ?'
     ).bind(user.id, deptId).first<{ role: string }>()
@@ -101,8 +101,8 @@ departmentsRoutes.patch('/:id', async (c) => {
 // Delete department
 departmentsRoutes.delete('/:id', async (c) => {
   const user = c.get('user')
-  if (!user.is_ceo) {
-    return c.json({ error: 'Only CEO can delete departments' }, 403)
+  if (!user.is_ceo && !user.is_admin) {
+    return c.json({ error: 'Only CEO or admin can delete departments' }, 403)
   }
 
   const deptId = c.req.param('id')
@@ -118,13 +118,13 @@ departmentsRoutes.patch('/:id/permissions', async (c) => {
   const user = c.get('user')
   const deptId = c.req.param('id')
 
-  if (!user.is_ceo) {
+  if (!user.is_ceo && !user.is_admin) {
     const membership = await c.env.DB.prepare(
       'SELECT role FROM user_departments WHERE user_id = ? AND department_id = ?'
     ).bind(user.id, deptId).first<{ role: string }>()
 
     if (membership?.role !== 'head') {
-      return c.json({ error: 'Only CEO or department head can update permissions' }, 403)
+      return c.json({ error: 'Only CEO, admin, or department head can update permissions' }, 403)
     }
   }
 

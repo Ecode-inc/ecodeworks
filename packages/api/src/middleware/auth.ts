@@ -20,6 +20,7 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
         email: payload.email,
         name: payload.name,
         is_ceo: payload.is_ceo,
+        is_admin: payload.is_admin,
       })
       await next()
     } catch (e) {
