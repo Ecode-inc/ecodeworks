@@ -274,7 +274,7 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
       setStartAt(dayjs().format('YYYY-MM-DDTHH:mm'))
       setEndAt(dayjs().add(1, 'hour').format('YYYY-MM-DDTHH:mm'))
       setAllDay(false)
-      setColor('#3B82F6')
+      setColor('#3B82F6')  // department default
       setVisibility('department')
       setSharedTargetIds([])
       setShareWithExecutives(false)
@@ -374,12 +374,7 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
           <Input label="시작" type={allDay ? 'date' : 'datetime-local'} value={startAt} onChange={e => setStartAt(e.target.value)} />
           <Input label="종료" type={allDay ? 'date' : 'datetime-local'} value={endAt} onChange={e => setEndAt(e.target.value)} />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">색상</label>
-          <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-10 h-8 rounded cursor-pointer" />
-        </div>
-
-        {/* Visibility selector */}
+        {/* Visibility selector - placed before color so default color updates */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">공개 범위</label>
           <div className="grid grid-cols-2 gap-2">
@@ -387,7 +382,17 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => setVisibility(opt.value)}
+                onClick={() => {
+                  setVisibility(opt.value)
+                  // Set default color based on visibility
+                  const defaultColors: Record<string, string> = {
+                    personal: '#8B5CF6',   // purple
+                    department: '#3B82F6', // blue
+                    company: '#10B981',    // green
+                    shared: '#F59E0B',     // amber
+                  }
+                  if (!event) setColor(defaultColors[opt.value] || '#3B82F6')
+                }}
                 className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
                   visibility === opt.value
                     ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium'
@@ -435,6 +440,23 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
             </div>
           </div>
         )}
+
+        {/* Color picker with shortcuts */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">색상</label>
+          <div className="flex items-center gap-2">
+            <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-10 h-8 rounded cursor-pointer border" />
+            {['#3B82F6','#10B981','#8B5CF6','#F59E0B','#EF4444','#EC4899','#06B6D4','#6B7280'].map(c => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setColor(c)}
+                className={`w-6 h-6 rounded-full border-2 transition-transform ${color === c ? 'border-gray-800 scale-110' : 'border-transparent hover:scale-110'}`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+        </div>
 
         <textarea
           placeholder="설명 (선택)"

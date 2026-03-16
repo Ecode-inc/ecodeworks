@@ -13,12 +13,29 @@ credentialsRoutes.use('/*', authMiddleware)
 
 // List credentials (metadata only - no decryption)
 credentialsRoutes.get('/', requirePermission('vault', 'read'), async (c) => {
+  const user = c.get('user')
   const deptId = c.req.query('dept_id')!
 
-  const { results } = await c.env.DB.prepare(
-    `SELECT id, department_id, service_name, url, created_by, created_at, updated_at
-     FROM credentials WHERE department_id = ? ORDER BY service_name`
-  ).bind(deptId).all()
+  let query = `SELECT id, department_id, service_name, url, created_by, created_at, updated_at, visibility
+     FROM credentials WHERE 1=1`
+  const params: unknown[] = []
+
+  // Visibility filtering (CEO sees everything)
+  if (!user.is_ceo) {
+    query += ` AND (
+      visibility = 'company'
+      OR (visibility = 'department' AND department_id IN (SELECT department_id FROM user_departments WHERE user_id = ?))
+    )`
+    params.push(user.id)
+  }
+
+  if (deptId) {
+    query += ' AND department_id = ?'
+    params.push(deptId)
+  }
+
+  query += ' ORDER BY service_name'
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
 
   return c.json({ credentials: results })
 })

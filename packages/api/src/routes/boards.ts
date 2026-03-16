@@ -18,12 +18,18 @@ boardsRoutes.get('/', async (c) => {
   let query = 'SELECT * FROM boards WHERE 1=1'
   const params: unknown[] = []
 
+  // Visibility filtering (CEO sees everything)
+  if (!user.is_ceo) {
+    query += ` AND (
+      visibility = 'company'
+      OR (visibility = 'department' AND department_id IN (SELECT department_id FROM user_departments WHERE user_id = ?))
+    )`
+    params.push(user.id)
+  }
+
   if (deptId) {
     query += ' AND department_id = ?'
     params.push(deptId)
-  } else if (!user.is_ceo) {
-    query += ' AND department_id IN (SELECT department_id FROM user_departments WHERE user_id = ?)'
-    params.push(user.id)
   }
 
   query += ' ORDER BY created_at DESC'
@@ -54,9 +60,10 @@ boardsRoutes.get('/:id', async (c) => {
 // Create board
 boardsRoutes.post('/', requirePermission('kanban', 'write'), async (c) => {
   const deptId = c.req.query('dept_id')!
-  const { name } = await c.req.json<{ name: string }>()
+  const { name, visibility } = await c.req.json<{ name: string; visibility?: string }>()
   if (!name) return c.json({ error: 'name required' }, 400)
 
+  const boardVisibility = visibility || 'department'
   const boardId = generateId()
 
   // Create board with default columns
@@ -68,8 +75,8 @@ boardsRoutes.post('/', requirePermission('kanban', 'write'), async (c) => {
 
   await c.env.DB.batch([
     c.env.DB.prepare(
-      'INSERT INTO boards (id, department_id, name) VALUES (?, ?, ?)'
-    ).bind(boardId, deptId, name),
+      'INSERT INTO boards (id, department_id, name, visibility) VALUES (?, ?, ?, ?)'
+    ).bind(boardId, deptId, name, boardVisibility),
     ...defaultColumns.map((col) =>
       c.env.DB.prepare(
         'INSERT INTO board_columns (id, board_id, name, color, order_index) VALUES (?, ?, ?, ?, ?)'

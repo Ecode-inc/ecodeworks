@@ -5,7 +5,7 @@ import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { FileText, Folder, FolderPlus, FilePlus, Search, ChevronRight, Clock } from 'lucide-react'
+import { FileText, Folder, FolderPlus, FilePlus, Search, ChevronRight, Clock, Share2, Building2, Users, UserIcon } from 'lucide-react'
 
 export function DocsPage() {
   const { currentDeptId } = useOrgStore()
@@ -23,6 +23,8 @@ export function DocsPage() {
   const [searchResults, setSearchResults] = useState<any[] | null>(null)
   const [versions, setVersions] = useState<any[]>([])
   const [showVersions, setShowVersions] = useState(false)
+  const [newVisibility, setNewVisibility] = useState<'company' | 'department' | 'personal'>('department')
+  const [newShared, setNewShared] = useState(false)
 
   const loadDocuments = useCallback(async () => {
     if (!currentDeptId) return
@@ -88,8 +90,12 @@ export function DocsPage() {
         parent_id: currentParentId || undefined,
         is_folder: newIsFolder,
         content: newIsFolder ? undefined : '',
+        visibility: newVisibility,
+        shared: newShared,
       })
       setNewTitle('')
+      setNewVisibility('department')
+      setNewShared(false)
       setShowNewModal(false)
       loadDocuments()
     } catch (e: any) {
@@ -181,8 +187,14 @@ export function DocsPage() {
               onClick={() => doc.is_folder ? navigateToFolder(doc.id, doc.title) : openDocument(doc)}
               className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-sm text-left hover:bg-gray-100 ${selectedDoc?.id === doc.id ? 'bg-primary-50 text-primary-700' : ''}`}
             >
-              {doc.is_folder ? <Folder size={16} className="text-amber-500" /> : <FileText size={16} className="text-gray-400" />}
-              <span className="truncate">{doc.title}</span>
+              {doc.is_folder ? <Folder size={16} className="text-amber-500 flex-shrink-0" /> : <FileText size={16} className="text-gray-400 flex-shrink-0" />}
+              <span className="truncate flex-1">{doc.title}</span>
+              <span className="flex items-center gap-0.5 flex-shrink-0">
+                {doc.visibility === 'company' && <span role="img" aria-label="회사 문서"><Building2 size={12} className="text-blue-500" /></span>}
+                {doc.visibility === 'personal' && <span role="img" aria-label="개인 문서"><UserIcon size={12} className="text-purple-500" /></span>}
+                {doc.visibility === 'department' && <span role="img" aria-label="부서 문서"><Users size={12} className="text-green-500" /></span>}
+                {doc.shared === 1 && <span role="img" aria-label="공유됨"><Share2 size={10} className="text-orange-400" /></span>}
+              </span>
             </button>
           ))}
           {documents.length === 0 && !searchResults && (
@@ -249,6 +261,29 @@ export function DocsPage() {
       <Modal open={showNewModal} onClose={() => setShowNewModal(false)} title={newIsFolder ? '새 폴더' : '새 문서'}>
         <div className="space-y-4">
           <Input label="이름" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">공개 범위</label>
+            <select
+              value={newVisibility}
+              onChange={e => setNewVisibility(e.target.value as 'company' | 'department' | 'personal')}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="company">회사 문서</option>
+              <option value="department">부서 문서</option>
+              <option value="personal">개인 문서</option>
+            </select>
+          </div>
+          {newVisibility !== 'company' && (
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newShared}
+                onChange={e => setNewShared(e.target.checked)}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              공유 허용 (조직 전체에 보이게)
+            </label>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setShowNewModal(false)}>취소</Button>
             <Button onClick={createDocument}>만들기</Button>

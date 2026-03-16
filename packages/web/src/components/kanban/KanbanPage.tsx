@@ -15,6 +15,7 @@ export function KanbanPage() {
   const [tasks, setTasks] = useState<any[]>([])
   const [showNewBoard, setShowNewBoard] = useState(false)
   const [newBoardName, setNewBoardName] = useState('')
+  const [newBoardVisibility, setNewBoardVisibility] = useState<'company' | 'department'>('department')
   const [showTaskModal, setShowTaskModal] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [targetColumnId, setTargetColumnId] = useState<string | null>(null)
@@ -48,9 +49,10 @@ export function KanbanPage() {
   const createBoard = async () => {
     if (!newBoardName || !currentDeptId) return
     try {
-      const res = await boardsApi.create(currentDeptId, newBoardName)
+      const res = await boardsApi.create(currentDeptId, newBoardName, newBoardVisibility)
       setBoards(prev => [...prev, res.board])
       setNewBoardName('')
+      setNewBoardVisibility('department')
       setShowNewBoard(false)
       loadBoard(res.board.id)
     } catch (e: any) {
@@ -198,6 +200,17 @@ export function KanbanPage() {
       <Modal open={showNewBoard} onClose={() => setShowNewBoard(false)} title="새 보드">
         <div className="space-y-4">
           <Input label="보드 이름" value={newBoardName} onChange={e => setNewBoardName(e.target.value)} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">공개 범위</label>
+            <select
+              value={newBoardVisibility}
+              onChange={e => setNewBoardVisibility(e.target.value as 'company' | 'department')}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="company">회사 전체</option>
+              <option value="department">부서만</option>
+            </select>
+          </div>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setShowNewBoard(false)}>취소</Button>
             <Button onClick={createBoard}>만들기</Button>

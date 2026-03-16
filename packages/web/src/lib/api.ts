@@ -185,8 +185,8 @@ export const boardsApi = {
     request<{ boards: any[] }>(`/boards${deptId ? `?dept_id=${deptId}` : ''}`),
   get: (id: string) =>
     request<{ board: any; columns: any[]; tasks: any[] }>(`/boards/${id}`),
-  create: (deptId: string, name: string) =>
-    request<{ board: any }>(`/boards?dept_id=${deptId}`, { method: 'POST', body: JSON.stringify({ name }) }),
+  create: (deptId: string, name: string, visibility?: string) =>
+    request<{ board: any }>(`/boards?dept_id=${deptId}`, { method: 'POST', body: JSON.stringify({ name, visibility }) }),
   delete: (id: string) =>
     request<{ success: boolean }>(`/boards/${id}`, { method: 'DELETE' }),
   addColumn: (boardId: string, data: { name: string; color?: string; wip_limit?: number }) =>
@@ -217,9 +217,9 @@ export const docsApi = {
     return request<{ documents: any[] }>(`/docs${qs ? `?${qs}` : ''}`)
   },
   get: (id: string) => request<{ document: any }>(`/docs/${id}`),
-  create: (deptId: string, data: { title: string; content?: string; parent_id?: string; is_folder?: boolean }) =>
+  create: (deptId: string, data: { title: string; content?: string; parent_id?: string; is_folder?: boolean; visibility?: string; shared?: boolean }) =>
     request<{ document: any }>(`/docs?dept_id=${deptId}`, { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: { title?: string; content?: string; parent_id?: string }) =>
+  update: (id: string, data: { title?: string; content?: string; parent_id?: string; visibility?: string; shared?: boolean }) =>
     request<{ document: any }>(`/docs/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) =>
     request<{ success: boolean }>(`/docs/${id}`, { method: 'DELETE' }),
