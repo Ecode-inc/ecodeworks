@@ -51,8 +51,8 @@ export function KanbanPage() {
 
   useEffect(() => {
     boardsApi.list(currentDeptId || undefined).then(r => {
-      setBoards(r.boards)
-      if (r.boards.length > 0 && !selectedBoard) {
+      setBoards(r.boards || [])
+      if ((r.boards || []).length > 0 && !selectedBoard) {
         loadBoard(r.boards[0].id)
       }
     }).catch(() => {})
@@ -62,8 +62,8 @@ export function KanbanPage() {
     try {
       const res = await boardsApi.get(boardId)
       setSelectedBoard(res.board)
-      setColumns(res.columns)
-      setTasks(res.tasks)
+      setColumns(res.columns || [])
+      setTasks(res.tasks || [])
     } catch (e: any) {
       useToastStore.getState().addToast('error', '보드 로드 실패', e.message)
     }
