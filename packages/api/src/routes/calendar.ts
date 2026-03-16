@@ -348,6 +348,7 @@ calendarRoutes.post('/events', requirePermission('calendar', 'write'), async (c)
     shared_target_ids?: string[]       // user IDs for selective sharing
     share_with_executives?: boolean    // share with executives
     document_ids?: string[]
+    importance?: 'normal' | 'important'
   }>()
 
   if (!body.title || !body.start_at || !body.end_at) {
@@ -355,14 +356,15 @@ calendarRoutes.post('/events', requirePermission('calendar', 'write'), async (c)
   }
 
   const visibility = body.visibility || 'department'
+  const importance = body.importance || 'normal'
 
   const id = generateId()
 
   const stmts = [
     c.env.DB.prepare(
-      `INSERT INTO events (id, department_id, user_id, title, description, start_at, end_at, all_day, color, recurrence_rule, visibility)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(id, deptId, user.id, body.title, body.description || '', body.start_at, body.end_at, body.all_day ? 1 : 0, body.color || '#3B82F6', body.recurrence_rule || null, visibility),
+      `INSERT INTO events (id, department_id, user_id, title, description, start_at, end_at, all_day, color, recurrence_rule, visibility, importance)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, deptId, user.id, body.title, body.description || '', body.start_at, body.end_at, body.all_day ? 1 : 0, body.color || '#3B82F6', body.recurrence_rule || null, visibility, importance),
   ]
 
   // Add attendees
@@ -428,7 +430,7 @@ calendarRoutes.patch('/events/:id', authMiddleware, async (c) => {
   const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(eventId).first<any>()
   if (!event) return c.json({ error: 'Event not found' }, 404)
 
-  const allowed = ['title', 'description', 'start_at', 'end_at', 'all_day', 'color', 'recurrence_rule', 'visibility']
+  const allowed = ['title', 'description', 'start_at', 'end_at', 'all_day', 'color', 'recurrence_rule', 'visibility', 'importance']
   const updates: string[] = []
   const values: unknown[] = []
 

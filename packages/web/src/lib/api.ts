@@ -247,10 +247,15 @@ export const vaultApi = {
 
 // QA
 export const qaApi = {
-  projects: () => request<{ projects: any[] }>('/qa/projects'),
-  issues: (projectId: string, status?: string) =>
-    request<{ issues: any[] }>(`/qa/projects/${projectId}/issues${status ? `?status=${status}` : ''}`),
-  stats: () => request<{ stats: any }>('/qa/stats'),
+  listLinks: () => request<{ links: any[] }>('/qa/links'),
+  createLink: (data: { name: string; url: string; visibility: string; department_id?: string; shared_with?: string[] }) =>
+    request<{ link: any }>('/qa/links', { method: 'POST', body: JSON.stringify(data) }),
+  updateLink: (id: string, data: any) =>
+    request<{ link: any }>(`/qa/links/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteLink: (id: string) =>
+    request<{ success: boolean }>(`/qa/links/${id}`, { method: 'DELETE' }),
+  markSeen: (id: string) =>
+    request<{ success: boolean }>(`/qa/links/${id}/seen`, { method: 'POST' }),
 }
 
 // Attendance

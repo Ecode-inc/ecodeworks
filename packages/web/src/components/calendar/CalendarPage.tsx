@@ -5,7 +5,7 @@ import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { ChevronLeft, ChevronRight, Plus, RefreshCw, FileText, X, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, RefreshCw, FileText, X, Search, Star } from 'lucide-react'
 import dayjs from 'dayjs'
 
 type Visibility = 'personal' | 'department' | 'company' | 'shared'
@@ -42,6 +42,7 @@ interface CalendarEvent {
   shared_targets?: SharedTarget[]
   document_count?: number
   documents?: LinkedDoc[]
+  importance?: 'normal' | 'important'
   is_recurring?: boolean
   recurring_parent_id?: string
 }
@@ -252,9 +253,12 @@ export function CalendarPage() {
                   <button
                     key={evt.id}
                     onClick={(e) => handleEventClick(evt, e)}
-                    className="w-full text-left text-xs px-1 py-0.5 rounded truncate mb-0.5 text-white flex items-center gap-0.5"
-                    style={{ backgroundColor: evt.color || '#3B82F6' }}
+                    className={`w-full text-left text-xs px-1 py-0.5 rounded truncate mb-0.5 text-white flex items-center gap-0.5 ${evt.importance === 'important' ? 'font-bold ring-1 ring-red-400' : ''}`}
+                    style={{ backgroundColor: evt.importance === 'important' ? '#EF4444' : (evt.color || '#3B82F6') }}
                   >
+                    {evt.importance === 'important' && (
+                      <Star size={10} className="shrink-0 fill-yellow-300 text-yellow-300" />
+                    )}
                     {(evt.document_count && evt.document_count > 0) ? (
                       <FileText size={10} className="shrink-0" />
                     ) : null}
@@ -340,6 +344,7 @@ function EventModal({ open, onClose, event, deptId, onSave, prefillDate }: {
   const [allDay, setAllDay] = useState(false)
   const [color, setColor] = useState('#3B82F6')
   const [loading, setLoading] = useState(false)
+  const [importance, setImportance] = useState<'normal' | 'important'>('normal')
   const [visibility, setVisibility] = useState<Visibility>('department')
   const [sharedTargetIds, setSharedTargetIds] = useState<string[]>([])
   const [shareWithExecutives, setShareWithExecutives] = useState(false)
@@ -373,6 +378,7 @@ function EventModal({ open, onClose, event, deptId, onSave, prefillDate }: {
         : dayjs(event.end_at).format('YYYY-MM-DDTHH:mm'))
       setAllDay(isAllDay)
       setColor(event.color || '#3B82F6')
+      setImportance(event.importance || 'normal')
       setVisibility(event.visibility || 'department')
       // Restore shared targets from event
       if (event.shared_targets?.length) {
@@ -425,6 +431,7 @@ function EventModal({ open, onClose, event, deptId, onSave, prefillDate }: {
       }
       setAllDay(false)
       setColor('#3B82F6')
+      setImportance('normal')
       setVisibility('department')
       setSharedTargetIds([])
       setShareWithExecutives(false)
@@ -544,6 +551,7 @@ function EventModal({ open, onClose, event, deptId, onSave, prefillDate }: {
         end_at: finalEndAt,
         all_day: allDay,
         color,
+        importance,
         visibility,
         recurrence_rule: recurrenceRule || null,
         document_ids: linkedDocs.map(d => d.id),
@@ -581,6 +589,37 @@ function EventModal({ open, onClose, event, deptId, onSave, prefillDate }: {
     <Modal open={open} onClose={onClose} title={event ? '일정 수정' : '일정 추가'} width="max-w-lg">
       <div className="space-y-4">
         <Input label="제목" value={title} onChange={e => setTitle(e.target.value)} required />
+
+        {/* Importance toggle */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">중요도</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setImportance('normal')}
+              className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                importance === 'normal'
+                  ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300'
+              }`}
+            >
+              일반
+            </button>
+            <button
+              type="button"
+              onClick={() => setImportance('important')}
+              className={`px-3 py-1.5 text-sm rounded-lg border transition-colors flex items-center gap-1 ${
+                importance === 'important'
+                  ? 'border-red-500 bg-red-50 text-red-700 font-medium'
+                  : 'border-gray-200 text-gray-600 hover:border-gray-300'
+              }`}
+            >
+              <Star size={14} className={importance === 'important' ? 'fill-red-500' : ''} />
+              중요
+            </button>
+          </div>
+        </div>
+
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={allDay} onChange={e => handleAllDayToggle(e.target.checked)} className="rounded" />
           종일
