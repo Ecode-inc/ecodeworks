@@ -22,15 +22,17 @@ function detectOrgSlug(): string | null {
   const domainMap: Record<string, string> = {
     'app.ecode.co.kr': '이코드',
     'ecode.co.kr': '이코드',
+    'ecode-internal.pages.dev': '이코드',
   }
   if (domainMap[host]) return domainMap[host]
 
-  // Subdomain detection: xxx.ecode-internal.pages.dev or xxx.ecode.co.kr
+  // Subdomain detection: xxx.ecode.co.kr etc.
+  // Skip *.pages.dev (project name, not org slug)
   const parts = host.split('.')
-  if (parts.length >= 3) {
+  const isPagesDev = host.endsWith('.pages.dev')
+  if (parts.length >= 3 && !isPagesDev) {
     const sub = parts[0]
-    // Skip deployment hashes (hex strings) and "www"
-    if (sub !== 'www' && !/^[0-9a-f]{8}$/.test(sub)) {
+    if (sub !== 'www') {
       return sub
     }
   }
