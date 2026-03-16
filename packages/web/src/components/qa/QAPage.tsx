@@ -190,6 +190,7 @@ export function QAPage() {
           {/* iframe embed */}
           <div className="bg-white rounded-xl border overflow-hidden" style={{ height: 'calc(100vh - 320px)' }}>
             <iframe
+              key={selectedLink.id}
               src={selectedLink.url}
               className="w-full h-full border-0"
               title={selectedLink.name}
