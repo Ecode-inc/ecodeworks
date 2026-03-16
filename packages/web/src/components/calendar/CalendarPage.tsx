@@ -1,12 +1,21 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useOrgStore } from '../../stores/orgStore'
-import { calendarApi } from '../../lib/api'
+import { calendarApi, membersApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
 import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react'
 import dayjs from 'dayjs'
+
+type Visibility = 'personal' | 'department' | 'company' | 'shared'
+
+interface SharedTarget {
+  id: string
+  event_id: string
+  target_type: 'user' | 'executives'
+  target_id: string | null
+}
 
 interface CalendarEvent {
   id: string
@@ -16,6 +25,15 @@ interface CalendarEvent {
   all_day: number
   color: string
   description: string
+  visibility?: Visibility
+  shared_targets?: SharedTarget[]
+}
+
+interface OrgMember {
+  id: string
+  name: string
+  email: string
+  is_ceo: number
 }
 
 export function CalendarPage() {
@@ -195,6 +213,13 @@ export function CalendarPage() {
   )
 }
 
+const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
+  { value: 'personal', label: '개인일정' },
+  { value: 'department', label: '부서공유' },
+  { value: 'company', label: '회사공유' },
+  { value: 'shared', label: '선택공유' },
+]
+
 function EventModal({ open, onClose, event, deptId, onSave }: {
   open: boolean
   onClose: () => void
@@ -209,6 +234,11 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
   const [allDay, setAllDay] = useState(false)
   const [color, setColor] = useState('#3B82F6')
   const [loading, setLoading] = useState(false)
+  const [visibility, setVisibility] = useState<Visibility>('department')
+  const [sharedTargetIds, setSharedTargetIds] = useState<string[]>([])
+  const [shareWithExecutives, setShareWithExecutives] = useState(false)
+  const [members, setMembers] = useState<OrgMember[]>([])
+  const [membersLoaded, setMembersLoaded] = useState(false)
 
   useEffect(() => {
     if (event) {
@@ -218,6 +248,21 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
       setEndAt(dayjs(event.end_at).format('YYYY-MM-DDTHH:mm'))
       setAllDay(!!event.all_day)
       setColor(event.color || '#3B82F6')
+      setVisibility(event.visibility || 'department')
+      // Restore shared targets from event
+      if (event.shared_targets?.length) {
+        setSharedTargetIds(
+          event.shared_targets
+            .filter(t => t.target_type === 'user' && t.target_id)
+            .map(t => t.target_id!)
+        )
+        setShareWithExecutives(
+          event.shared_targets.some(t => t.target_type === 'executives')
+        )
+      } else {
+        setSharedTargetIds([])
+        setShareWithExecutives(false)
+      }
     } else {
       setTitle('')
       setDescription('')
@@ -225,20 +270,44 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
       setEndAt(dayjs().add(1, 'hour').format('YYYY-MM-DDTHH:mm'))
       setAllDay(false)
       setColor('#3B82F6')
+      setVisibility('department')
+      setSharedTargetIds([])
+      setShareWithExecutives(false)
     }
   }, [event, open])
+
+  // Load members when 'shared' visibility is selected
+  useEffect(() => {
+    if (visibility === 'shared' && !membersLoaded) {
+      membersApi.list().then(res => {
+        setMembers(res.members as OrgMember[])
+        setMembersLoaded(true)
+      }).catch(() => { /* ignore */ })
+    }
+  }, [visibility, membersLoaded])
+
+  const toggleSharedTarget = (userId: string) => {
+    setSharedTargetIds(prev =>
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    )
+  }
 
   const handleSubmit = async () => {
     if (!title || !deptId) return
     setLoading(true)
     try {
-      const data = {
+      const data: Record<string, unknown> = {
         title,
         description,
         start_at: new Date(startAt).toISOString(),
         end_at: new Date(endAt).toISOString(),
         all_day: allDay,
         color,
+        visibility,
+      }
+      if (visibility === 'shared') {
+        data.shared_target_ids = sharedTargetIds
+        data.share_with_executives = shareWithExecutives
       }
       if (event) {
         await calendarApi.updateEvent(event.id, data)
@@ -281,6 +350,64 @@ function EventModal({ open, onClose, event, deptId, onSave }: {
           <label className="block text-sm font-medium text-gray-700 mb-1">색상</label>
           <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-10 h-8 rounded cursor-pointer" />
         </div>
+
+        {/* Visibility selector */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">공개 범위</label>
+          <div className="grid grid-cols-2 gap-2">
+            {VISIBILITY_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setVisibility(opt.value)}
+                className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                  visibility === opt.value
+                    ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Shared target picker */}
+        {visibility === 'shared' && (
+          <div className="border rounded-lg p-3 space-y-3 bg-gray-50">
+            <label className="block text-sm font-medium text-gray-700">공유 대상 선택</label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={shareWithExecutives}
+                onChange={e => setShareWithExecutives(e.target.checked)}
+                className="rounded"
+              />
+              <span className="font-medium">임원진 (CEO)</span>
+            </label>
+            <div className="border-t pt-2">
+              <p className="text-xs text-gray-500 mb-2">개별 사용자 선택</p>
+              <div className="max-h-40 overflow-y-auto space-y-1">
+                {members.map(m => (
+                  <label key={m.id} className="flex items-center gap-2 text-sm py-1 px-2 rounded hover:bg-gray-100 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sharedTargetIds.includes(m.id)}
+                      onChange={() => toggleSharedTarget(m.id)}
+                      className="rounded"
+                    />
+                    <span>{m.name}</span>
+                    <span className="text-xs text-gray-400">{m.email}</span>
+                  </label>
+                ))}
+                {members.length === 0 && (
+                  <p className="text-xs text-gray-400 py-2">멤버를 불러오는 중...</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <textarea
           placeholder="설명 (선택)"
           value={description}

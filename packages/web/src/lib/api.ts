@@ -46,6 +46,14 @@ async function refreshAccessToken(): Promise<void> {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  // If no access token but refresh token exists, refresh first
+  if (!accessToken && getStoredRefreshToken()) {
+    if (!refreshPromise) {
+      refreshPromise = refreshAccessToken().finally(() => { refreshPromise = null })
+    }
+    await refreshPromise
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options?.headers as Record<string, string>),
@@ -56,7 +64,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   let res = await fetch(`${API_BASE}${path}`, { ...options, headers })
 
-  if (res.status === 401 && accessToken) {
+  if (res.status === 401 && getStoredRefreshToken()) {
     if (!refreshPromise) {
       refreshPromise = refreshAccessToken().finally(() => { refreshPromise = null })
     }
