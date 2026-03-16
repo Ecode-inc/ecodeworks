@@ -24,6 +24,12 @@ app.use('/*', cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 }))
 
+// Global error handler
+app.onError((err, c) => {
+  console.error('Unhandled error:', err.message, err.stack)
+  return c.json({ error: err.message }, 500)
+})
+
 // Health check
 app.get('/', (c) => c.json({ status: 'ok', service: 'ecode-internal-api' }))
 

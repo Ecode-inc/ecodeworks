@@ -8,16 +8,52 @@ interface LoginPageProps {
   onSwitchToRegister: () => void
 }
 
+/**
+ * Org slug is resolved in order:
+ *  1. Subdomain: ecode.pages.dev → skip, but org-slug.ecode.pages.dev → "org-slug"
+ *  2. Custom domain mapping: e.g. app.ecode.co.kr → mapped slug
+ *  3. localStorage (last successful login)
+ *  4. Manual input
+ */
+function detectOrgSlug(): string | null {
+  const host = window.location.hostname
+
+  // Custom domain → slug mapping (add entries as needed)
+  const domainMap: Record<string, string> = {
+    'app.ecode.co.kr': '이코드',
+    'ecode.co.kr': '이코드',
+  }
+  if (domainMap[host]) return domainMap[host]
+
+  // Subdomain detection: xxx.ecode-internal.pages.dev or xxx.ecode.co.kr
+  const parts = host.split('.')
+  if (parts.length >= 3) {
+    const sub = parts[0]
+    // Skip deployment hashes (hex strings) and "www"
+    if (sub !== 'www' && !/^[0-9a-f]{8}$/.test(sub)) {
+      return sub
+    }
+  }
+
+  // Fallback to localStorage
+  return localStorage.getItem('lastOrgSlug')
+}
+
 export function LoginPage({ onSwitchToRegister }: LoginPageProps) {
   const { login, loading } = useAuthStore()
-  const [orgSlug, setOrgSlug] = useState('')
-  const [email, setEmail] = useState('')
+  const detected = detectOrgSlug()
+  const [orgSlug, setOrgSlug] = useState(detected || '')
+  const [email, setEmail] = useState(localStorage.getItem('lastEmail') || '')
   const [password, setPassword] = useState('')
+  const orgAutoDetected = !!detected
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     try {
       await login(email, password, orgSlug)
+      // Save for next time
+      localStorage.setItem('lastOrgSlug', orgSlug)
+      localStorage.setItem('lastEmail', email)
     } catch (err: any) {
       useToastStore.getState().addToast('error', '로그인 실패', err.message)
     }
@@ -32,13 +68,20 @@ export function LoginPage({ onSwitchToRegister }: LoginPageProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white p-8 rounded-xl shadow-sm border space-y-4">
-          <Input
-            label="조직 슬러그"
-            placeholder="my-company"
-            value={orgSlug}
-            onChange={(e) => setOrgSlug(e.target.value)}
-            required
-          />
+          {orgAutoDetected ? (
+            <div className="bg-gray-50 rounded-lg px-3 py-2">
+              <span className="text-xs text-gray-500">조직</span>
+              <p className="text-sm font-medium text-gray-800">{orgSlug}</p>
+            </div>
+          ) : (
+            <Input
+              label="조직 슬러그"
+              placeholder="my-company"
+              value={orgSlug}
+              onChange={(e) => setOrgSlug(e.target.value)}
+              required
+            />
+          )}
           <Input
             label="이메일"
             type="email"
@@ -46,6 +89,7 @@ export function LoginPage({ onSwitchToRegister }: LoginPageProps) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            autoFocus={!!orgSlug}
           />
           <Input
             label="비밀번호"
@@ -60,15 +104,28 @@ export function LoginPage({ onSwitchToRegister }: LoginPageProps) {
           </Button>
         </form>
 
-        <p className="text-center text-sm text-gray-500 mt-4">
-          조직이 없으신가요?{' '}
-          <button
-            onClick={onSwitchToRegister}
-            className="text-primary-600 hover:text-primary-700 font-medium"
-          >
-            새 조직 만들기
-          </button>
-        </p>
+        <div className="text-center mt-4 space-y-1">
+          {orgAutoDetected && (
+            <button
+              onClick={() => {
+                localStorage.removeItem('lastOrgSlug')
+                window.location.reload()
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              다른 조직으로 로그인
+            </button>
+          )}
+          <p className="text-sm text-gray-500">
+            조직이 없으신가요?{' '}
+            <button
+              onClick={onSwitchToRegister}
+              className="text-primary-600 hover:text-primary-700 font-medium"
+            >
+              새 조직 만들기
+            </button>
+          </p>
+        </div>
       </div>
     </div>
   )

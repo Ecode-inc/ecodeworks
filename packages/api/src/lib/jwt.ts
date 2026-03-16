@@ -33,7 +33,9 @@ export async function verifyJWT(token: string, secret: string): Promise<JWTPaylo
 
   if (!valid) throw new Error('Invalid signature')
 
-  const payload: JWTPayload = JSON.parse(atob(encodedPayload.replace(/-/g, '+').replace(/_/g, '/')))
+  // UTF-8 safe decode
+  const payloadBytes = new Uint8Array(base64urlToBuffer(encodedPayload))
+  const payload: JWTPayload = JSON.parse(new TextDecoder().decode(payloadBytes))
 
   const now = Math.floor(Date.now() / 1000)
   if (payload.exp < now) throw new Error('Token expired')
@@ -52,7 +54,9 @@ async function getKey(secret: string): Promise<CryptoKey> {
 }
 
 function base64url(str: string): string {
-  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  // UTF-8 safe: encode string as bytes first
+  const bytes = new TextEncoder().encode(str)
+  return base64urlFromBuffer(bytes.buffer as ArrayBuffer)
 }
 
 function base64urlFromBuffer(buffer: ArrayBuffer): string {

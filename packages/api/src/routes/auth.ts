@@ -32,7 +32,11 @@ authRoutes.post('/register', async (c) => {
   const orgId = generateId()
   const userId = generateId()
   const deptId = generateId()
-  const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+  let slug = orgName.toLowerCase().replace(/[^a-z0-9가-힣]+/g, '-').replace(/(^-|-$)/g, '')
+  // If slug is empty or only Korean, generate from org name or use a fallback
+  if (!slug || slug === '-') {
+    slug = orgName.trim().replace(/\s+/g, '-')
+  }
 
   // Check if org slug exists
   const existing = await c.env.DB.prepare(
