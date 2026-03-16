@@ -63,7 +63,14 @@ const getActions = [
   {
     category: '✅ 칸반',
     items: [
-      { path: '/action/create-task', desc: '태스크 생성', params: 'board_id, column_id, title, description, priority (low/medium/high/urgent), due_date' },
+      { path: '/action/list-boards', desc: '보드 목록', params: 'dept_id (선택)' },
+      { path: '/action/get-board', desc: '보드 상세 (컬럼+태스크)', params: 'id' },
+      { path: '/action/create-board', desc: '보드 생성', params: 'name, department_id (선택)' },
+      { path: '/action/update-board', desc: '보드 이름 변경', params: 'id, name' },
+      { path: '/action/list-tasks', desc: '태스크 목록', params: 'board_id (선택), assignee_id (선택)' },
+      { path: '/action/create-task', desc: '태스크 생성', params: 'board_id, column_id, title, description, priority, due_date' },
+      { path: '/action/update-task', desc: '태스크 수정', params: 'id, title, description, column_id, priority, assignee_id, due_date' },
+      { path: '/action/update-column', desc: '컬럼 이름/색상 변경', params: 'id, name, color' },
     ],
   },
 ]

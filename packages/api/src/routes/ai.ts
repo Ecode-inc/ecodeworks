@@ -1563,6 +1563,172 @@ aiRoutes.get('/action/create-task', async (c) => {
   return c.json({ success: true, task })
 })
 
+// 태스크 수정
+aiRoutes.get('/action/update-task', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const taskId = c.req.query('id')
+  if (!taskId) return c.json({ error: 'id required' }, 400)
+
+  const existing = await c.env.DB.prepare(`
+    SELECT t.id FROM tasks t JOIN boards b ON b.id = t.board_id JOIN departments d ON d.id = b.department_id WHERE t.id = ? AND d.org_id = ?
+  `).bind(taskId, orgId).first()
+  if (!existing) return c.json({ error: 'Task not found' }, 404)
+
+  const updates: string[] = []
+  const values: unknown[] = []
+  const title = c.req.query('title')
+  const description = c.req.query('description')
+  const columnId = c.req.query('column_id')
+  const priority = c.req.query('priority')
+  const assigneeId = c.req.query('assignee_id')
+  const dueDate = c.req.query('due_date')
+
+  if (title) { updates.push('title = ?'); values.push(title) }
+  if (description !== undefined && description !== null) { updates.push('description = ?'); values.push(description) }
+  if (columnId) { updates.push('column_id = ?'); values.push(columnId) }
+  if (priority) { updates.push('priority = ?'); values.push(priority) }
+  if (assigneeId) { updates.push('assignee_id = ?'); values.push(assigneeId) }
+  if (dueDate) { updates.push('due_date = ?'); values.push(dueDate) }
+
+  if (updates.length === 0) return c.json({ error: 'No fields to update' }, 400)
+  updates.push("updated_at = datetime('now')")
+  values.push(taskId)
+
+  await c.env.DB.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
+  const task = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first()
+  return c.json({ success: true, task })
+})
+
+// 보드 목록
+aiRoutes.get('/action/list-boards', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const deptId = c.req.query('dept_id')
+
+  let query = 'SELECT b.* FROM boards b JOIN departments d ON d.id = b.department_id WHERE d.org_id = ?'
+  const params: unknown[] = [orgId]
+  if (deptId) { query += ' AND b.department_id = ?'; params.push(deptId) }
+  query += ' ORDER BY b.created_at DESC LIMIT 50'
+
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ boards: results })
+})
+
+// 보드 상세 (컬럼+태스크 포함)
+aiRoutes.get('/action/get-board', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const boardId = c.req.query('id')
+  if (!boardId) return c.json({ error: 'id required' }, 400)
+
+  const board = await c.env.DB.prepare('SELECT b.* FROM boards b JOIN departments d ON d.id = b.department_id WHERE b.id = ? AND d.org_id = ?').bind(boardId, orgId).first()
+  if (!board) return c.json({ error: 'Board not found' }, 404)
+
+  const { results: columns } = await c.env.DB.prepare('SELECT * FROM board_columns WHERE board_id = ? ORDER BY order_index').bind(boardId).all()
+  const { results: tasks } = await c.env.DB.prepare('SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.board_id = ? ORDER BY t.order_index').bind(boardId).all()
+
+  return c.json({ board, columns, tasks })
+})
+
+// 태스크 목록
+aiRoutes.get('/action/list-tasks', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const boardId = c.req.query('board_id')
+  const assigneeId = c.req.query('assignee_id')
+
+  let query = 'SELECT t.*, u.name as assignee_name FROM tasks t JOIN boards b ON b.id = t.board_id JOIN departments d ON d.id = b.department_id LEFT JOIN users u ON u.id = t.assignee_id WHERE d.org_id = ?'
+  const params: unknown[] = [orgId]
+  if (boardId) { query += ' AND t.board_id = ?'; params.push(boardId) }
+  if (assigneeId) { query += ' AND t.assignee_id = ?'; params.push(assigneeId) }
+  query += ' ORDER BY t.updated_at DESC LIMIT 100'
+
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ tasks: results })
+})
+
+// 보드 이름 변경
+aiRoutes.get('/action/update-board', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const boardId = c.req.query('id')
+  const name = c.req.query('name')
+  if (!boardId || !name) return c.json({ error: 'id and name required' }, 400)
+
+  const board = await c.env.DB.prepare('SELECT b.id FROM boards b JOIN departments d ON d.id = b.department_id WHERE b.id = ? AND d.org_id = ?').bind(boardId, orgId).first()
+  if (!board) return c.json({ error: 'Board not found' }, 404)
+
+  await c.env.DB.prepare('UPDATE boards SET name = ? WHERE id = ?').bind(name, boardId).run()
+  const updated = await c.env.DB.prepare('SELECT * FROM boards WHERE id = ?').bind(boardId).first()
+  return c.json({ success: true, board: updated })
+})
+
+// 컬럼 이름 변경
+aiRoutes.get('/action/update-column', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const colId = c.req.query('id')
+  const name = c.req.query('name')
+  const color = c.req.query('color')
+  if (!colId) return c.json({ error: 'id required' }, 400)
+
+  // Verify ownership
+  const col = await c.env.DB.prepare(`
+    SELECT bc.id FROM board_columns bc JOIN boards b ON b.id = bc.board_id JOIN departments d ON d.id = b.department_id WHERE bc.id = ? AND d.org_id = ?
+  `).bind(colId, orgId).first()
+  if (!col) return c.json({ error: 'Column not found' }, 404)
+
+  const updates: string[] = []
+  const values: unknown[] = []
+  if (name) { updates.push('name = ?'); values.push(name) }
+  if (color) { updates.push('color = ?'); values.push(color) }
+  if (updates.length === 0) return c.json({ error: 'name or color required' }, 400)
+  values.push(colId)
+
+  await c.env.DB.prepare(`UPDATE board_columns SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
+  const updated = await c.env.DB.prepare('SELECT * FROM board_columns WHERE id = ?').bind(colId).first()
+  return c.json({ success: true, column: updated })
+})
+
+// 보드 생성
+aiRoutes.get('/action/create-board', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const deptId = c.req.query('department_id')
+  const name = c.req.query('name')
+  if (!name) return c.json({ error: 'name required' }, 400)
+
+  let effectiveDeptId = deptId
+  if (!effectiveDeptId) {
+    const dept = await c.env.DB.prepare('SELECT id FROM departments WHERE org_id = ? ORDER BY order_index LIMIT 1').bind(orgId).first<{ id: string }>()
+    effectiveDeptId = dept?.id || ''
+  }
+  if (!effectiveDeptId) return c.json({ error: 'No department found' }, 400)
+
+  const boardId = generateId()
+  const cols = [
+    { name: 'To Do', color: '#6B7280', order: 0 },
+    { name: 'In Progress', color: '#3B82F6', order: 1 },
+    { name: 'Done', color: '#10B981', order: 2 },
+  ]
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('INSERT INTO boards (id, department_id, name) VALUES (?, ?, ?)').bind(boardId, effectiveDeptId, name),
+    ...cols.map(col => c.env.DB.prepare('INSERT INTO board_columns (id, board_id, name, color, order_index) VALUES (?, ?, ?, ?, ?)').bind(generateId(), boardId, col.name, col.color, col.order)),
+  ])
+
+  const board = await c.env.DB.prepare('SELECT * FROM boards WHERE id = ?').bind(boardId).first()
+  return c.json({ success: true, board })
+})
+
 // ── Document actions (GET-based) ──────────────────────────────
 
 // 문서 검색
