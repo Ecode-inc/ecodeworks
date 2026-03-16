@@ -71,7 +71,7 @@ cd packages/api && npx wrangler deploy
 # Web 빌드 + 배포
 cd packages/web
 VITE_API_URL="https://ecode-internal-api.justin21lee.workers.dev/api" npx vite build
-CLOUDFLARE_ACCOUNT_ID=c3e0474724b7ce487cf7d2cbe2f26aaa npx wrangler pages deploy dist --project-name=ecode-internal --commit-dirty=true
+CLOUDFLARE_ACCOUNT_ID=c3e0474724b7ce487cf7d2cbe2f26aaa npx wrangler pages deploy dist --project-name=ecode-internal --branch=master --commit-dirty=true --commit-message=deploy
 
 # D1 마이그레이션 (원격)
 cd packages/api && npx wrangler d1 execute ecode-db --remote --file=./migrations/XXXX.sql
