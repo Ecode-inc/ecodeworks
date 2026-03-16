@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Calendar,
   Clock,
+  CalendarDays,
   KanbanSquare,
   FileText,
   KeyRound,
@@ -14,6 +15,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
+import { leaveApi } from '../../lib/api'
 
 interface SidebarProps {
   collapsed: boolean
@@ -24,6 +26,7 @@ const navItems = [
   { path: '/', icon: LayoutDashboard, label: '대시보드' },
   { path: '/calendar', icon: Calendar, label: '캘린더' },
   { path: '/attendance', icon: Clock, label: '근태관리' },
+  { path: '/leave', icon: CalendarDays, label: '휴가/결재', badgeKey: 'leave' as const },
   { path: '/kanban', icon: KanbanSquare, label: '칸반' },
   { path: '/docs', icon: FileText, label: '문서' },
   { path: '/vault', icon: KeyRound, label: '비밀번호 금고' },
@@ -48,6 +51,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const organization = useAuthStore((s) => s.organization)
   const showSettings = user?.is_ceo || user?.is_admin
   const apiBase = import.meta.env.VITE_API_URL || '/api'
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0)
+
+  useEffect(() => {
+    if (user) {
+      leaveApi.pendingCount()
+        .then(res => setPendingLeaveCount(res.count))
+        .catch(() => {})
+    }
+  }, [user, location.pathname])
 
   const allItems = showSettings
     ? [...navItems, { path: '/ai', icon: Bot, label: 'AI' }, { path: '/settings', icon: Settings, label: '설정' }]
@@ -139,7 +151,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
-              className={`flex items-center w-full px-4 py-2.5 text-sm transition-colors ${
+              className={`relative flex items-center w-full px-4 py-2.5 text-sm transition-colors ${
                 active
                   ? themeStyles.activeBg
                   : themeStyles.hoverBg
@@ -147,7 +159,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               title={collapsed ? item.label : undefined}
             >
               <item.icon size={20} />
-              {!collapsed && <span className="ml-3">{item.label}</span>}
+              {!collapsed && <span className="ml-3 flex-1 text-left">{item.label}</span>}
+              {'badgeKey' in item && item.badgeKey === 'leave' && pendingLeaveCount > 0 && (
+                <span className={`${collapsed ? 'absolute top-0.5 right-0.5' : 'ml-auto'} bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1`}>
+                  {pendingLeaveCount}
+                </span>
+              )}
             </button>
           )
         })}

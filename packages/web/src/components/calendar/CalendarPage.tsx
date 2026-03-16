@@ -515,7 +515,7 @@ function EventModal({ open, onClose, event, deptId, onSave, prefillDate }: {
   }
 
   const handleSubmit = async () => {
-    if (!title || !deptId) return
+    if (!title) return
     setLoading(true)
     try {
       let finalStartAt: string
@@ -563,7 +563,7 @@ function EventModal({ open, onClose, event, deptId, onSave, prefillDate }: {
       if (event) {
         await calendarApi.updateEvent(event.id, data)
       } else {
-        await calendarApi.createEvent(deptId, data)
+        await calendarApi.createEvent(deptId || '', data)
       }
       onSave()
       onClose()

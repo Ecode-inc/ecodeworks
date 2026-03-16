@@ -355,6 +355,46 @@ export const joinRequestApi = {
     request<{ success: boolean }>(`/join-requests/${id}/reject`, { method: 'POST' }),
 }
 
+// Leave Management
+export const leaveApi = {
+  list: (params?: { status?: string; user_id?: string; dept_id?: string; month?: string; include_deleted?: string }) => {
+    const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v) as [string, string][]).toString()
+    return request<{ requests: any[] }>(`/leave${qs ? '?' + qs : ''}`)
+  },
+  get: (id: string) => request<{ request: any }>(`/leave/${id}`),
+  create: (data: any) => request<{ request: any }>('/leave', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: any) => request<{ request: any }>(`/leave/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  cancel: (id: string) => request<{ success: boolean }>(`/leave/${id}/cancel`, { method: 'POST' }),
+  softDelete: (id: string) => request<{ success: boolean }>(`/leave/${id}/delete`, { method: 'POST' }),
+  restore: (id: string) => request<{ success: boolean }>(`/leave/${id}/restore`, { method: 'POST' }),
+  approve: (id: string) => request<{ request: any }>(`/leave/${id}/approve`, { method: 'POST' }),
+  reject: (id: string, comment?: string) => request<{ request: any }>(`/leave/${id}/reject`, { method: 'POST', body: JSON.stringify({ comment }) }),
+  pendingCount: () => request<{ count: number }>('/leave/pending-count'),
+  trash: () => request<{ requests: any[] }>('/leave/trash'),
+  upload: async (file: File): Promise<{ url: string }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const headers: Record<string, string> = {}
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`
+    }
+
+    const res = await fetch(`${API_BASE}/leave/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    })
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error((error as any).error || `HTTP ${res.status}`)
+    }
+
+    return res.json()
+  },
+}
+
 // Telegram Integration
 export const telegramApi = {
   listChats: () => request<{ chats: any[] }>('/telegram/chats'),

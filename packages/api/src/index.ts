@@ -20,6 +20,7 @@ import { joinRequestsRoutes } from './routes/joinRequests'
 import { positionsRoutes } from './routes/positions'
 import { mcpRoutes } from './routes/mcp'
 import { attendanceRoutes } from './routes/attendance'
+import { leaveRoutes } from './routes/leave'
 import { WebSocketRoom } from './durable/WebSocketRoom'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -78,6 +79,9 @@ app.route('/api/mcp', mcpRoutes)
 
 // Attendance
 app.route('/api/attendance', attendanceRoutes)
+
+// Leave / Approval
+app.route('/api/leave', leaveRoutes)
 
 // Positions
 app.route('/api/positions', positionsRoutes)
