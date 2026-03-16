@@ -45,7 +45,17 @@ const getActions = [
   {
     category: '📅 캘린더',
     items: [
-      { path: '/action/create-event', desc: '일정 생성', params: 'department_id, title, start_at, end_at, all_day (true/false), color, visibility (personal/department/company)' },
+      { path: '/action/create-event', desc: '일정 생성 (개인일정 지원)', params: 'telegram_user_id or user_id, title, start_at (+09:00), end_at, all_day, color, visibility (personal/department/company), importance (normal/important), department_id (선택)' },
+    ],
+  },
+  {
+    category: '📝 문서',
+    items: [
+      { path: '/action/search-docs', desc: '문서 검색 (전문 검색)', params: 'q (검색어)' },
+      { path: '/action/list-docs', desc: '문서/폴더 목록', params: 'dept_id (선택), parent_id (폴더 ID, 선택)' },
+      { path: '/action/get-doc', desc: '문서 상세 (내용 포함)', params: 'id' },
+      { path: '/action/create-doc', desc: '문서 생성', params: 'title, content, department_id (선택), parent_id (상위폴더, 선택), is_folder (true/false), visibility' },
+      { path: '/action/update-doc', desc: '문서 수정', params: 'id, title (선택), content (선택)' },
     ],
   },
   {

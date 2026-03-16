@@ -1529,3 +1529,133 @@ aiRoutes.get('/action/create-task', async (c) => {
   const task = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(id).first()
   return c.json({ success: true, task })
 })
+
+// ── Document actions (GET-based) ──────────────────────────────
+
+// 문서 검색
+aiRoutes.get('/action/search-docs', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const q = c.req.query('q')
+  if (!q) return c.json({ documents: [] })
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT d.id, d.title, d.department_id, d.content, d.visibility, d.shared, d.is_folder, d.created_at, d.updated_at,
+           snippet(documents_fts, 1, '<mark>', '</mark>', '...', 64) as snippet
+    FROM documents_fts fts
+    JOIN documents d ON d.rowid = fts.rowid
+    JOIN departments dept ON dept.id = d.department_id
+    WHERE documents_fts MATCH ? AND dept.org_id = ?
+    ORDER BY rank LIMIT 20
+  `).bind(q, orgId).all()
+
+  return c.json({ documents: results })
+})
+
+// 문서 목록 (폴더 탐색)
+aiRoutes.get('/action/list-docs', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const parentId = c.req.query('parent_id')
+  const deptId = c.req.query('dept_id')
+
+  let query = `SELECT d.id, d.title, d.department_id, d.parent_id, d.is_folder, d.visibility, d.shared, d.order_index, d.created_at, d.updated_at
+    FROM documents d
+    JOIN departments dept ON dept.id = d.department_id
+    WHERE dept.org_id = ?`
+  const params: unknown[] = [orgId]
+
+  if (deptId) { query += ' AND d.department_id = ?'; params.push(deptId) }
+  if (parentId) { query += ' AND d.parent_id = ?'; params.push(parentId) }
+  else if (deptId) { query += ' AND d.parent_id IS NULL' }
+
+  query += ' ORDER BY d.is_folder DESC, d.order_index ASC LIMIT 100'
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ documents: results })
+})
+
+// 문서 상세 (내용 포함)
+aiRoutes.get('/action/get-doc', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const docId = c.req.query('id')
+  if (!docId) return c.json({ error: 'id required' }, 400)
+
+  const doc = await c.env.DB.prepare(`
+    SELECT d.* FROM documents d
+    JOIN departments dept ON dept.id = d.department_id
+    WHERE d.id = ? AND dept.org_id = ?
+  `).bind(docId, orgId).first()
+
+  if (!doc) return c.json({ error: 'Document not found' }, 404)
+  return c.json({ document: doc })
+})
+
+// 문서 생성
+aiRoutes.get('/action/create-doc', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const deptId = c.req.query('department_id')
+  const title = c.req.query('title')
+  const content = c.req.query('content') || ''
+  const parentId = c.req.query('parent_id')
+  const isFolder = c.req.query('is_folder') === 'true'
+  const visibility = c.req.query('visibility') || 'department'
+
+  if (!title) return c.json({ error: 'title required' }, 400)
+
+  // Find dept
+  let effectiveDeptId = deptId
+  if (!effectiveDeptId) {
+    const dept = await c.env.DB.prepare('SELECT id FROM departments WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>()
+    effectiveDeptId = dept?.id || ''
+  }
+
+  const id = generateId()
+  await c.env.DB.prepare(
+    "INSERT INTO documents (id, department_id, parent_id, title, content, is_folder, created_by, visibility, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'ai-api', ?, datetime('now'), datetime('now'))"
+  ).bind(id, effectiveDeptId, parentId || null, title, content, isFolder ? 1 : 0, visibility).run()
+
+  const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first()
+  return c.json({ success: true, document: doc })
+})
+
+// 문서 수정
+aiRoutes.get('/action/update-doc', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const docId = c.req.query('id')
+  const title = c.req.query('title')
+  const content = c.req.query('content')
+
+  if (!docId) return c.json({ error: 'id required' }, 400)
+
+  const existing = await c.env.DB.prepare(`
+    SELECT d.id FROM documents d
+    JOIN departments dept ON dept.id = d.department_id
+    WHERE d.id = ? AND dept.org_id = ?
+  `).bind(docId, orgId).first()
+  if (!existing) return c.json({ error: 'Document not found' }, 404)
+
+  const updates: string[] = []
+  const values: unknown[] = []
+  if (title) { updates.push('title = ?'); values.push(title) }
+  if (content !== undefined && content !== null) { updates.push('content = ?'); values.push(content) }
+
+  if (updates.length === 0) return c.json({ error: 'title or content required' }, 400)
+
+  updates.push("updated_at = datetime('now')")
+  values.push(docId)
+
+  await c.env.DB.prepare(`UPDATE documents SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
+
+  const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first()
+  return c.json({ success: true, document: doc })
+})
