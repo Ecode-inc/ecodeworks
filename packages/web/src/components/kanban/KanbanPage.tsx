@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useOrgStore } from '../../stores/orgStore'
+import { useAuthStore } from '../../stores/authStore'
 import { boardsApi, tasksApi, membersApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
@@ -20,6 +21,7 @@ const visibilityLabels: Record<string, string> = {
 
 export function KanbanPage() {
   const { currentDeptId } = useOrgStore()
+  const { departments } = useAuthStore()
   const [boards, setBoards] = useState<any[]>([])
   const [selectedBoard, setSelectedBoard] = useState<any>(null)
   const [columns, setColumns] = useState<any[]>([])
@@ -27,6 +29,7 @@ export function KanbanPage() {
   const [showNewBoard, setShowNewBoard] = useState(false)
   const [newBoardName, setNewBoardName] = useState('')
   const [newBoardVisibility, setNewBoardVisibility] = useState<'company' | 'department' | 'personal'>('department')
+  const [newBoardDeptId, setNewBoardDeptId] = useState('')
   const [showTaskModal, setShowTaskModal] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [targetColumnId, setTargetColumnId] = useState<string | null>(null)
@@ -71,11 +74,17 @@ export function KanbanPage() {
 
   const createBoard = async () => {
     if (!newBoardName) return
+    if (newBoardVisibility === 'department' && !newBoardDeptId) {
+      useToastStore.getState().addToast('error', '부서를 선택해주세요')
+      return
+    }
+    const deptId = newBoardVisibility === 'department' ? newBoardDeptId : (currentDeptId || '')
     try {
-      const res = await boardsApi.create(currentDeptId || '', newBoardName, newBoardVisibility)
+      const res = await boardsApi.create(deptId, newBoardName, newBoardVisibility)
       setBoards(prev => [...prev, res.board])
       setNewBoardName('')
-      setNewBoardVisibility('department' as any)
+      setNewBoardVisibility('department')
+      setNewBoardDeptId('')
       setShowNewBoard(false)
       loadBoard(res.board.id)
     } catch (e: any) {
@@ -485,6 +494,21 @@ export function KanbanPage() {
               <option value="personal">개인</option>
             </select>
           </div>
+          {newBoardVisibility === 'department' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">부서 선택</label>
+              <select
+                value={newBoardDeptId}
+                onChange={e => setNewBoardDeptId(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="">부서를 선택하세요</option>
+                {departments.filter((d: any) => d.parent_id).map((d: any) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setShowNewBoard(false)}>취소</Button>
             <Button onClick={createBoard}>만들기</Button>
