@@ -352,9 +352,17 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
   if (loading && depth === 0) return <p className="text-xs text-gray-400 text-center py-4">로딩 중...</p>
   if (docs.length === 0 && depth === 0) return <p className="text-xs text-gray-400 text-center py-4">문서가 없습니다</p>
 
+  // Sort: AI-titled docs go to the bottom of each folder
+  const sortedDocs = [...docs].sort((a, b) => {
+    if (a.is_folder !== b.is_folder) return a.is_folder ? -1 : 1
+    if (a.title === 'AI' && b.title !== 'AI') return 1
+    if (a.title !== 'AI' && b.title === 'AI') return -1
+    return 0
+  })
+
   return (
     <div className={depth > 0 ? 'ml-3 border-l border-gray-200 pl-1' : ''}>
-      {docs.map(doc => (
+      {sortedDocs.map(doc => (
         doc.is_folder ? (
           <FolderNode
             key={doc.id}
@@ -443,12 +451,15 @@ function TreeItem({ doc, selectedId, onSelect, onDelete }: {
   onSelect: (doc: any) => void
   onDelete: (doc: any) => void
 }) {
+  const isAIGuide = doc.title === 'AI'
+
   return (
-    <div className={`group flex items-center gap-1 w-full py-1 px-1 rounded-lg text-sm hover:bg-gray-100 ${selectedId === doc.id ? 'bg-primary-50 text-primary-700' : ''}`}>
+    <div className={`group flex items-center gap-1 w-full py-1 px-1 rounded-lg text-sm hover:bg-gray-100 ${selectedId === doc.id ? 'bg-primary-50 text-primary-700' : ''} ${isAIGuide ? 'opacity-40' : ''}`}>
       <span className="w-5" /> {/* indent spacer */}
       <button onClick={() => onSelect(doc)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
         <FileText size={15} className="text-gray-400 flex-shrink-0" />
-        <span className="truncate">{doc.title}</span>
+        <span className={`truncate ${isAIGuide ? 'italic text-gray-300' : ''}`}>{doc.title}</span>
+        {isAIGuide && <span className="text-[10px] text-gray-300 flex-shrink-0" title="AI 가이드">AI 가이드</span>}
         <span className="flex items-center gap-0.5 flex-shrink-0">
           {doc.visibility === 'company' && <Building2 size={10} className="text-blue-500" />}
           {doc.visibility === 'personal' && <UserIcon size={10} className="text-purple-500" />}

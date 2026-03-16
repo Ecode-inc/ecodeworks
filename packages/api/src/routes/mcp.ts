@@ -300,6 +300,29 @@ const TOOLS: ToolDefinition[] = [
       properties: {},
     },
   },
+  {
+    name: 'get_folder_guide',
+    description: '폴더의 AI 가이드 문서 조회. 해당 폴더의 콘텐츠를 어떻게 관리할지 가이드가 있으면 반환.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        parent_id: { type: 'string', description: '폴더 ID' },
+      },
+      required: ['parent_id'],
+    },
+  },
+  {
+    name: 'update_folder_guide',
+    description: '폴더의 AI 가이드 문서 생성 또는 갱신',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        parent_id: { type: 'string', description: '폴더 ID' },
+        content: { type: 'string', description: '가이드 내용' },
+      },
+      required: ['parent_id', 'content'],
+    },
+  },
 ]
 
 // ── Tool execution ──────────────────────────────────────────
@@ -316,6 +339,10 @@ async function executeTool(
   const text = (data: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(data) }],
   })
+
+  // Get a real user_id for FK constraints
+  const ceoRow = await db.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+  const ceoId = ceoRow?.id || (await db.prepare('SELECT id FROM users WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>())?.id || ''
 
   switch (toolName) {
     // ── Calendar ──────────────────────────────────────────
@@ -357,7 +384,7 @@ async function executeTool(
       const id = generateId()
       await db.prepare(`
         INSERT INTO events (id, department_id, user_id, title, description, start_at, end_at, all_day, color, created_at, updated_at)
-        VALUES (?, ?, 'ai-mcp', ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        VALUES (?, ?, ceoId, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `).bind(
         id,
         args.department_id,
@@ -542,7 +569,7 @@ async function executeTool(
       const id = generateId()
       await db.prepare(`
         INSERT INTO documents (id, department_id, parent_id, title, content, is_folder, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 0, 'ai-mcp', datetime('now'), datetime('now'))
+        VALUES (?, ?, ?, ?, ?, 0, ceoId, datetime('now'), datetime('now'))
       `).bind(
         id,
         args.department_id,
@@ -756,6 +783,49 @@ async function executeTool(
       ).bind(orgId).all()
 
       return text({ mappings: results })
+    }
+
+    // ── Folder AI Guide ──────────────────────────────────
+    case 'get_folder_guide': {
+      if (!checkScope(scopes, 'docs:read')) throw new Error('Insufficient scope: docs:read required')
+      if (!args.parent_id) throw new Error('parent_id is required')
+
+      const guide = await db.prepare(
+        "SELECT d.* FROM documents d JOIN departments dept ON dept.id = d.department_id WHERE d.parent_id = ? AND d.title = 'AI' AND dept.org_id = ?"
+      ).bind(args.parent_id, orgId).first()
+
+      return text({ document: guide || null })
+    }
+
+    case 'update_folder_guide': {
+      if (!checkScope(scopes, 'docs:write')) throw new Error('Insufficient scope: docs:write required')
+      if (!args.parent_id || !args.content) throw new Error('parent_id and content are required')
+
+      // Check folder exists and belongs to org
+      const folder = await db.prepare(
+        "SELECT d.id, d.department_id FROM documents d JOIN departments dept ON dept.id = d.department_id WHERE d.id = ? AND d.is_folder = 1 AND dept.org_id = ?"
+      ).bind(args.parent_id, orgId).first<{ id: string; department_id: string }>()
+      if (!folder) throw new Error('Folder not found')
+
+      // Check if AI guide already exists
+      const existingGuide = await db.prepare(
+        "SELECT d.id FROM documents d JOIN departments dept ON dept.id = d.department_id WHERE d.parent_id = ? AND d.title = 'AI' AND dept.org_id = ?"
+      ).bind(args.parent_id, orgId).first<{ id: string }>()
+
+      if (existingGuide) {
+        await db.prepare(
+          "UPDATE documents SET content = ?, updated_at = datetime('now') WHERE id = ?"
+        ).bind(args.content, existingGuide.id).run()
+        const doc = await db.prepare('SELECT * FROM documents WHERE id = ?').bind(existingGuide.id).first()
+        return text({ document: doc })
+      } else {
+        const id = generateId()
+        await db.prepare(
+          "INSERT INTO documents (id, department_id, parent_id, title, content, is_folder, created_by, visibility, created_at, updated_at) VALUES (?, ?, ?, 'AI', ?, 0, ceoId, 'department', datetime('now'), datetime('now'))"
+        ).bind(id, folder.department_id, args.parent_id, args.content).run()
+        const doc = await db.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first()
+        return text({ document: doc })
+      }
     }
 
     default:

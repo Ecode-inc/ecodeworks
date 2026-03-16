@@ -56,6 +56,8 @@ const getActions = [
       { path: '/action/get-doc', desc: '문서 상세 (내용 포함)', params: 'id' },
       { path: '/action/create-doc', desc: '문서 생성', params: 'title, content, department_id (선택), parent_id (상위폴더, 선택), is_folder (true/false), visibility' },
       { path: '/action/update-doc', desc: '문서 수정', params: 'id, title (선택), content (전체 덮어쓰기), append (기존 내용에 추가)' },
+      { path: '/action/get-folder-guide', desc: '폴더 AI 가이드 조회', params: 'parent_id (폴더ID)' },
+      { path: '/action/update-folder-guide', desc: '폴더 AI 가이드 생성/갱신', params: 'parent_id (폴더ID), content' },
     ],
   },
   {
@@ -118,6 +120,7 @@ const mcpTools = [
   'list_vault_credentials',
   'log_telegram_command', 'resolve_telegram_user',
   'map_telegram_user', 'unmap_telegram_user', 'list_telegram_mappings',
+  'get_folder_guide', 'update_folder_guide',
 ]
 
 export function AIGuidePage({ apiKey }: AIGuidePageProps) {

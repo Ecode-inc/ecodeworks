@@ -1606,7 +1606,16 @@ aiRoutes.get('/action/list-docs', async (c) => {
 
   query += ' ORDER BY d.is_folder DESC, d.order_index ASC LIMIT 100'
   const { results } = await c.env.DB.prepare(query).bind(...params).all()
-  return c.json({ documents: results })
+
+  // Auto-include folder AI guide if browsing a specific folder
+  if (parentId) {
+    const guide = await c.env.DB.prepare(
+      "SELECT content FROM documents d JOIN departments dept ON dept.id = d.department_id WHERE d.parent_id = ? AND d.title = 'AI' AND dept.org_id = ?"
+    ).bind(parentId, orgId).first<{ content: string }>()
+    return c.json({ documents: results, folder_guide: guide?.content || null })
+  } else {
+    return c.json({ documents: results, folder_guide: null })
+  }
 })
 
 // 문서 상세 (내용 포함)
@@ -1703,4 +1712,61 @@ aiRoutes.get('/action/update-doc', async (c) => {
 
   const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first()
   return c.json({ success: true, document: doc })
+})
+
+// 폴더 AI 가이드 조회
+aiRoutes.get('/action/get-folder-guide', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const parentId = c.req.query('parent_id')
+  if (!parentId) return c.json({ error: 'parent_id required' }, 400)
+
+  const guide = await c.env.DB.prepare(
+    "SELECT d.* FROM documents d JOIN departments dept ON dept.id = d.department_id WHERE d.parent_id = ? AND d.title = 'AI' AND dept.org_id = ?"
+  ).bind(parentId, orgId).first()
+
+  return c.json({ document: guide || null })
+})
+
+// 폴더 AI 가이드 생성/갱신
+aiRoutes.get('/action/update-folder-guide', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const parentId = c.req.query('parent_id')
+  const content = c.req.query('content') || ''
+  if (!parentId) return c.json({ error: 'parent_id required' }, 400)
+
+  // Check folder exists and belongs to org
+  const folder = await c.env.DB.prepare(
+    "SELECT d.id, d.department_id FROM documents d JOIN departments dept ON dept.id = d.department_id WHERE d.id = ? AND d.is_folder = 1 AND dept.org_id = ?"
+  ).bind(parentId, orgId).first<{ id: string; department_id: string }>()
+  if (!folder) return c.json({ error: 'Folder not found' }, 404)
+
+  // Check if AI guide already exists
+  const existing = await c.env.DB.prepare(
+    "SELECT d.id FROM documents d JOIN departments dept ON dept.id = d.department_id WHERE d.parent_id = ? AND d.title = 'AI' AND dept.org_id = ?"
+  ).bind(parentId, orgId).first<{ id: string }>()
+
+  if (existing) {
+    // Update existing guide
+    await c.env.DB.prepare(
+      "UPDATE documents SET content = ?, updated_at = datetime('now') WHERE id = ?"
+    ).bind(content, existing.id).run()
+    const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(existing.id).first()
+    return c.json({ success: true, document: doc })
+  } else {
+    // Create new AI guide doc
+    const docCeo = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+    const creatorId = docCeo?.id || (await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>())?.id || ''
+
+    const id = generateId()
+    await c.env.DB.prepare(
+      "INSERT INTO documents (id, department_id, parent_id, title, content, is_folder, created_by, visibility, created_at, updated_at) VALUES (?, ?, ?, 'AI', ?, 0, ?, 'department', datetime('now'), datetime('now'))"
+    ).bind(id, folder.department_id, parentId, content, creatorId).run()
+
+    const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first()
+    return c.json({ success: true, document: doc })
+  }
 })
