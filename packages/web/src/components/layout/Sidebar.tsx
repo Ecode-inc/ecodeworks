@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -27,6 +28,17 @@ const navItems = [
   { path: '/qa', icon: Bug, label: 'QA' },
 ]
 
+/** Returns true if the color is light (should use dark text on top) */
+function isLightColor(hex: string): boolean {
+  const c = hex.replace('#', '')
+  const r = parseInt(c.substring(0, 2), 16)
+  const g = parseInt(c.substring(2, 4), 16)
+  const b = parseInt(c.substring(4, 6), 16)
+  // Relative luminance formula
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.5
+}
+
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -39,28 +51,77 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     ? [...navItems, { path: '/ai', icon: Bot, label: 'AI' }, { path: '/settings', icon: Settings, label: '설정' }]
     : navItems
 
+  const theme = organization?.sidebar_theme || 'dark'
+  const customColor = organization?.sidebar_color || '#111827'
+
+  const themeStyles = useMemo(() => {
+    if (theme === 'light') {
+      return {
+        bg: 'bg-white border-r border-gray-200',
+        text: 'text-gray-700',
+        hoverBg: 'hover:bg-gray-100 hover:text-gray-900',
+        activeBg: 'bg-primary-50 text-primary-600 border-r-2 border-primary-600',
+        borderColor: 'border-gray-200',
+        toggleHover: 'hover:bg-gray-100',
+        logoText: 'text-gray-900',
+        logoBg: '',
+      }
+    }
+    if (theme === 'custom') {
+      const light = isLightColor(customColor)
+      return {
+        bg: '', // will use inline style
+        text: light ? 'text-gray-800' : 'text-gray-200',
+        hoverBg: light ? 'hover:bg-black/10 hover:text-gray-900' : 'hover:bg-white/10 hover:text-white',
+        activeBg: light
+          ? 'bg-black/10 text-gray-900 border-r-2 border-gray-900'
+          : 'bg-white/15 text-white border-r-2 border-white',
+        borderColor: light ? 'border-gray-300' : 'border-white/20',
+        toggleHover: light ? 'hover:bg-black/10' : 'hover:bg-white/10',
+        logoText: light ? 'text-gray-900' : 'text-white',
+        logoBg: '',
+      }
+    }
+    // dark (default)
+    return {
+      bg: 'bg-gray-900',
+      text: 'text-gray-300',
+      hoverBg: 'hover:bg-gray-800 hover:text-white',
+      activeBg: 'bg-primary-600/20 text-primary-400 border-r-2 border-primary-400',
+      borderColor: 'border-gray-800',
+      toggleHover: 'hover:bg-gray-800',
+      logoText: 'text-white',
+      logoBg: '',
+    }
+  }, [theme, customColor])
+
+  const inlineStyle = theme === 'custom' ? { backgroundColor: customColor } : undefined
+
   return (
     <aside
-      className={`flex flex-col bg-gray-900 text-gray-300 transition-all duration-200 ${
+      className={`flex flex-col transition-all duration-200 ${
         collapsed ? 'w-16' : 'w-56'
-      }`}
+      } ${themeStyles.bg} ${themeStyles.text}`}
+      style={inlineStyle}
     >
       {/* Logo */}
-      <div className="flex items-center h-14 px-4 border-b border-gray-800">
+      <div className={`flex items-center h-14 px-4 border-b ${themeStyles.borderColor}`}>
         {!collapsed && (
           organization?.logo_url ? (
-            <img
-              src={`${apiBase}${organization.logo_url.replace(/^\/api/, '')}`}
-              alt={organization.name || 'ecode'}
-              className="h-8 max-w-[120px] object-contain"
-            />
+            <div className={theme === 'dark' ? 'bg-white/90 rounded px-1.5 py-0.5' : ''}>
+              <img
+                src={`${apiBase}${organization.logo_url.replace(/^\/api/, '')}`}
+                alt={organization.name || 'ecode'}
+                className="h-7 max-w-[120px] object-contain"
+              />
+            </div>
           ) : (
-            <span className="text-lg font-bold text-white">ecode</span>
+            <span className={`text-lg font-bold ${themeStyles.logoText}`}>ecode</span>
           )
         )}
         <button
           onClick={onToggle}
-          className={`p-1 rounded hover:bg-gray-800 ${collapsed ? 'mx-auto' : 'ml-auto'}`}
+          className={`p-1 rounded ${themeStyles.toggleHover} ${collapsed ? 'mx-auto' : 'ml-auto'}`}
         >
           {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
@@ -78,8 +139,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               onClick={() => navigate(item.path)}
               className={`flex items-center w-full px-4 py-2.5 text-sm transition-colors ${
                 active
-                  ? 'bg-primary-600/20 text-primary-400 border-r-2 border-primary-400'
-                  : 'hover:bg-gray-800 hover:text-white'
+                  ? themeStyles.activeBg
+                  : themeStyles.hoverBg
               }`}
               title={collapsed ? item.label : undefined}
             >

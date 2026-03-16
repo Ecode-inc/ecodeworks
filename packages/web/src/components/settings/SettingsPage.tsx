@@ -18,6 +18,9 @@ function OrgInfoTab() {
   const [logoUrl, setLogoUrl] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [sidebarTheme, setSidebarTheme] = useState<'dark' | 'light' | 'custom'>('dark')
+  const [sidebarColor, setSidebarColor] = useState('#111827')
+  const [savingTheme, setSavingTheme] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const addToast = useToastStore((s) => s.addToast)
   const apiBase = import.meta.env.VITE_API_URL || '/api'
@@ -27,6 +30,8 @@ function OrgInfoTab() {
       setName(r.organization.name)
       setSlug(r.organization.slug)
       setLogoUrl(r.organization.logo_url || '')
+      setSidebarTheme(r.organization.sidebar_theme || 'dark')
+      setSidebarColor(r.organization.sidebar_color || '#111827')
     })
   }, [])
 
@@ -137,8 +142,94 @@ function OrgInfoTab() {
           슬러그 저장
         </Button>
       </form>
+
+      {/* Sidebar Theme */}
+      <div className="space-y-3 border-t pt-6">
+        <label className="block text-sm font-medium text-gray-700">사이드바 테마</label>
+        <div className="flex gap-2">
+          {([['dark', '다크'], ['light', '라이트'], ['custom', '커스텀']] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setSidebarTheme(value)}
+              className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+                sidebarTheme === value
+                  ? 'border-primary-600 bg-primary-50 text-primary-700 font-medium'
+                  : 'border-gray-300 text-gray-600 hover:border-gray-400'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {sidebarTheme === 'custom' && (
+          <div className="flex items-center gap-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">사이드바 색상</label>
+              <input
+                type="color"
+                value={sidebarColor}
+                onChange={(e) => setSidebarColor(e.target.value)}
+                className="w-10 h-10 rounded border cursor-pointer"
+              />
+            </div>
+            <div
+              className="w-12 h-20 rounded-lg border shadow-inner"
+              style={{ backgroundColor: sidebarColor }}
+              title="미리보기"
+            />
+            <span className="text-xs text-gray-500">{sidebarColor}</span>
+          </div>
+        )}
+
+        {/* Theme preview */}
+        <div className="flex items-stretch h-16 rounded-lg overflow-hidden border">
+          <div
+            className={`w-14 flex items-center justify-center text-xs font-bold ${
+              sidebarTheme === 'dark' ? 'bg-gray-900 text-white' :
+              sidebarTheme === 'light' ? 'bg-white text-gray-800 border-r' :
+              ''
+            }`}
+            style={sidebarTheme === 'custom' ? { backgroundColor: sidebarColor, color: isLightHex(sidebarColor) ? '#1f2937' : '#f3f4f6' } : undefined}
+          >
+            e
+          </div>
+          <div className="flex-1 bg-gray-50 flex items-center justify-center text-xs text-gray-400">
+            미리보기
+          </div>
+        </div>
+
+        <Button
+          type="button"
+          size="sm"
+          loading={savingTheme}
+          onClick={async () => {
+            setSavingTheme(true)
+            try {
+              const res = await orgApi.update({ sidebar_theme: sidebarTheme, sidebar_color: sidebarColor })
+              useAuthStore.setState({ organization: res.organization })
+              addToast('success', '사이드바 테마가 변경되었습니다.')
+            } catch (err: any) {
+              addToast('error', '테마 변경 실패', err.message)
+            } finally {
+              setSavingTheme(false)
+            }
+          }}
+        >
+          테마 저장
+        </Button>
+      </div>
     </div>
   )
+}
+
+function isLightHex(hex: string): boolean {
+  const c = hex.replace('#', '')
+  const r = parseInt(c.substring(0, 2), 16)
+  const g = parseInt(c.substring(2, 4), 16)
+  const b = parseInt(c.substring(4, 6), 16)
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5
 }
 
 // ──────────────────────────── Departments Tab ────────────────────────────

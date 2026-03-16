@@ -93,7 +93,7 @@ export const authApi = {
 // Organizations
 export const orgApi = {
   get: () => request<{ organization: any }>('/organizations'),
-  update: (data: { name: string }) =>
+  update: (data: { name?: string; sidebar_theme?: string; sidebar_color?: string }) =>
     request<{ organization: any }>('/organizations', { method: 'PATCH', body: JSON.stringify(data) }),
   updateSlug: (slug: string) =>
     request<{ organization: any }>('/organizations/slug', { method: 'PATCH', body: JSON.stringify({ slug }) }),
@@ -247,6 +247,59 @@ export const aiApi = {
     request<{ id: string; name: string; key: string; prefix: string; scopes: string[] }>('/ai/keys', { method: 'POST', body: JSON.stringify(data) }),
   deleteKey: (id: string) =>
     request<{ success: boolean }>(`/ai/keys/${id}`, { method: 'DELETE' }),
+}
+
+// Super Admin API (uses separate token from sessionStorage)
+const superRequest = async <T>(path: string, options?: RequestInit): Promise<T> => {
+  const token = sessionStorage.getItem('superToken')
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string>),
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Unknown error' }))
+    throw new Error((error as Record<string, string>).error || `HTTP ${res.status}`)
+  }
+  return res.json() as Promise<T>
+}
+
+export const superApi = {
+  login: (email: string, password: string) =>
+    superRequest<{ admin: { id: string; email: string; name: string }; token: string }>(
+      '/super/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }
+    ),
+  setup: (data: { email: string; password: string; name: string }) =>
+    superRequest<{ success: boolean; message: string }>(
+      '/super/auth/setup', { method: 'POST', body: JSON.stringify(data) }
+    ),
+  dashboard: () =>
+    superRequest<{ totalOrgs: number; totalUsers: number; planDistribution: { plan: string; cnt: number }[]; activeOrgs: number }>(
+      '/super/dashboard'
+    ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  listOrgs: () =>
+    superRequest<{ organizations: any[] }>('/super/organizations'),
+  getOrg: (id: string) =>
+    superRequest<{ organization: any; users: any[]; departments: any[] }>(`/super/organizations/${id}`),
+  updateOrg: (id: string, data: { name?: string; slug?: string }) =>
+    superRequest<{ organization: any }>(`/super/organizations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  suspendOrg: (id: string) =>
+    superRequest<{ success: boolean }>(`/super/organizations/${id}/suspend`, { method: 'POST' }),
+  activateOrg: (id: string) =>
+    superRequest<{ success: boolean }>(`/super/organizations/${id}/activate`, { method: 'POST' }),
+  getSubscription: (id: string) =>
+    superRequest<{ subscription: any }>(`/super/organizations/${id}/subscription`),
+  updateSubscription: (id: string, data: Record<string, unknown>) =>
+    superRequest<{ subscription: any }>(`/super/organizations/${id}/subscription`, { method: 'PATCH', body: JSON.stringify(data) }),
+  auditLog: (params?: Record<string, string>) => {
+    const qs = params ? new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString() : ''
+    return superRequest<{ logs: any[] }>(`/super/audit${qs ? '?' + qs : ''}`)
+  },
 }
 
 // Telegram Integration

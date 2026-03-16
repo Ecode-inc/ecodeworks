@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import { useAuthStore } from './stores/authStore'
 import { useOrgStore } from './stores/orgStore'
 import { useWSStore } from './stores/wsStore'
@@ -15,13 +15,33 @@ import { VaultPage } from './components/vault/VaultPage'
 import { QAPage } from './components/qa/QAPage'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { AIPage } from './components/ai/AIPage'
+import { AIGuidePage } from './components/ai/AIGuidePage'
 import { ToastContainer } from './components/ui/Toast'
+import { SuperAdminPage } from './components/super/SuperAdminPage'
 
 export default function App() {
   const { user, initialized, restore, departments } = useAuthStore()
   const { currentDeptId } = useOrgStore()
   const { connect, disconnect } = useWSStore()
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const location = useLocation()
+
+  // AI API Guide page when ?key= is present
+  const searchParams = new URLSearchParams(location.search)
+  const apiKey = searchParams.get('key')
+  if (apiKey) {
+    return <AIGuidePage apiKey={apiKey} />
+  }
+
+  // Super admin page is completely separate - render it immediately if on /super path
+  if (location.pathname.startsWith('/super')) {
+    return (
+      <>
+        <SuperAdminPage />
+        <ToastContainer />
+      </>
+    )
+  }
 
   // Restore session on mount
   useEffect(() => {

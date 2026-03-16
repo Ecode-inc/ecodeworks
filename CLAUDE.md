@@ -9,9 +9,25 @@
 모든 작업은 반드시 **팀 에이전트 기능**으로 각각의 파트를 나눠서 병렬로 작업한다.
 각 에이전트가 작업을 완료한 후, **리뷰어 에이전트가 웹 검색을 통해 검증**한 뒤 최종 반영한다.
 
-- **구현 에이전트**: 실제 코드 작성 담당 (백엔드/프론트엔드/인프라 등 파트별로 분리)
-- **리뷰어 에이전트**: 구현 결과를 웹 검색으로 최신 문서/패턴과 대조하여 검증 후 승인
+#### 에이전트 역할 분담
+
+| 에이전트 | 역할 | 담당 영역 |
+|----------|------|-----------|
+| **백엔드 에이전트** | API 구현 | Hono 라우트, D1 쿼리, 미들웨어, 마이그레이션 |
+| **프론트엔드 에이전트** | UI 구현 | React 컴포넌트, Zustand 스토어, Tailwind 스타일링 |
+| **리뷰어 에이전트** | 검증/QA | 웹 검색으로 최신 문서/패턴 대조, 코드 리뷰, 타입 체크 |
+| **문서화 에이전트** | 문서 관리 | CLAUDE.md 업데이트, API 문서, 가이드 문서 작성 |
+
+#### 작업 프로세스
+
+1. 요청 접수 → 작업을 에이전트별로 분배
+2. **백엔드 + 프론트엔드 에이전트가 병렬로** 구현
+3. **리뷰어 에이전트**가 결과를 검증 (타입 체크, 웹 검색 기반 패턴 검증)
+4. 리뷰어 승인 → 배포
+5. **문서화 에이전트**가 변경사항 문서에 반영
+
 - 리뷰어가 확인하지 않은 코드는 머지하지 않는다
+- 배포 전 반드시 `npx tsc --noEmit` 통과 확인
 
 ### 기술 스택
 
@@ -31,6 +47,21 @@ pnpm build        # 빌드
 pnpm db:migrate:local  # 로컬 DB 마이그레이션
 ```
 
+### 배포 명령어
+
+```bash
+# API 배포
+cd packages/api && npx wrangler deploy
+
+# Web 빌드 + 배포
+cd packages/web
+VITE_API_URL="https://ecode-internal-api.justin21lee.workers.dev/api" npx vite build
+CLOUDFLARE_ACCOUNT_ID=c3e0474724b7ce487cf7d2cbe2f26aaa npx wrangler pages deploy dist --project-name=ecode-internal --commit-dirty=true
+
+# D1 마이그레이션 (원격)
+cd packages/api && npx wrangler d1 execute ecode-db --remote --file=./migrations/XXXX.sql
+```
+
 ### 프로젝트 구조
 
 - `packages/api/` - Cloudflare Workers API (Hono)
@@ -42,3 +73,43 @@ pnpm db:migrate:local  # 로컬 DB 마이그레이션
 - JWT Secret, VAULT_KEY 등은 반드시 `wrangler secret`으로 관리
 - 비밀번호 금고는 AES-256-GCM으로 암호화, VAULT_KEY는 64자 hex string
 - 모든 금고 접근은 감사 로그에 기록됨
+
+### Cloudflare 계정 관리
+
+Wrangler 토큰 위치: `C:\Users\ionar\AppData\Roaming\xdg.config\.wrangler\config\`
+
+| 파일 | 계정 |
+|------|------|
+| `default.toml` | 현재 활성 계정 |
+| `cccosdf.toml` | cccosdf@zodesktop.com (사용 안 함) |
+| `justin21lee.toml` | justin21lee@gmail.com (운영 계정) |
+
+전환: `cp .../config/justin21lee.toml .../config/default.toml`
+
+### 계정 정보
+
+**CEO 계정**: `ecode@e-code.kr` / `ecode2026!` (조직 슬러그: `이코드`)
+**슈퍼어드민**: `super@e-code.kr` / `ecode2026!` (경로: `/super`)
+**도메인**: `work.e-code.kr` → ecode-internal.pages.dev
+
+### Super Admin (SaaS 관리)
+
+플랫폼 레벨의 관리자 시스템. 조직(org) 관리, 구독 플랜, 감사 로그를 제공한다.
+
+- **DB**: `super_admins`, `org_subscriptions`, `platform_audit_log` 테이블
+- **API**: `/api/super/*` 라우트
+- **Frontend**: `/super` 경로로 접근, 별도 로그인
+- **구독 플랜**: free(5명), starter, business, enterprise(무제한)
+
+### AI API
+
+- **경로**: `/api/v1/*` (API 키 인증)
+- **안전 제한**: DELETE 차단, 금고 비밀번호 미노출, 사용자/조직 수정 차단
+- **가이드**: `https://work.e-code.kr/?key=API_KEY`로 접근 시 가이드 페이지 표시
+- **스코프**: calendar, kanban, docs, vault(메타만), members, departments, telegram
+
+### 텔레그램 연동
+
+- **DB**: `telegram_chats`, `telegram_user_mappings`, `telegram_command_log`
+- **API**: `/api/telegram/*` (JWT 인증), `/api/v1/telegram/*` (API 키 인증)
+- **기능**: 채팅방 등록, 텔레그램↔이코드 사용자 매핑, 명령 히스토리

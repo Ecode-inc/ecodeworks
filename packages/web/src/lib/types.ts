@@ -13,6 +13,8 @@ export interface Organization {
   name: string
   slug: string
   logo_url?: string
+  sidebar_theme?: 'dark' | 'light' | 'custom'
+  sidebar_color?: string
 }
 
 export interface Department {

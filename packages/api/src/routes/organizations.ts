@@ -13,7 +13,7 @@ organizationsRoutes.get('/', async (c) => {
   const user = c.get('user')
 
   const org = await c.env.DB.prepare(
-    'SELECT id, name, slug, logo_url, created_at FROM organizations WHERE id = ?'
+    'SELECT id, name, slug, logo_url, sidebar_theme, sidebar_color, created_at FROM organizations WHERE id = ?'
   ).bind(user.org_id).first()
 
   if (!org) {
@@ -30,7 +30,7 @@ organizationsRoutes.patch('/', async (c) => {
     return c.json({ error: 'Only CEO or admin can update organization' }, 403)
   }
 
-  const { name } = await c.req.json<{ name?: string }>()
+  const { name, sidebar_theme, sidebar_color } = await c.req.json<{ name?: string; sidebar_theme?: string; sidebar_color?: string }>()
 
   if (name) {
     await c.env.DB.prepare(
@@ -38,8 +38,23 @@ organizationsRoutes.patch('/', async (c) => {
     ).bind(name, user.org_id).run()
   }
 
+  if (sidebar_theme) {
+    const validThemes = ['dark', 'light', 'custom']
+    if (validThemes.includes(sidebar_theme)) {
+      await c.env.DB.prepare(
+        'UPDATE organizations SET sidebar_theme = ? WHERE id = ?'
+      ).bind(sidebar_theme, user.org_id).run()
+    }
+  }
+
+  if (sidebar_color) {
+    await c.env.DB.prepare(
+      'UPDATE organizations SET sidebar_color = ? WHERE id = ?'
+    ).bind(sidebar_color, user.org_id).run()
+  }
+
   const org = await c.env.DB.prepare(
-    'SELECT id, name, slug, logo_url, created_at FROM organizations WHERE id = ?'
+    'SELECT id, name, slug, logo_url, sidebar_theme, sidebar_color, created_at FROM organizations WHERE id = ?'
   ).bind(user.org_id).first()
 
   return c.json({ organization: org })
@@ -77,7 +92,7 @@ organizationsRoutes.patch('/slug', async (c) => {
   ).bind(normalized, user.org_id).run()
 
   const org = await c.env.DB.prepare(
-    'SELECT id, name, slug, logo_url, created_at FROM organizations WHERE id = ?'
+    'SELECT id, name, slug, logo_url, sidebar_theme, sidebar_color, created_at FROM organizations WHERE id = ?'
   ).bind(user.org_id).first()
 
   return c.json({ organization: org })

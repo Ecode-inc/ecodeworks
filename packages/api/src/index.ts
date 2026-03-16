@@ -15,6 +15,7 @@ import { qaRoutes } from './routes/qa'
 import { aiRoutes } from './routes/ai'
 import { aiKeysRoutes } from './routes/aiKeys'
 import { telegramRoutes } from './routes/telegram'
+import { superAdminRoutes } from './routes/superAdmin'
 import { WebSocketRoom } from './durable/WebSocketRoom'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -64,6 +65,9 @@ app.route('/api/ai/keys', aiKeysRoutes)
 
 // Phase 8: Telegram integration
 app.route('/api/telegram', telegramRoutes)
+
+// Phase 9: Super Admin (SaaS management)
+app.route('/api/super', superAdminRoutes)
 
 // File serving from R2
 app.get('/api/files/*', async (c) => {
