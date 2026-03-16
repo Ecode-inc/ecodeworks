@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, FormEvent, ChangeEvent } from 'react'
 import { useAuthStore } from '../../stores/authStore'
 import { useToastStore } from '../../stores/toastStore'
-import { orgApi, deptApi, membersApi, joinRequestApi } from '../../lib/api'
+import { orgApi, deptApi, membersApi, joinRequestApi, positionsApi } from '../../lib/api'
 import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
-import { Pencil, Trash2, Plus, UserPlus, Upload, Check, X } from 'lucide-react'
+import { Pencil, Trash2, Plus, UserPlus, Upload, Check, X, Sparkles } from 'lucide-react'
 
-type Tab = 'org' | 'departments' | 'members' | 'join-requests'
+type Tab = 'org' | 'departments' | 'positions' | 'members' | 'join-requests'
 
 // ──────────────────────────── Org Info Tab ────────────────────────────
 
@@ -356,6 +356,153 @@ function DepartmentsTab() {
   )
 }
 
+// ──────────────────────────── Positions Tab ────────────────────────────
+
+interface PositionRow {
+  id: string
+  name: string
+  level: number
+  order_index: number
+}
+
+function PositionsTab() {
+  const [positions, setPositions] = useState<PositionRow[]>([])
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [form, setForm] = useState({ name: '', level: 0 })
+  const [saving, setSaving] = useState(false)
+  const addToast = useToastStore((s) => s.addToast)
+
+  const load = () => {
+    positionsApi.list().then((r) => setPositions(r.positions))
+  }
+
+  useEffect(() => { load() }, [])
+
+  const openCreate = () => {
+    setEditId(null)
+    setForm({ name: '', level: 0 })
+    setModalOpen(true)
+  }
+
+  const openEdit = (p: PositionRow) => {
+    setEditId(p.id)
+    setForm({ name: p.name, level: p.level })
+    setModalOpen(true)
+  }
+
+  const handleSave = async (e: FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      if (editId) {
+        await positionsApi.update(editId, { name: form.name, level: form.level })
+        addToast('success', '직급이 수정되었습니다.')
+      } else {
+        await positionsApi.create({ name: form.name, level: form.level })
+        addToast('success', '직급이 생성되었습니다.')
+      }
+      setModalOpen(false)
+      load()
+    } catch (err: any) {
+      addToast('error', '저장 실패', err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('이 직급을 삭제하시겠습니까?')) return
+    try {
+      await positionsApi.delete(id)
+      addToast('success', '직급이 삭제되었습니다.')
+      load()
+    } catch (err: any) {
+      addToast('error', '삭제 실패', err.message)
+    }
+  }
+
+  const handleSeed = async () => {
+    setSaving(true)
+    try {
+      await positionsApi.seed()
+      addToast('success', '기본 직급이 생성되었습니다.')
+      load()
+    } catch (err: any) {
+      addToast('error', '생성 실패', err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-gray-700">직급 목록</h3>
+        <div className="flex items-center gap-2">
+          {positions.length === 0 && (
+            <Button size="sm" variant="secondary" onClick={handleSeed} loading={saving}>
+              <Sparkles size={16} className="mr-1" /> 기본 직급 생성
+            </Button>
+          )}
+          <Button size="sm" onClick={openCreate}>
+            <Plus size={16} className="mr-1" /> 직급 추가
+          </Button>
+        </div>
+      </div>
+
+      <div className="border rounded-lg divide-y">
+        {positions.length === 0 && (
+          <p className="text-sm text-gray-400 p-4">등록된 직급이 없습니다. '기본 직급 생성' 버튼으로 한국 표준 직급을 추가할 수 있습니다.</p>
+        )}
+        {positions.map((p) => (
+          <div key={p.id} className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-gray-800">{p.name}</span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                Lv.{p.level}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => openEdit(p)} className="p-1.5 rounded hover:bg-gray-100 text-gray-500">
+                <Pencil size={15} />
+              </button>
+              <button onClick={() => handleDelete(p.id)} className="p-1.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600">
+                <Trash2 size={15} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editId ? '직급 수정' : '직급 추가'}>
+        <form onSubmit={handleSave} className="space-y-4">
+          <Input label="직급 이름" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">레벨 (높을수록 상위)</label>
+            <input
+              type="number"
+              min={0}
+              max={99}
+              value={form.level}
+              onChange={(e) => setForm({ ...form, level: parseInt(e.target.value) || 0 })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
+              취소
+            </Button>
+            <Button type="submit" loading={saving}>
+              {editId ? '수정' : '생성'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  )
+}
+
 // ──────────────────────────── Members Tab ────────────────────────────
 
 interface MemberRow {
@@ -364,21 +511,26 @@ interface MemberRow {
   email: string
   is_ceo: boolean
   is_admin: boolean
+  position_id: string
+  position_name: string | null
+  position_level: number | null
   departments: { id: string; name: string; color: string; role: string }[]
 }
 
 function MembersTab() {
   const [members, setMembers] = useState<MemberRow[]>([])
   const [allDepts, setAllDepts] = useState<DeptRow[]>([])
+  const [allPositions, setAllPositions] = useState<PositionRow[]>([])
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [inviteForm, setInviteForm] = useState({ email: '', name: '', password: '', departmentId: '', role: 'member' })
+  const [inviteForm, setInviteForm] = useState({ email: '', name: '', password: '', departmentId: '', role: 'member', positionId: '' })
   const [saving, setSaving] = useState(false)
   const addToast = useToastStore((s) => s.addToast)
 
   const load = async () => {
-    const [mRes, dRes] = await Promise.all([membersApi.list(), deptApi.list()])
+    const [mRes, dRes, pRes] = await Promise.all([membersApi.list(), deptApi.list(), positionsApi.list()])
     setMembers(mRes.members)
     setAllDepts(dRes.departments)
+    setAllPositions(pRes.positions)
   }
 
   useEffect(() => { load() }, [])
@@ -393,10 +545,11 @@ function MembersTab() {
         password: inviteForm.password,
         departmentId: inviteForm.departmentId,
         role: inviteForm.role,
+        positionId: inviteForm.positionId || undefined,
       })
       addToast('success', '멤버가 초대되었습니다.')
       setInviteOpen(false)
-      setInviteForm({ email: '', name: '', password: '', departmentId: '', role: 'member' })
+      setInviteForm({ email: '', name: '', password: '', departmentId: '', role: 'member', positionId: '' })
       load()
     } catch (err: any) {
       addToast('error', '초대 실패', err.message)
@@ -422,6 +575,16 @@ function MembersTab() {
       load()
     } catch (err: any) {
       addToast('error', '배정 실패', err.message)
+    }
+  }
+
+  const handleChangePosition = async (memberId: string, positionId: string) => {
+    try {
+      await membersApi.update(memberId, { position_id: positionId })
+      addToast('success', '직급이 변경되었습니다.')
+      load()
+    } catch (err: any) {
+      addToast('error', '변경 실패', err.message)
     }
   }
 
@@ -457,6 +620,9 @@ function MembersTab() {
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-sm font-medium text-gray-800">{m.name}</span>
+                  {m.position_name && (
+                    <span className="ml-1.5 text-xs text-gray-500">{m.position_name}</span>
+                  )}
                   <span className="ml-2 text-xs text-gray-400">{m.email}</span>
                   {m.is_ceo && <span className="ml-2 text-xs font-semibold text-amber-600">CEO</span>}
                   {m.is_admin && !m.is_ceo && <span className="ml-2 text-xs font-semibold text-blue-600">Admin</span>}
@@ -472,6 +638,22 @@ function MembersTab() {
                   관리자
                 </label>
               </div>
+
+              {/* Position selector */}
+              {allPositions.length > 0 && (
+                <div className="mt-2">
+                  <select
+                    className="text-xs border rounded px-2 py-1 text-gray-600"
+                    value={m.position_id || ''}
+                    onChange={(e) => handleChangePosition(m.id, e.target.value)}
+                  >
+                    <option value="">직급 없음</option>
+                    {allPositions.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name} (Lv.{p.level})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Department badges */}
               <div className="flex flex-wrap items-center gap-1.5 mt-2">
@@ -543,6 +725,21 @@ function MembersTab() {
               <option value="head">부서장</option>
             </select>
           </div>
+          {allPositions.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">직급</label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                value={inviteForm.positionId}
+                onChange={(e) => setInviteForm({ ...inviteForm, positionId: e.target.value })}
+              >
+                <option value="">직급 선택 (선택사항)</option>
+                {allPositions.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} (Lv.{p.level})</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setInviteOpen(false)}>
               취소
@@ -697,6 +894,7 @@ function JoinRequestsTab() {
 const tabs: { key: Tab; label: string }[] = [
   { key: 'org', label: '조직 정보' },
   { key: 'departments', label: '부서 관리' },
+  { key: 'positions', label: '직급 관리' },
   { key: 'members', label: '멤버 관리' },
   { key: 'join-requests', label: '가입 신청' },
 ]
@@ -747,6 +945,7 @@ export function SettingsPage() {
 
       {activeTab === 'org' && <OrgInfoTab />}
       {activeTab === 'departments' && <DepartmentsTab />}
+      {activeTab === 'positions' && <PositionsTab />}
       {activeTab === 'members' && <MembersTab />}
       {activeTab === 'join-requests' && <JoinRequestsTab />}
     </div>

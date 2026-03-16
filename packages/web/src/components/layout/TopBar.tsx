@@ -34,7 +34,12 @@ export function TopBar() {
           <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center">
             <User size={14} className="text-primary-600" />
           </div>
-          <span className="text-sm font-medium text-gray-700">{user?.name}</span>
+          <span className="text-sm font-medium text-gray-700">
+            {user?.name}
+            {user?.position_name && (
+              <span className="ml-1 text-xs text-gray-400">{user.position_name}</span>
+            )}
+          </span>
         </div>
 
         <button

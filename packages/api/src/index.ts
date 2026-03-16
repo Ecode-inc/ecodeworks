@@ -17,6 +17,7 @@ import { aiKeysRoutes } from './routes/aiKeys'
 import { telegramRoutes } from './routes/telegram'
 import { superAdminRoutes } from './routes/superAdmin'
 import { joinRequestsRoutes } from './routes/joinRequests'
+import { positionsRoutes } from './routes/positions'
 import { mcpRoutes } from './routes/mcp'
 import { WebSocketRoom } from './durable/WebSocketRoom'
 
@@ -73,6 +74,9 @@ app.route('/api/super', superAdminRoutes)
 
 // Phase 10: MCP (Model Context Protocol) server
 app.route('/api/mcp', mcpRoutes)
+
+// Positions
+app.route('/api/positions', positionsRoutes)
 
 // Join Requests
 app.route('/api/join-requests', joinRequestsRoutes)

@@ -138,14 +138,27 @@ export const deptApi = {
 export const membersApi = {
   list: () => request<{ members: any[] }>('/members'),
   get: (id: string) => request<{ member: any; departments: any[] }>(`/members/${id}`),
-  invite: (data: { email: string; password: string; name: string; departmentId: string; role?: string }) =>
+  invite: (data: { email: string; password: string; name: string; departmentId: string; role?: string; positionId?: string }) =>
     request<{ member: any }>('/members', { method: 'POST', body: JSON.stringify(data) }),
   addDepartment: (id: string, departmentId: string, role?: string) =>
     request<{ success: boolean }>(`/members/${id}/departments`, { method: 'POST', body: JSON.stringify({ departmentId, role }) }),
   removeDepartment: (id: string, deptId: string) =>
     request<{ success: boolean }>(`/members/${id}/departments/${deptId}`, { method: 'DELETE' }),
-  update: (id: string, data: { is_admin?: boolean }) =>
+  update: (id: string, data: { is_admin?: boolean; position_id?: string }) =>
     request<{ member: any }>(`/members/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+}
+
+// Positions
+export const positionsApi = {
+  list: () => request<{ positions: any[] }>('/positions'),
+  create: (data: { name: string; level: number }) =>
+    request<{ position: any }>('/positions', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: { name?: string; level?: number }) =>
+    request<{ position: any }>(`/positions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/positions/${id}`, { method: 'DELETE' }),
+  seed: () =>
+    request<{ positions: any[] }>('/positions/seed', { method: 'POST' }),
 }
 
 // Calendar

@@ -15,8 +15,10 @@ membersRoutes.get('/', async (c) => {
   const user = c.get('user')
 
   const { results } = await c.env.DB.prepare(`
-    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.created_at
+    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.position_id, u.created_at,
+           p.name as position_name, p.level as position_level
     FROM users u
+    LEFT JOIN positions p ON p.id = u.position_id
     WHERE u.org_id = ?
     ORDER BY u.created_at
   `).bind(user.org_id).all()
@@ -29,9 +31,13 @@ membersRoutes.get('/:id', async (c) => {
   const user = c.get('user')
   const memberId = c.req.param('id')
 
-  const member = await c.env.DB.prepare(
-    'SELECT id, email, name, avatar_url, is_ceo, is_admin, created_at FROM users WHERE id = ? AND org_id = ?'
-  ).bind(memberId, user.org_id).first()
+  const member = await c.env.DB.prepare(`
+    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.position_id, u.created_at,
+           p.name as position_name, p.level as position_level
+    FROM users u
+    LEFT JOIN positions p ON p.id = u.position_id
+    WHERE u.id = ? AND u.org_id = ?
+  `).bind(memberId, user.org_id).first()
 
   if (!member) {
     return c.json({ error: 'Member not found' }, 404)
@@ -52,12 +58,13 @@ membersRoutes.get('/:id', async (c) => {
 membersRoutes.post('/', async (c) => {
   const user = c.get('user')
 
-  const { email, password, name, departmentId, role } = await c.req.json<{
+  const { email, password, name, departmentId, role, positionId } = await c.req.json<{
     email: string
     password: string
     name: string
     departmentId: string
     role?: 'head' | 'member'
+    positionId?: string
   }>()
 
   if (!email || !password || !name || !departmentId) {
@@ -88,8 +95,8 @@ membersRoutes.post('/', async (c) => {
 
   await c.env.DB.batch([
     c.env.DB.prepare(
-      'INSERT INTO users (id, org_id, email, password_hash, name) VALUES (?, ?, ?, ?, ?)'
-    ).bind(memberId, user.org_id, email, passwordHash, name),
+      'INSERT INTO users (id, org_id, email, password_hash, name, position_id) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(memberId, user.org_id, email, passwordHash, name, positionId || ''),
     c.env.DB.prepare(
       'INSERT INTO user_departments (user_id, department_id, role) VALUES (?, ?, ?)'
     ).bind(memberId, departmentId, role || 'member'),
@@ -118,15 +125,17 @@ membersRoutes.patch('/:id', async (c) => {
     return c.json({ error: 'Member not found' }, 404)
   }
 
-  const { name, is_admin: newIsAdmin } = await c.req.json<{
+  const { name, is_admin: newIsAdmin, position_id } = await c.req.json<{
     name?: string
     is_admin?: number
+    position_id?: string
   }>()
 
   const updates: string[] = []
   const values: unknown[] = []
 
   if (name !== undefined) { updates.push('name = ?'); values.push(name) }
+  if (position_id !== undefined) { updates.push('position_id = ?'); values.push(position_id) }
   if (newIsAdmin !== undefined) {
     // Only CEO can grant/revoke admin
     if (!user.is_ceo) {
@@ -144,9 +153,13 @@ membersRoutes.patch('/:id', async (c) => {
     `UPDATE users SET ${updates.join(', ')} WHERE id = ? AND org_id = ?`
   ).bind(...values).run()
 
-  const updated = await c.env.DB.prepare(
-    'SELECT id, email, name, avatar_url, is_ceo, is_admin, created_at FROM users WHERE id = ? AND org_id = ?'
-  ).bind(memberId, user.org_id).first()
+  const updated = await c.env.DB.prepare(`
+    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.position_id, u.created_at,
+           p.name as position_name, p.level as position_level
+    FROM users u
+    LEFT JOIN positions p ON p.id = u.position_id
+    WHERE u.id = ? AND u.org_id = ?
+  `).bind(memberId, user.org_id).first()
 
   return c.json({ member: updated })
 })

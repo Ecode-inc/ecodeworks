@@ -6,6 +6,9 @@ export interface User {
   is_ceo: boolean
   is_admin: boolean
   org_id: string
+  position_id?: string
+  position_name?: string
+  position_level?: number
 }
 
 export interface Organization {

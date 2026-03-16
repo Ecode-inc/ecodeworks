@@ -28,11 +28,16 @@ export const useAuthStore = create<AuthStore>((set) => ({
       const res = await authApi.login({ email, password, orgSlug })
       setTokens(res.accessToken, res.refreshToken)
 
-      // Fetch departments
+      // Fetch departments and position info
       const meRes = await authApi.me()
 
       set({
-        user: res.user,
+        user: {
+          ...res.user,
+          position_id: meRes.user.position_id,
+          position_name: meRes.user.position_name,
+          position_level: meRes.user.position_level,
+        },
         organization: res.organization,
         departments: meRes.departments,
         loading: false,
@@ -52,7 +57,12 @@ export const useAuthStore = create<AuthStore>((set) => ({
       const meRes = await authApi.me()
 
       set({
-        user: res.user,
+        user: {
+          ...res.user,
+          position_id: meRes.user.position_id,
+          position_name: meRes.user.position_name,
+          position_level: meRes.user.position_level,
+        },
         organization: res.organization,
         departments: meRes.departments,
         loading: false,
