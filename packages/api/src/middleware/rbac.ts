@@ -16,7 +16,12 @@ export function requirePermission(module: Module, requiredPermission: Permission
       const user = c.get('user')
       const departmentId = c.req.query('dept_id') || c.req.param('dept_id')
 
+      // CEO/admin can access without dept_id (full org access)
       if (!departmentId) {
+        if (user.is_ceo || user.is_admin) {
+          await next()
+          return
+        }
         return c.json({ error: 'dept_id is required' }, 400)
       }
 

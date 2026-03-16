@@ -1467,23 +1467,38 @@ aiRoutes.get('/action/create-event', async (c) => {
   if (!checkScope(scopes, 'calendar:write')) return c.json({ error: 'Insufficient scope' }, 403)
   const orgId = c.get('apiKeyOrgId')
 
-  const deptId = c.req.query('department_id')
+  const deptId = c.req.query('department_id') || ''
   const title = c.req.query('title')
   const startAt = c.req.query('start_at')
   const endAt = c.req.query('end_at')
   const allDay = c.req.query('all_day') === 'true'
   const color = c.req.query('color') || '#3B82F6'
-  const visibility = c.req.query('visibility') || 'department'
+  const visibility = c.req.query('visibility') || 'personal'
+  const importance = c.req.query('importance') || 'normal'
+  // user_id: resolve from telegram_user_id or direct user_id
+  const tgUserId = c.req.query('telegram_user_id')
+  const directUserId = c.req.query('user_id')
 
-  if (!deptId || !title || !startAt || !endAt) return c.json({ error: 'department_id, title, start_at, end_at required' }, 400)
+  if (!title || !startAt || !endAt) return c.json({ error: 'title, start_at, end_at required' }, 400)
 
-  const dept = await c.env.DB.prepare('SELECT id FROM departments WHERE id = ? AND org_id = ?').bind(deptId, orgId).first()
-  if (!dept) return c.json({ error: 'Department not found' }, 404)
+  // Resolve user
+  let userId = directUserId || 'ai-api'
+  if (tgUserId) {
+    const mapping = await c.env.DB.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, tgUserId).first<{ user_id: string }>()
+    if (mapping?.user_id) userId = mapping.user_id
+  }
+
+  // If no dept_id, find user's first department
+  let effectiveDeptId = deptId
+  if (!effectiveDeptId && userId !== 'ai-api') {
+    const dept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(userId).first<{ department_id: string }>()
+    effectiveDeptId = dept?.department_id || ''
+  }
 
   const id = generateId()
   await c.env.DB.prepare(
-    "INSERT INTO events (id, department_id, user_id, title, start_at, end_at, all_day, color, visibility, created_at, updated_at) VALUES (?, ?, 'ai-api', ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
-  ).bind(id, deptId, title, startAt, endAt, allDay ? 1 : 0, color, visibility).run()
+    "INSERT INTO events (id, department_id, user_id, title, start_at, end_at, all_day, color, visibility, importance, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+  ).bind(id, effectiveDeptId, userId, title, startAt, endAt, allDay ? 1 : 0, color, visibility, importance).run()
 
   const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first()
   return c.json({ success: true, event })

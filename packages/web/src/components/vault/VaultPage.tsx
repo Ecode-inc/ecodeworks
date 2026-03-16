@@ -19,6 +19,9 @@ export function VaultPage() {
   useEffect(() => {
     if (currentDeptId) {
       vaultApi.list(currentDeptId).then(r => setCredentials(r.credentials)).catch(() => {})
+    } else {
+      // 전체 부서: load all visible credentials
+      vaultApi.list('').then(r => setCredentials(r.credentials)).catch(() => setCredentials([]))
     }
   }, [currentDeptId])
 
@@ -59,10 +62,6 @@ export function VaultPage() {
     } catch (e: any) {
       useToastStore.getState().addToast('error', '삭제 실패', e.message)
     }
-  }
-
-  if (!currentDeptId) {
-    return <div className="text-center text-gray-400 py-20">부서를 선택해주세요</div>
   }
 
   return (
@@ -161,9 +160,9 @@ export function VaultPage() {
       <CredentialForm
         open={showForm}
         onClose={() => setShowForm(false)}
-        deptId={currentDeptId}
+        deptId={currentDeptId || ''}
         onSave={() => {
-          vaultApi.list(currentDeptId!).then(r => setCredentials(r.credentials))
+          vaultApi.list(currentDeptId || '').then(r => setCredentials(r.credentials))
           setShowForm(false)
         }}
       />

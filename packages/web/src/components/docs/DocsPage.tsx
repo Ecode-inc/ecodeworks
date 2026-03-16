@@ -135,10 +135,6 @@ export function DocsPage() {
     }
   }
 
-  if (!currentDeptId) {
-    return <div className="text-center text-gray-400 py-20">부서를 선택해주세요</div>
-  }
-
   return (
     <div className="flex gap-6 h-[calc(100vh-8rem)]">
       {/* Sidebar - Document Tree */}

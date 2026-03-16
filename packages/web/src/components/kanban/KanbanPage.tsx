@@ -25,14 +25,12 @@ export function KanbanPage() {
   const dragOverColumn = useRef<string | null>(null)
 
   useEffect(() => {
-    if (currentDeptId) {
-      boardsApi.list(currentDeptId).then(r => {
-        setBoards(r.boards)
-        if (r.boards.length > 0 && !selectedBoard) {
-          loadBoard(r.boards[0].id)
-        }
-      }).catch(() => {})
-    }
+    boardsApi.list(currentDeptId || undefined).then(r => {
+      setBoards(r.boards)
+      if (r.boards.length > 0 && !selectedBoard) {
+        loadBoard(r.boards[0].id)
+      }
+    }).catch(() => {})
   }, [currentDeptId])
 
   const loadBoard = async (boardId: string) => {
@@ -99,10 +97,6 @@ export function KanbanPage() {
     high: 'border-l-orange-500',
     medium: 'border-l-blue-500',
     low: 'border-l-gray-300',
-  }
-
-  if (!currentDeptId) {
-    return <div className="text-center text-gray-400 py-20">부서를 선택해주세요</div>
   }
 
   return (

@@ -334,7 +334,7 @@ calendarRoutes.get('/events/:id', async (c) => {
 // Create event
 calendarRoutes.post('/events', requirePermission('calendar', 'write'), async (c) => {
   const user = c.get('user')
-  const deptId = c.req.query('dept_id')!
+  const deptId = c.req.query('dept_id') || ''
   const body = await c.req.json<{
     title: string
     description?: string
