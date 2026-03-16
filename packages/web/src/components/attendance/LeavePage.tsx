@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuthStore } from '../../stores/authStore'
-import { leaveApi } from '../../lib/api'
+import { leaveApi, membersApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
@@ -211,7 +211,7 @@ export function LeavePage() {
                       {trashItems.map((item: any) => (
                         <tr key={item.id} className="hover:bg-gray-50">
                           <td className="px-4 py-2 text-gray-900">{item.user_name || '-'}</td>
-                          <td className="px-4 py-2">{typeLabels[item.leave_type] || item.leave_type}</td>
+                          <td className="px-4 py-2">{typeLabels[item.type] || item.type}</td>
                           <td className="px-4 py-2 text-gray-600">
                             {dayjs(item.start_date).format('MM/DD')} - {dayjs(item.end_date).format('MM/DD')}
                           </td>
@@ -287,7 +287,7 @@ function MyRequestsTable({
             ) : requests.map((req: any) => (
               <tr key={req.id} className="hover:bg-gray-50">
                 <td className="px-4 py-2 font-medium text-gray-900">
-                  {typeLabels[req.leave_type] || req.leave_type}
+                  {typeLabels[req.type] || req.type}
                 </td>
                 <td className="px-4 py-2 text-gray-600">
                   {dayjs(req.start_date).format('MM/DD')}
@@ -426,7 +426,7 @@ function PendingApprovalsSection({
             {requests.map((req: any) => (
               <tr key={req.id} className="hover:bg-gray-50">
                 <td className="px-4 py-2 font-medium text-gray-900">{req.user_name || '-'}</td>
-                <td className="px-4 py-2">{typeLabels[req.leave_type] || req.leave_type}</td>
+                <td className="px-4 py-2">{typeLabels[req.type] || req.type}</td>
                 <td className="px-4 py-2 text-gray-600">
                   {dayjs(req.start_date).format('MM/DD')}
                   {req.start_date !== req.end_date && ` - ${dayjs(req.end_date).format('MM/DD')}`}
@@ -501,6 +501,9 @@ function CreateLeaveModal({
   loading: boolean
   setLoading: (v: boolean) => void
 }) {
+  const { user, departments } = useAuthStore()
+  const isManager = user?.is_ceo || user?.is_admin || departments.some(d => d.role === 'head')
+
   const [leaveType, setLeaveType] = useState('vacation')
   const [startDate, setStartDate] = useState(dayjs().format('YYYY-MM-DD'))
   const [endDate, setEndDate] = useState(dayjs().format('YYYY-MM-DD'))
@@ -509,6 +512,17 @@ function CreateLeaveModal({
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Proxy (대리 신청)
+  const [proxyMode, setProxyMode] = useState(false)
+  const [selectedUserId, setSelectedUserId] = useState('')
+  const [orgMembers, setOrgMembers] = useState<any[]>([])
+
+  useEffect(() => {
+    if (proxyMode && orgMembers.length === 0) {
+      membersApi.list().then(res => setOrgMembers(res.members || [])).catch(() => {})
+    }
+  }, [proxyMode, orgMembers.length])
 
   const isHalfDay = leaveType === 'half_day_am' || leaveType === 'half_day_pm'
 
@@ -548,7 +562,8 @@ function CreateLeaveModal({
     setLoading(true)
     try {
       await leaveApi.create({
-        leave_type: leaveType,
+        ...(proxyMode && selectedUserId ? { user_id: selectedUserId } : {}),
+        type: leaveType,
         start_date: startDate,
         end_date: isHalfDay ? startDate : endDate,
         reason,
@@ -561,6 +576,8 @@ function CreateLeaveModal({
       setEndDate(dayjs().format('YYYY-MM-DD'))
       setReason('')
       setAttachmentUrl('')
+      setProxyMode(false)
+      setSelectedUserId('')
       onCreated()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '신청 실패'
@@ -571,8 +588,37 @@ function CreateLeaveModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="휴가/결재 신청" width="max-w-lg">
+    <Modal open={open} onClose={onClose} title={proxyMode ? '조직원 휴가/결재 대리 신청' : '휴가/결재 신청'} width="max-w-lg">
       <div className="space-y-4">
+        {/* Proxy mode toggle (managers only) */}
+        {isManager && (
+          <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={proxyMode}
+                onChange={e => { setProxyMode(e.target.checked); setSelectedUserId('') }}
+                className="rounded"
+              />
+              <span className="font-medium text-gray-700">조직원 대리 신청</span>
+            </label>
+            {proxyMode && (
+              <select
+                value={selectedUserId}
+                onChange={e => setSelectedUserId(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">대상 직원 선택</option>
+                {orgMembers.filter(m => m.id !== user?.id).map((m: any) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.email}){m.departments?.map((d: any) => ` - ${d.name}`).join('')}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
         {/* Type */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">유형</label>
