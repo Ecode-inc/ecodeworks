@@ -3,12 +3,12 @@ main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
 [vars]
-ENVIRONMENT = "development"
+ENVIRONMENT = "production"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "ecode-db"
-database_id = "placeholder-change-me"
+database_id = "40516caa-63d7-4ff5-bb3f-7b920cc3a409"
 
 [[r2_buckets]]
 binding = "FILES"
@@ -21,4 +21,4 @@ bindings = [
 
 [[migrations]]
 tag = "v1"
-new_classes = ["WebSocketRoom"]
+new_sqlite_classes = ["WebSocketRoom"]
