@@ -299,11 +299,10 @@ function TeamAttendanceSection({ currentDeptId }: { currentDeptId: string | null
     deptApi.list().then(res => setDepartments(res.departments as DeptOption[])).catch(() => {})
   }, [])
 
+  // Sync with top-bar department selector
   useEffect(() => {
-    if (currentDeptId && !selectedDeptId) {
-      setSelectedDeptId(currentDeptId)
-    }
-  }, [currentDeptId, selectedDeptId])
+    setSelectedDeptId(currentDeptId || '')
+  }, [currentDeptId])
 
   const loadTeam = useCallback(async () => {
     try {
