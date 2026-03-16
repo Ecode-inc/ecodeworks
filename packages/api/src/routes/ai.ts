@@ -442,6 +442,18 @@ function checkScope(scopes: string[], required: string): boolean {
   return scopes.includes('*') || scopes.includes(required)
 }
 
+// KST (UTC+9) helpers
+function nowKST(): Date {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000)
+}
+function todayKST(): string {
+  return nowKST().toISOString().slice(0, 10)
+}
+function nowKSTString(): string {
+  const d = nowKST()
+  return d.toISOString().replace('Z', '+09:00')
+}
+
 // ──────────────────────────────────────────────────────────────
 // Safety: Block ALL DELETE operations via AI API
 // ──────────────────────────────────────────────────────────────
@@ -1358,8 +1370,8 @@ aiRoutes.get('/action/clock-in', async (c) => {
   }
   if (!userId) return c.json({ error: 'user_id or telegram_user_id required' }, 400)
 
-  const date = customDate || new Date().toISOString().slice(0, 10)
-  const clockIn = customTime ? `${date}T${customTime}:00.000Z` : new Date().toISOString()
+  const date = customDate || todayKST()
+  const clockIn = customTime ? `${date}T${customTime}:00+09:00` : nowKSTString()
 
   const dept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(userId).first<{ department_id: string }>()
 
@@ -1394,8 +1406,8 @@ aiRoutes.get('/action/clock-out', async (c) => {
   }
   if (!userId) return c.json({ error: 'user_id or telegram_user_id required' }, 400)
 
-  const date = customDate || new Date().toISOString().slice(0, 10)
-  const clockOut = customTime ? `${date}T${customTime}:00.000Z` : new Date().toISOString()
+  const date = customDate || todayKST()
+  const clockOut = customTime ? `${date}T${customTime}:00+09:00` : nowKSTString()
 
   const record = await c.env.DB.prepare('SELECT id, clock_out FROM attendance_records WHERE org_id = ? AND user_id = ? AND date = ?').bind(orgId, userId, date).first<{ id: string; clock_out: string | null }>()
   if (!record) return c.json({ error: '해당 날짜 출근 기록이 없습니다' }, 404)
@@ -1414,7 +1426,7 @@ aiRoutes.get('/action/update-attendance', async (c) => {
   const orgId = c.get('apiKeyOrgId')
   const tgUserId = c.req.query('telegram_user_id')
   const directUserId = c.req.query('user_id')
-  const date = c.req.query('date') || new Date().toISOString().slice(0, 10)
+  const date = c.req.query('date') || todayKST()
   const clockInTime = c.req.query('clock_in')      // "10:00"
   const clockOutTime = c.req.query('clock_out')     // "19:00"
   const status = c.req.query('status')              // present, late, remote, vacation, etc.
@@ -1434,8 +1446,8 @@ aiRoutes.get('/action/update-attendance', async (c) => {
   const updates: string[] = []
   const values: unknown[] = []
 
-  if (clockInTime) { updates.push('clock_in = ?'); values.push(`${date}T${clockInTime}:00.000Z`) }
-  if (clockOutTime) { updates.push('clock_out = ?'); values.push(`${date}T${clockOutTime}:00.000Z`) }
+  if (clockInTime) { updates.push('clock_in = ?'); values.push(`${date}T${clockInTime}:00+09:00`) }
+  if (clockOutTime) { updates.push('clock_out = ?'); values.push(`${date}T${clockOutTime}:00+09:00`) }
   if (status) { updates.push('status = ?'); values.push(status) }
   if (note !== undefined && note !== null) { updates.push('note = ?'); values.push(note) }
 
