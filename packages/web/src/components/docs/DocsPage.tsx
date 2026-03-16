@@ -1,18 +1,17 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useOrgStore } from '../../stores/orgStore'
 import { docsApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { FileText, Folder, FolderPlus, FilePlus, Search, ChevronRight, Clock, Share2, Building2, Users, UserIcon, Trash2 } from 'lucide-react'
+import { FileText, Folder, FolderOpen, FolderPlus, FilePlus, Search, ChevronRight, ChevronDown, Clock, Share2, Building2, Users, UserIcon, Trash2 } from 'lucide-react'
 
 export function DocsPage() {
   const { currentDeptId } = useOrgStore()
-  const [documents, setDocuments] = useState<any[]>([])
-  const [breadcrumb, setBreadcrumb] = useState<{ id: string | null; title: string }[]>([{ id: null, title: '문서' }])
-  const [currentParentId, setCurrentParentId] = useState<string | null>(null)
+  const [treeRefreshKey, setTreeRefreshKey] = useState(0)
   const [selectedDoc, setSelectedDoc] = useState<any>(null)
+  const [newParentId, setNewParentId] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
   const [editTitle, setEditTitle] = useState('')
@@ -26,32 +25,7 @@ export function DocsPage() {
   const [newVisibility, setNewVisibility] = useState<'company' | 'department' | 'personal'>('department')
   const [newShared, setNewShared] = useState(false)
 
-  const loadDocuments = useCallback(async () => {
-    if (!currentDeptId) return
-    try {
-      const res = await docsApi.list({ dept_id: currentDeptId, parent_id: currentParentId || undefined })
-      setDocuments(res.documents)
-    } catch (e: any) {
-      useToastStore.getState().addToast('error', '문서 로드 실패', e.message)
-    }
-  }, [currentDeptId, currentParentId])
-
-  useEffect(() => { loadDocuments() }, [loadDocuments])
-
-  const navigateToFolder = (folderId: string, folderTitle: string) => {
-    setCurrentParentId(folderId)
-    setBreadcrumb(prev => [...prev, { id: folderId, title: folderTitle }])
-    setSelectedDoc(null)
-    setSearchResults(null)
-  }
-
-  const navigateToBreadcrumb = (index: number) => {
-    const target = breadcrumb[index]
-    setCurrentParentId(target.id)
-    setBreadcrumb(prev => prev.slice(0, index + 1))
-    setSelectedDoc(null)
-    setSearchResults(null)
-  }
+  const refreshTree = () => setTreeRefreshKey(k => k + 1)
 
   const openDocument = async (doc: any) => {
     try {
@@ -79,7 +53,7 @@ export function DocsPage() {
       })
       setSelectedDoc(res.document)
       setEditing(false)
-      loadDocuments()
+      refreshTree()
       useToastStore.getState().addToast('success', '저장 완료')
     } catch (e: any) {
       if (e.message === 'conflict') {
@@ -101,7 +75,7 @@ export function DocsPage() {
     try {
       await docsApi.create(currentDeptId, {
         title: newTitle,
-        parent_id: currentParentId || undefined,
+        parent_id: newParentId || undefined,
         is_folder: newIsFolder,
         content: newIsFolder ? undefined : '',
         visibility: newVisibility,
@@ -111,7 +85,7 @@ export function DocsPage() {
       setNewVisibility('department')
       setNewShared(false)
       setShowNewModal(false)
-      loadDocuments()
+      refreshTree()
     } catch (e: any) {
       useToastStore.getState().addToast('error', '생성 실패', e.message)
     }
@@ -122,7 +96,7 @@ export function DocsPage() {
     try {
       await docsApi.delete(selectedDoc.id)
       setSelectedDoc(null)
-      loadDocuments()
+      refreshTree()
     } catch (e: any) {
       useToastStore.getState().addToast('error', '삭제 실패', e.message)
     }
@@ -167,71 +141,49 @@ export function DocsPage() {
         </div>
 
         <div className="flex gap-1 mb-3">
-          <button onClick={() => { setNewIsFolder(true); setShowNewModal(true) }}
+          <button onClick={() => { setNewIsFolder(true); setNewParentId(null); setShowNewModal(true) }}
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">
             <FolderPlus size={14} /> 폴더
           </button>
-          <button onClick={() => { setNewIsFolder(false); setShowNewModal(true) }}
+          <button onClick={() => { setNewIsFolder(false); setNewParentId(null); setShowNewModal(true) }}
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">
             <FilePlus size={14} /> 문서
           </button>
         </div>
 
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-1 mb-3 flex-wrap text-xs text-gray-500">
-          {breadcrumb.map((item, i) => (
-            <span key={i} className="flex items-center">
-              {i > 0 && <ChevronRight size={12} className="mx-0.5" />}
-              <button onClick={() => navigateToBreadcrumb(i)} className="hover:text-primary-600">
-                {item.title}
-              </button>
-            </span>
-          ))}
-        </div>
-
-        {/* Document list */}
-        <div className="space-y-0.5">
-          {(searchResults || documents).map(doc => (
-            <div
-              key={doc.id}
-              className={`group flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-sm hover:bg-gray-100 ${selectedDoc?.id === doc.id ? 'bg-primary-50 text-primary-700' : ''}`}
-            >
-              <button
-                onClick={() => doc.is_folder ? navigateToFolder(doc.id, doc.title) : openDocument(doc)}
-                className="flex items-center gap-2 flex-1 min-w-0 text-left"
-              >
-                {doc.is_folder ? <Folder size={16} className="text-amber-500 flex-shrink-0" /> : <FileText size={16} className="text-gray-400 flex-shrink-0" />}
-                <span className="truncate flex-1">{doc.title}</span>
-                <span className="flex items-center gap-0.5 flex-shrink-0">
-                  {doc.visibility === 'company' && <Building2 size={12} className="text-blue-500" />}
-                  {doc.visibility === 'personal' && <UserIcon size={12} className="text-purple-500" />}
-                  {doc.visibility === 'department' && <Users size={12} className="text-green-500" />}
-                  {doc.shared === 1 && <Share2 size={10} className="text-orange-400" />}
-                </span>
-              </button>
-              <button
-                onClick={async (e) => {
-                  e.stopPropagation()
-                  if (!confirm(`"${doc.title}" ${doc.is_folder ? '폴더를 삭제하시겠습니까? 하위 문서도 모두 삭제됩니다.' : '을(를) 삭제하시겠습니까?'}`)) return
-                  try {
-                    await docsApi.delete(doc.id)
-                    if (selectedDoc?.id === doc.id) setSelectedDoc(null)
-                    loadDocuments()
-                  } catch (err: any) {
-                    useToastStore.getState().addToast('error', '삭제 실패', err.message)
-                  }
-                }}
-                className="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                title="삭제"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
-          {documents.length === 0 && !searchResults && (
-            <p className="text-xs text-gray-400 text-center py-4">문서가 없습니다</p>
-          )}
-        </div>
+        {/* Document Tree */}
+        {searchResults ? (
+          <div className="space-y-0.5">
+            {searchResults.map(doc => (
+              <TreeItem key={doc.id} doc={doc} selectedId={selectedDoc?.id} onSelect={openDocument} onDelete={async (d) => {
+                if (!confirm(`"${d.title}" 을(를) 삭제하시겠습니까?`)) return
+                await docsApi.delete(d.id)
+                if (selectedDoc?.id === d.id) setSelectedDoc(null)
+                refreshTree()
+              }} />
+            ))}
+          </div>
+        ) : (
+          <DocTree
+            key={treeRefreshKey}
+            deptId={currentDeptId}
+            parentId={null}
+            depth={0}
+            selectedId={selectedDoc?.id}
+            onSelect={openDocument}
+            onDelete={async (doc) => {
+              if (!confirm(`"${doc.title}" ${doc.is_folder ? '폴더를 삭제하시겠습니까? 하위 문서도 모두 삭제됩니다.' : '을(를) 삭제하시겠습니까?'}`)) return
+              try {
+                await docsApi.delete(doc.id)
+                if (selectedDoc?.id === doc.id) setSelectedDoc(null)
+                refreshTree()
+              } catch (err: any) {
+                useToastStore.getState().addToast('error', '삭제 실패', err.message)
+              }
+            }}
+            onAddInFolder={(folderId) => { setNewParentId(folderId); setNewIsFolder(false); setShowNewModal(true) }}
+          />
+        )}
       </div>
 
       {/* Content Area */}
@@ -369,4 +321,148 @@ function MarkdownPreview({ content }: { content: string }) {
     .replace(/\n/g, '<br/>')
 
   return <div dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+// ── Recursive Tree Components ────────────────────────────────
+
+function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAddInFolder }: {
+  deptId: string | null
+  parentId: string | null
+  depth: number
+  selectedId?: string
+  onSelect: (doc: any) => void
+  onDelete: (doc: any) => void
+  onAddInFolder: (folderId: string) => void
+}) {
+  const [docs, setDocs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    const params: { dept_id?: string; parent_id?: string } = {}
+    if (deptId) params.dept_id = deptId
+    if (parentId) params.parent_id = parentId
+    else if (deptId) params.parent_id = undefined // root level
+
+    docsApi.list(params).then(res => {
+      setDocs(res.documents || [])
+    }).catch(() => {}).finally(() => setLoading(false))
+  }, [deptId, parentId])
+
+  if (loading && depth === 0) return <p className="text-xs text-gray-400 text-center py-4">로딩 중...</p>
+  if (docs.length === 0 && depth === 0) return <p className="text-xs text-gray-400 text-center py-4">문서가 없습니다</p>
+
+  return (
+    <div className={depth > 0 ? 'ml-3 border-l border-gray-200 pl-1' : ''}>
+      {docs.map(doc => (
+        doc.is_folder ? (
+          <FolderNode
+            key={doc.id}
+            doc={doc}
+            deptId={deptId}
+            depth={depth}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            onDelete={onDelete}
+            onAddInFolder={onAddInFolder}
+          />
+        ) : (
+          <TreeItem
+            key={doc.id}
+            doc={doc}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            onDelete={onDelete}
+          />
+        )
+      ))}
+    </div>
+  )
+}
+
+function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddInFolder }: {
+  doc: any
+  deptId: string | null
+  depth: number
+  selectedId?: string
+  onSelect: (doc: any) => void
+  onDelete: (doc: any) => void
+  onAddInFolder: (folderId: string) => void
+}) {
+  const [expanded, setExpanded] = useState(depth < 1) // auto-expand first level
+
+  return (
+    <div>
+      <div className="group flex items-center gap-1 w-full py-1 px-1 rounded-lg text-sm hover:bg-gray-100">
+        <button onClick={() => setExpanded(!expanded)} className="p-0.5 text-gray-400 hover:text-gray-600">
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+        <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+          {expanded ? <FolderOpen size={16} className="text-amber-500 flex-shrink-0" /> : <Folder size={16} className="text-amber-500 flex-shrink-0" />}
+          <span className="truncate font-medium text-gray-700">{doc.title}</span>
+          <span className="flex items-center gap-0.5 flex-shrink-0">
+            {doc.visibility === 'company' && <Building2 size={10} className="text-blue-500" />}
+            {doc.visibility === 'personal' && <UserIcon size={10} className="text-purple-500" />}
+            {doc.visibility === 'department' && <Users size={10} className="text-green-500" />}
+            {doc.shared === 1 && <Share2 size={9} className="text-orange-400" />}
+          </span>
+        </button>
+        <button
+          onClick={() => onAddInFolder(doc.id)}
+          className="p-0.5 text-gray-300 hover:text-primary-500 opacity-0 group-hover:opacity-100"
+          title="이 폴더에 문서 추가"
+        >
+          <FilePlus size={13} />
+        </button>
+        <button
+          onClick={() => onDelete(doc)}
+          className="p-0.5 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
+          title="삭제"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+      {expanded && (
+        <DocTree
+          deptId={deptId}
+          parentId={doc.id}
+          depth={depth + 1}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          onDelete={onDelete}
+          onAddInFolder={onAddInFolder}
+        />
+      )}
+    </div>
+  )
+}
+
+function TreeItem({ doc, selectedId, onSelect, onDelete }: {
+  doc: any
+  selectedId?: string
+  onSelect: (doc: any) => void
+  onDelete: (doc: any) => void
+}) {
+  return (
+    <div className={`group flex items-center gap-1 w-full py-1 px-1 rounded-lg text-sm hover:bg-gray-100 ${selectedId === doc.id ? 'bg-primary-50 text-primary-700' : ''}`}>
+      <span className="w-5" /> {/* indent spacer */}
+      <button onClick={() => onSelect(doc)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+        <FileText size={15} className="text-gray-400 flex-shrink-0" />
+        <span className="truncate">{doc.title}</span>
+        <span className="flex items-center gap-0.5 flex-shrink-0">
+          {doc.visibility === 'company' && <Building2 size={10} className="text-blue-500" />}
+          {doc.visibility === 'personal' && <UserIcon size={10} className="text-purple-500" />}
+          {doc.visibility === 'department' && <Users size={10} className="text-green-500" />}
+          {doc.shared === 1 && <Share2 size={9} className="text-orange-400" />}
+        </span>
+      </button>
+      <button
+        onClick={() => onDelete(doc)}
+        className="p-0.5 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
+        title="삭제"
+      >
+        <Trash2 size={13} />
+      </button>
+    </div>
+  )
 }
