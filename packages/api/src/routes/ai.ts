@@ -1239,3 +1239,217 @@ aiRoutes.post('/keys', async (c) => {
   // Return the raw key only once
   return c.json({ id, name, key: rawKey, prefix: keyPrefix, scopes: newScopes }, 201)
 })
+
+// ──────────────────────────────────────────────────────────────
+// GET-based action endpoints for bots that can only do GET (e.g. OpenClaw web_fetch)
+// All params via query string, key via ?key=ek_XXX
+// URL format: /api/v1/action/{tool}?key=ek_XXX&param1=val1&param2=val2
+// ──────────────────────────────────────────────────────────────
+
+aiRoutes.get('/action/map-telegram-user', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:write')) return c.json({ error: 'Insufficient scope' }, 403)
+
+  const orgId = c.get('apiKeyOrgId')
+  const tgUserId = c.req.query('telegram_user_id')
+  const tgUsername = c.req.query('telegram_username') || ''
+  const tgDisplayName = c.req.query('telegram_display_name') || ''
+  const email = c.req.query('email')
+  const userId = c.req.query('user_id')
+
+  if (!tgUserId) return c.json({ error: 'telegram_user_id required' }, 400)
+
+  // Resolve ecode user
+  let ecodeUserId: string | null = null
+  if (email) {
+    const user = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND email = ?').bind(orgId, email).first<{ id: string }>()
+    if (!user) return c.json({ error: `이코드 사용자를 찾을 수 없습니다: ${email}` }, 404)
+    ecodeUserId = user.id
+  } else if (userId) {
+    ecodeUserId = userId
+  }
+
+  // Upsert
+  const existing = await c.env.DB.prepare('SELECT id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ?').bind(orgId, tgUserId).first<{ id: string }>()
+  if (existing) {
+    const sets: string[] = ['is_active = 1']
+    const vals: unknown[] = []
+    if (ecodeUserId) { sets.push('user_id = ?'); vals.push(ecodeUserId) }
+    if (tgUsername) { sets.push('telegram_username = ?'); vals.push(tgUsername) }
+    if (tgDisplayName) { sets.push('telegram_display_name = ?'); vals.push(tgDisplayName) }
+    vals.push(existing.id)
+    await c.env.DB.prepare(`UPDATE telegram_user_mappings SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run()
+  } else {
+    await c.env.DB.prepare(
+      'INSERT INTO telegram_user_mappings (id, org_id, telegram_user_id, telegram_username, telegram_display_name, user_id) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(generateId(), orgId, tgUserId, tgUsername, tgDisplayName, ecodeUserId).run()
+  }
+
+  const result = await c.env.DB.prepare(
+    'SELECT m.*, u.name as user_name, u.email as user_email FROM telegram_user_mappings m LEFT JOIN users u ON u.id = m.user_id WHERE m.org_id = ? AND m.telegram_user_id = ?'
+  ).bind(orgId, tgUserId).first()
+
+  return c.json({ success: true, mapping: result })
+})
+
+aiRoutes.get('/action/unmap-telegram-user', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const tgUserId = c.req.query('telegram_user_id')
+  if (!tgUserId) return c.json({ error: 'telegram_user_id required' }, 400)
+
+  await c.env.DB.prepare('UPDATE telegram_user_mappings SET user_id = NULL WHERE org_id = ? AND telegram_user_id = ?').bind(orgId, tgUserId).run()
+  return c.json({ success: true })
+})
+
+aiRoutes.get('/action/resolve-telegram-user', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const tgUserId = c.req.query('telegram_user_id')
+  const tgUsername = c.req.query('telegram_username')
+
+  let mapping: Record<string, unknown> | null = null
+  if (tgUserId) {
+    mapping = await c.env.DB.prepare('SELECT * FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, tgUserId).first()
+  } else if (tgUsername) {
+    mapping = await c.env.DB.prepare('SELECT * FROM telegram_user_mappings WHERE org_id = ? AND telegram_username = ? AND is_active = 1').bind(orgId, tgUsername).first()
+  } else {
+    return c.json({ error: 'telegram_user_id or telegram_username required' }, 400)
+  }
+
+  if (!mapping) return c.json({ mapping: null, user: null })
+
+  let user = null
+  if (mapping.user_id) {
+    user = await c.env.DB.prepare('SELECT id, name, email, is_ceo FROM users WHERE id = ? AND org_id = ?').bind(mapping.user_id, orgId).first()
+  }
+  return c.json({ mapping, user })
+})
+
+aiRoutes.get('/action/list-telegram-mappings', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT m.*, u.name as user_name, u.email as user_email FROM telegram_user_mappings m LEFT JOIN users u ON u.id = m.user_id WHERE m.org_id = ? AND m.is_active = 1 ORDER BY m.created_at'
+  ).bind(orgId).all()
+  return c.json({ mappings: results })
+})
+
+aiRoutes.get('/action/clock-in', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:write') && !checkScope(scopes, 'attendance:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const tgUserId = c.req.query('telegram_user_id')
+  const directUserId = c.req.query('user_id')
+  const note = c.req.query('note') || ''
+
+  let userId = directUserId
+  if (!userId && tgUserId) {
+    const mapping = await c.env.DB.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, tgUserId).first<{ user_id: string }>()
+    if (!mapping?.user_id) return c.json({ error: '매핑된 이코드 사용자를 찾을 수 없습니다' }, 404)
+    userId = mapping.user_id
+  }
+  if (!userId) return c.json({ error: 'user_id or telegram_user_id required' }, 400)
+
+  const today = new Date().toISOString().slice(0, 10)
+  const now = new Date().toISOString()
+
+  const dept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(userId).first<{ department_id: string }>()
+
+  const existing = await c.env.DB.prepare('SELECT id FROM attendance_records WHERE org_id = ? AND user_id = ? AND date = ?').bind(orgId, userId, today).first()
+  if (existing) return c.json({ error: '이미 출근 기록이 있습니다', record: existing })
+
+  const id = generateId()
+  await c.env.DB.prepare(
+    'INSERT INTO attendance_records (id, org_id, user_id, department_id, date, clock_in, clock_in_source, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, orgId, userId, dept?.department_id || null, today, now, 'telegram', note).run()
+
+  const record = await c.env.DB.prepare('SELECT * FROM attendance_records WHERE id = ?').bind(id).first()
+  return c.json({ success: true, record })
+})
+
+aiRoutes.get('/action/clock-out', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:write') && !checkScope(scopes, 'attendance:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const tgUserId = c.req.query('telegram_user_id')
+  const directUserId = c.req.query('user_id')
+  const note = c.req.query('note') || ''
+
+  let userId = directUserId
+  if (!userId && tgUserId) {
+    const mapping = await c.env.DB.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, tgUserId).first<{ user_id: string }>()
+    if (!mapping?.user_id) return c.json({ error: '매핑된 이코드 사용자를 찾을 수 없습니다' }, 404)
+    userId = mapping.user_id
+  }
+  if (!userId) return c.json({ error: 'user_id or telegram_user_id required' }, 400)
+
+  const today = new Date().toISOString().slice(0, 10)
+  const now = new Date().toISOString()
+
+  const record = await c.env.DB.prepare('SELECT id, clock_out FROM attendance_records WHERE org_id = ? AND user_id = ? AND date = ?').bind(orgId, userId, today).first<{ id: string; clock_out: string | null }>()
+  if (!record) return c.json({ error: '오늘 출근 기록이 없습니다' }, 404)
+  if (record.clock_out) return c.json({ error: '이미 퇴근 기록이 있습니다' })
+
+  await c.env.DB.prepare("UPDATE attendance_records SET clock_out = ?, clock_out_source = 'telegram', note = CASE WHEN note = '' THEN ? ELSE note || ' | ' || ? END, updated_at = datetime('now') WHERE id = ?").bind(now, note, note, record.id).run()
+
+  const updated = await c.env.DB.prepare('SELECT * FROM attendance_records WHERE id = ?').bind(record.id).first()
+  return c.json({ success: true, record: updated })
+})
+
+aiRoutes.get('/action/create-event', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'calendar:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const deptId = c.req.query('department_id')
+  const title = c.req.query('title')
+  const startAt = c.req.query('start_at')
+  const endAt = c.req.query('end_at')
+  const allDay = c.req.query('all_day') === 'true'
+  const color = c.req.query('color') || '#3B82F6'
+  const visibility = c.req.query('visibility') || 'department'
+
+  if (!deptId || !title || !startAt || !endAt) return c.json({ error: 'department_id, title, start_at, end_at required' }, 400)
+
+  const dept = await c.env.DB.prepare('SELECT id FROM departments WHERE id = ? AND org_id = ?').bind(deptId, orgId).first()
+  if (!dept) return c.json({ error: 'Department not found' }, 404)
+
+  const id = generateId()
+  await c.env.DB.prepare(
+    "INSERT INTO events (id, department_id, user_id, title, start_at, end_at, all_day, color, visibility, created_at, updated_at) VALUES (?, ?, 'ai-api', ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+  ).bind(id, deptId, title, startAt, endAt, allDay ? 1 : 0, color, visibility).run()
+
+  const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first()
+  return c.json({ success: true, event })
+})
+
+aiRoutes.get('/action/create-task', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'kanban:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const boardId = c.req.query('board_id')
+  const columnId = c.req.query('column_id')
+  const title = c.req.query('title')
+  const description = c.req.query('description') || ''
+  const priority = c.req.query('priority') || 'medium'
+  const dueDate = c.req.query('due_date') || null
+
+  if (!boardId || !columnId || !title) return c.json({ error: 'board_id, column_id, title required' }, 400)
+
+  const board = await c.env.DB.prepare('SELECT b.id FROM boards b JOIN departments d ON d.id = b.department_id WHERE b.id = ? AND d.org_id = ?').bind(boardId, orgId).first()
+  if (!board) return c.json({ error: 'Board not found' }, 404)
+
+  const id = generateId()
+  await c.env.DB.prepare(
+    "INSERT INTO tasks (id, board_id, column_id, title, description, priority, due_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+  ).bind(id, boardId, columnId, title, description, priority, dueDate).run()
+
+  const task = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(id).first()
+  return c.json({ success: true, task })
+})

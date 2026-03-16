@@ -5,12 +5,20 @@ type Variables = { apiKeyOrgId: string; apiKeyScopes: string[] }
 
 export const apiKeyMiddleware = createMiddleware<{ Bindings: Env; Variables: Variables }>(
   async (c, next) => {
+    // Support both: Authorization header OR ?key= query parameter
     const authHeader = c.req.header('Authorization')
-    if (!authHeader?.startsWith('Bearer ek_')) {
-      return c.json({ error: 'Invalid API key format' }, 401)
+    const queryKey = c.req.query('key')
+
+    let apiKey: string | null = null
+    if (authHeader?.startsWith('Bearer ek_')) {
+      apiKey = authHeader.slice(7)
+    } else if (queryKey?.startsWith('ek_')) {
+      apiKey = queryKey
     }
 
-    const apiKey = authHeader.slice(7)
+    if (!apiKey) {
+      return c.json({ error: 'API key required. Pass via Authorization: Bearer ek_... or ?key=ek_...' }, 401)
+    }
     const keyHash = await hashKey(apiKey)
 
     const row = await c.env.DB.prepare(
