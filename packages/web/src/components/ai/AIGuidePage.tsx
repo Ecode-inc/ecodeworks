@@ -68,6 +68,16 @@ const getActions = [
     ],
   },
   {
+    category: '\uD83D\uDED2 비품구매',
+    items: [
+      { path: '/action/create-purchase', desc: '비품구매 등록 (단건)', params: 'item_name, unit_price, quantity, item_url, telegram_user_id or user_id, category (카테고리명), note' },
+      { path: '/action/create-purchases', desc: '비품구매 등록 (다건)', params: 'items (JSON배열: [{item_name, unit_price, quantity, category}]), telegram_user_id or user_id, note' },
+      { path: '/action/list-purchases', desc: '비품구매 목록', params: 'month (YYYY-MM), status (requested/approved/ordered/delivered/returned/cancelled), telegram_user_id or requester_id' },
+      { path: '/action/purchase-stats', desc: '비품구매 통계', params: 'month (YYYY-MM), dept_id' },
+      { path: '/action/update-purchase-status', desc: '비품구매 상태 변경', params: 'id, status (requested/approved/ordered/delivered/returned/cancelled)' },
+    ],
+  },
+  {
     category: '✅ 칸반',
     items: [
       { path: '/action/list-boards', desc: '보드 목록', params: 'dept_id (선택)' },

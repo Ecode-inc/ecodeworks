@@ -416,6 +416,31 @@ export const leaveApi = {
   },
 }
 
+// Purchase Management
+export const purchaseApi = {
+  list: (params?: { status?: string; month?: string; dept_id?: string; category_id?: string }) => {
+    const qs = new URLSearchParams(Object.entries(params || {}).filter(([,v]) => v) as [string,string][]).toString()
+    return request<{ purchases: any[] }>(`/purchases${qs ? '?' + qs : ''}`)
+  },
+  get: (id: string) => request<{ purchase: any }>(`/purchases/${id}`),
+  create: (data: any) => request<{ purchase: any }>('/purchases', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: any) => request<{ purchase: any }>(`/purchases/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  approve: (id: string) => request<{ purchase: any }>(`/purchases/${id}/approve`, { method: 'POST' }),
+  reject: (id: string, comment?: string) => request<{ purchase: any }>(`/purchases/${id}/reject`, { method: 'POST', body: JSON.stringify({ comment }) }),
+  order: (id: string) => request<{ purchase: any }>(`/purchases/${id}/order`, { method: 'POST' }),
+  deliver: (id: string) => request<{ purchase: any }>(`/purchases/${id}/deliver`, { method: 'POST' }),
+  returnItem: (id: string) => request<{ purchase: any }>(`/purchases/${id}/return`, { method: 'POST' }),
+  cancel: (id: string) => request<{ purchase: any }>(`/purchases/${id}/cancel`, { method: 'POST' }),
+  softDelete: (id: string) => request<{ success: boolean }>(`/purchases/${id}/delete`, { method: 'POST' }),
+  stats: (params?: { month?: string; dept_id?: string }) => {
+    const qs = new URLSearchParams(Object.entries(params || {}).filter(([,v]) => v) as [string,string][]).toString()
+    return request<{ stats: any }>(`/purchases/stats${qs ? '?' + qs : ''}`)
+  },
+  categories: () => request<{ categories: any[] }>('/purchases/categories'),
+  createCategory: (data: { name: string; color?: string }) => request<{ category: any }>('/purchases/categories', { method: 'POST', body: JSON.stringify(data) }),
+  seedCategories: () => request<{ categories: any[] }>('/purchases/categories/seed', { method: 'POST' }),
+}
+
 // Telegram Integration
 export const telegramApi = {
   listChats: () => request<{ chats: any[] }>('/telegram/chats'),

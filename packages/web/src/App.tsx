@@ -21,6 +21,7 @@ import { AIGuidePage } from './components/ai/AIGuidePage'
 import { ToastContainer } from './components/ui/Toast'
 import { SuperAdminPage } from './components/super/SuperAdminPage'
 import { SharedDocPage } from './components/docs/SharedDocPage'
+import { PurchasesPage } from './components/purchases/PurchasesPage'
 
 export default function App() {
   const { user, initialized, restore, departments } = useAuthStore()
@@ -117,6 +118,7 @@ export default function App() {
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/attendance" element={<AttendancePage />} />
         <Route path="/leave" element={<LeavePage />} />
+        <Route path="/purchases" element={<PurchasesPage />} />
         <Route path="/kanban" element={<KanbanPage />} />
         <Route path="/docs" element={<DocsPage />} />
         <Route path="/vault" element={<VaultPage />} />
