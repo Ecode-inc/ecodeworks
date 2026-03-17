@@ -164,25 +164,43 @@ export function DocsPage() {
             ))}
           </div>
         ) : (
-          <DocTree
-            key={treeRefreshKey}
-            deptId={currentDeptId}
-            parentId={null}
-            depth={0}
-            selectedId={selectedDoc?.id}
-            onSelect={openDocument}
-            onDelete={async (doc) => {
-              if (!confirm(`"${doc.title}" ${doc.is_folder ? '폴더를 삭제하시겠습니까? 하위 문서도 모두 삭제됩니다.' : '을(를) 삭제하시겠습니까?'}`)) return
-              try {
-                await docsApi.delete(doc.id)
-                if (selectedDoc?.id === doc.id) setSelectedDoc(null)
-                refreshTree()
-              } catch (err: any) {
-                useToastStore.getState().addToast('error', '삭제 실패', err.message)
+          <div
+            onDragOver={(e) => { e.preventDefault() }}
+            onDrop={async (e) => {
+              e.preventDefault()
+              const docId = e.dataTransfer.getData('doc-id')
+              if (docId) {
+                try {
+                  await docsApi.update(docId, { parent_id: '' })
+                  refreshTree()
+                } catch (err: any) {
+                  useToastStore.getState().addToast('error', '이동 실패', err.message)
+                }
               }
             }}
-            onAddInFolder={(folderId) => { setNewParentId(folderId); setNewIsFolder(false); setShowNewModal(true) }}
-          />
+            className="flex-1"
+          >
+            <DocTree
+              key={treeRefreshKey}
+              deptId={currentDeptId}
+              parentId={null}
+              depth={0}
+              selectedId={selectedDoc?.id}
+              onSelect={openDocument}
+              onDelete={async (doc) => {
+                if (!confirm(`"${doc.title}" ${doc.is_folder ? '폴더를 삭제하시겠습니까? 하위 문서도 모두 삭제됩니다.' : '을(를) 삭제하시겠습니까?'}`)) return
+                try {
+                  await docsApi.delete(doc.id)
+                  if (selectedDoc?.id === doc.id) setSelectedDoc(null)
+                  refreshTree()
+                } catch (err: any) {
+                  useToastStore.getState().addToast('error', '삭제 실패', err.message)
+                }
+              }}
+              onAddInFolder={(folderId) => { setNewParentId(folderId); setNewIsFolder(false); setShowNewModal(true) }}
+              onMoved={refreshTree}
+            />
+          </div>
         )}
       </div>
 
@@ -325,7 +343,7 @@ function MarkdownPreview({ content }: { content: string }) {
 
 // ── Recursive Tree Components ────────────────────────────────
 
-function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAddInFolder }: {
+function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAddInFolder, onMoved }: {
   deptId: string | null
   parentId: string | null
   depth: number
@@ -333,6 +351,7 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
   onSelect: (doc: any) => void
   onDelete: (doc: any) => void
   onAddInFolder: (folderId: string) => void
+  onMoved?: () => void
 }) {
   const [docs, setDocs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -372,6 +391,7 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
             onSelect={onSelect}
             onDelete={onDelete}
             onAddInFolder={onAddInFolder}
+            onMoved={onMoved}
           />
         ) : (
           <TreeItem
@@ -387,7 +407,7 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
   )
 }
 
-function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddInFolder }: {
+function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddInFolder, onMoved }: {
   doc: any
   deptId: string | null
   depth: number
@@ -395,12 +415,31 @@ function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddI
   onSelect: (doc: any) => void
   onDelete: (doc: any) => void
   onAddInFolder: (folderId: string) => void
+  onMoved?: () => void
 }) {
   const [expanded, setExpanded] = useState(depth < 1) // auto-expand first level
+  const [dragOver, setDragOver] = useState(false)
 
   return (
-    <div>
-      <div className="group flex items-center gap-1 w-full py-1 px-1 rounded-lg text-sm hover:bg-gray-100">
+    <div
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData('doc-id', doc.id); e.stopPropagation() }}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true) }}
+      onDragLeave={(e) => { e.stopPropagation(); setDragOver(false) }}
+      onDrop={async (e) => {
+        e.preventDefault(); e.stopPropagation(); setDragOver(false)
+        const docId = e.dataTransfer.getData('doc-id')
+        if (docId && docId !== doc.id) {
+          try {
+            await docsApi.update(docId, { parent_id: doc.id })
+            onMoved?.()
+          } catch (err: any) {
+            useToastStore.getState().addToast('error', '이동 실패', err.message)
+          }
+        }
+      }}
+    >
+      <div className={`group flex items-center gap-1 w-full py-1 px-1 rounded-lg text-sm hover:bg-gray-100 ${dragOver ? 'ring-2 ring-blue-400 bg-blue-50' : ''}`}>
         <button onClick={() => setExpanded(!expanded)} className="p-0.5 text-gray-400 hover:text-gray-600">
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
@@ -438,6 +477,7 @@ function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddI
           onSelect={onSelect}
           onDelete={onDelete}
           onAddInFolder={onAddInFolder}
+          onMoved={onMoved}
         />
       )}
     </div>
@@ -453,7 +493,11 @@ function TreeItem({ doc, selectedId, onSelect, onDelete }: {
   const isAIGuide = doc.title === 'AI'
 
   return (
-    <div className={`group flex items-center gap-1 w-full py-1 px-1 rounded-lg text-sm hover:bg-gray-100 ${selectedId === doc.id ? 'bg-primary-50 text-primary-700' : ''} ${isAIGuide ? 'opacity-40' : ''}`}>
+    <div
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData('doc-id', doc.id); e.stopPropagation() }}
+      className={`group flex items-center gap-1 w-full py-1 px-1 rounded-lg text-sm hover:bg-gray-100 ${selectedId === doc.id ? 'bg-primary-50 text-primary-700' : ''} ${isAIGuide ? 'opacity-40' : ''}`}
+    >
       <span className="w-5" /> {/* indent spacer */}
       <button onClick={() => onSelect(doc)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
         <FileText size={15} className="text-gray-400 flex-shrink-0" />

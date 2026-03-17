@@ -52,6 +52,9 @@ export function KanbanPage() {
   const dragItem = useRef<any>(null)
   const dragOverColumn = useRef<string | null>(null)
 
+  // Touch drag state
+  const touchStart = useRef<{ x: number; y: number; taskId: string; columnId: string } | null>(null)
+
   useEffect(() => {
     boardsApi.list(currentDeptId || undefined).then(r => {
       setBoards(r.boards || [])
@@ -306,6 +309,7 @@ export function KanbanPage() {
           {columns.map(col => (
             <div
               key={col.id}
+              data-column-id={col.id}
               className="flex-shrink-0 w-72 bg-gray-100 rounded-xl p-3 group/col"
               onDragOver={(e) => handleDragOver(e, col.id)}
               onDrop={() => handleDrop(col.id)}
@@ -395,7 +399,31 @@ export function KanbanPage() {
                       key={task.id}
                       draggable
                       onDragStart={() => handleDragStart(task)}
+                      onTouchStart={(e) => {
+                        const touch = e.touches[0]
+                        touchStart.current = { x: touch.clientX, y: touch.clientY, taskId: task.id, columnId: task.column_id }
+                      }}
+                      onTouchMove={(e) => {
+                        if (touchStart.current) {
+                          e.preventDefault()
+                        }
+                      }}
+                      onTouchEnd={(e) => {
+                        if (!touchStart.current) return
+                        const touch = e.changedTouches[0]
+                        const element = document.elementFromPoint(touch.clientX, touch.clientY)
+                        const columnEl = element?.closest('[data-column-id]')
+                        if (columnEl) {
+                          const targetColId = columnEl.getAttribute('data-column-id')
+                          if (targetColId && targetColId !== touchStart.current.columnId) {
+                            dragItem.current = { id: touchStart.current.taskId, column_id: touchStart.current.columnId }
+                            handleDrop(targetColId)
+                          }
+                        }
+                        touchStart.current = null
+                      }}
                       onClick={() => { setEditingTask(task); setTargetColumnId(task.column_id); setShowTaskModal(true) }}
+                      style={{ touchAction: 'none' }}
                       className={`bg-white rounded-lg p-3 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${priorityColors[task.priority] || ''}`}
                     >
                       <div className="flex items-start gap-2">
