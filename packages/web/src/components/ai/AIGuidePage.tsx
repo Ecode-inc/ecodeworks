@@ -70,11 +70,12 @@ const getActions = [
   {
     category: '\uD83D\uDED2 비품구매',
     items: [
-      { path: '/action/create-purchase', desc: '비품구매 등록 (단건)', params: 'item_name, unit_price, quantity, item_url, telegram_user_id or user_id, category (카테고리명), note' },
-      { path: '/action/create-purchases', desc: '비품구매 등록 (다건)', params: 'items (JSON배열: [{item_name, unit_price, quantity, category}]), telegram_user_id or user_id, note' },
-      { path: '/action/list-purchases', desc: '비품구매 목록', params: 'month (YYYY-MM), status (requested/approved/ordered/delivered/returned/cancelled), telegram_user_id or requester_id' },
+      { path: '/action/create-purchase', desc: '비품구매 등록 (단건)', params: 'item_name, unit_price, quantity, item_url, requester_name or requester_email or telegram_user_id, category, note, date (YYYY-MM-DD), status (requested/ordered/delivered)' },
+      { path: '/action/create-purchases', desc: '비품구매 등록 (다건)', params: 'items (JSON), requester_name or requester_email, date, status, note' },
+      { path: '/action/list-purchases', desc: '비품구매 목록', params: 'month (YYYY-MM), status, telegram_user_id or requester_id' },
       { path: '/action/purchase-stats', desc: '비품구매 통계', params: 'month (YYYY-MM), dept_id' },
-      { path: '/action/update-purchase-status', desc: '비품구매 상태 변경', params: 'id, status (requested/approved/ordered/delivered/returned/cancelled)' },
+      { path: '/action/update-purchase-status', desc: '비품구매 상태 변경', params: 'id, status' },
+      { path: '/action/approve-all-purchases', desc: '비품구매 일괄 상태 변경', params: 'from_status (default: requested), to_status (default: approved), month (YYYY-MM, 선택)' },
     ],
   },
   {

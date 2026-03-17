@@ -2150,17 +2150,28 @@ aiRoutes.get('/action/create-purchase', async (c) => {
   const note = c.req.query('note') || ''
   const tgUserId = c.req.query('telegram_user_id')
   const directUserId = c.req.query('user_id')
+  const requesterEmail = c.req.query('requester_email')   // resolve by email
+  const requesterName = c.req.query('requester_name')     // resolve by name
+  const customDate = c.req.query('date')                  // YYYY-MM-DD
+  const initialStatus = c.req.query('status') || 'requested'  // requested, ordered, delivered
 
   if (!itemName) return c.json({ error: 'item_name required' }, 400)
 
-  // Resolve user
+  // Resolve user: direct ID → telegram → email → name → CEO fallback
   let userId = directUserId
   if (!userId && tgUserId) {
     const mapping = await c.env.DB.prepare(
       'SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1'
     ).bind(orgId, tgUserId).first<{ user_id: string }>()
-    if (!mapping?.user_id) return c.json({ error: '매핑된 이코드 사용자를 찾을 수 없습니다' }, 404)
-    userId = mapping.user_id
+    if (mapping?.user_id) userId = mapping.user_id
+  }
+  if (!userId && requesterEmail) {
+    const byEmail = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND email = ?').bind(orgId, requesterEmail).first<{ id: string }>()
+    if (byEmail) userId = byEmail.id
+  }
+  if (!userId && requesterName) {
+    const byName = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND name = ?').bind(orgId, requesterName).first<{ id: string }>()
+    if (byName) userId = byName.id
   }
   if (!userId) {
     const ceo = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
@@ -2180,16 +2191,18 @@ aiRoutes.get('/action/create-purchase', async (c) => {
   const totalPrice = quantity * unitPrice
   const id = generateId()
 
+  const createdAt = customDate ? `${customDate} 12:00:00` : new Date().toISOString().replace('T', ' ').slice(0, 19)
+
   await c.env.DB.prepare(`
     INSERT INTO purchases (
       id, org_id, requester_id, department_id, category_id,
       item_name, item_url, quantity, unit_price, total_price,
-      note, source, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'telegram', datetime('now'), datetime('now'))
+      status, note, source, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'telegram', ?, ?)
   `).bind(
     id, orgId, userId, dept?.department_id || null, categoryId,
     itemName, itemUrl, quantity, unitPrice, totalPrice,
-    note
+    initialStatus, note, createdAt, createdAt
   ).run()
 
   const purchase = await c.env.DB.prepare(`
@@ -2212,6 +2225,10 @@ aiRoutes.get('/action/create-purchases', async (c) => {
   const itemsJson = c.req.query('items')
   const tgUserId = c.req.query('telegram_user_id')
   const directUserId = c.req.query('user_id')
+  const requesterEmail = c.req.query('requester_email')
+  const requesterName = c.req.query('requester_name')
+  const customDate = c.req.query('date')
+  const initialStatus = c.req.query('status') || 'requested'
   const note = c.req.query('note') || ''
 
   if (!itemsJson) return c.json({ error: 'items required (JSON array)' }, 400)
@@ -2225,14 +2242,21 @@ aiRoutes.get('/action/create-purchases', async (c) => {
 
   if (!Array.isArray(items) || items.length === 0) return c.json({ error: 'items must be a non-empty array' }, 400)
 
-  // Resolve user
+  // Resolve user: direct ID → telegram → email → name → CEO fallback
   let userId = directUserId
   if (!userId && tgUserId) {
     const mapping = await c.env.DB.prepare(
       'SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1'
     ).bind(orgId, tgUserId).first<{ user_id: string }>()
-    if (!mapping?.user_id) return c.json({ error: '매핑된 이코드 사용자를 찾을 수 없습니다' }, 404)
-    userId = mapping.user_id
+    if (mapping?.user_id) userId = mapping.user_id
+  }
+  if (!userId && requesterEmail) {
+    const byEmail = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND email = ?').bind(orgId, requesterEmail).first<{ id: string }>()
+    if (byEmail) userId = byEmail.id
+  }
+  if (!userId && requesterName) {
+    const byName = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND name = ?').bind(orgId, requesterName).first<{ id: string }>()
+    if (byName) userId = byName.id
   }
   if (!userId) {
     const ceo = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
@@ -2241,6 +2265,7 @@ aiRoutes.get('/action/create-purchases', async (c) => {
   if (!userId) return c.json({ error: 'No user found' }, 400)
 
   const dept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(userId).first<{ department_id: string }>()
+  const createdAt = customDate ? `${customDate} 12:00:00` : new Date().toISOString().replace('T', ' ').slice(0, 19)
 
   const ids: string[] = []
   const statements: D1PreparedStatement[] = []
@@ -2263,12 +2288,12 @@ aiRoutes.get('/action/create-purchases', async (c) => {
         INSERT INTO purchases (
           id, org_id, requester_id, department_id, category_id,
           item_name, item_url, quantity, unit_price, total_price,
-          note, source, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'telegram', datetime('now'), datetime('now'))
+          status, note, source, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'telegram', ?, ?)
       `).bind(
         id, orgId, userId, dept?.department_id || null, categoryId,
         item.item_name, item.item_url || '', quantity, unitPrice, totalPrice,
-        note
+        initialStatus, note, createdAt, createdAt
       )
     )
   }
@@ -2444,4 +2469,33 @@ aiRoutes.get('/action/update-purchase-status', async (c) => {
   `).bind(purchaseId).first()
 
   return c.json({ success: true, purchase: updated })
+})
+
+// 비품구매 일괄 상태 변경 (전체 승인 등)
+aiRoutes.get('/action/approve-all-purchases', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'purchases:write') && !checkScope(scopes, 'telegram:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const fromStatus = c.req.query('from_status') || 'requested'
+  const toStatus = c.req.query('to_status') || 'approved'
+  const month = c.req.query('month')
+
+  let query = "UPDATE purchases SET status = ?, updated_at = datetime('now')"
+  const params: unknown[] = [toStatus]
+
+  if (toStatus === 'approved') { query += ", approved_at = datetime('now')" }
+  else if (toStatus === 'ordered') { query += ", ordered_at = datetime('now')" }
+  else if (toStatus === 'delivered') { query += ", delivered_at = datetime('now')" }
+
+  query += ' WHERE org_id = ? AND status = ? AND is_deleted = 0'
+  params.push(orgId, fromStatus)
+
+  if (month) {
+    query += " AND created_at >= ? AND created_at < ?"
+    params.push(`${month}-01`, `${month}-31 23:59:59`)
+  }
+
+  const result = await c.env.DB.prepare(query).bind(...params).run()
+
+  return c.json({ success: true, updated_count: result.meta.changes })
 })
