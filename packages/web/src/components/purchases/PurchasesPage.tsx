@@ -15,16 +15,16 @@ import {
 import dayjs from 'dayjs'
 
 function formatKRW(amount: number): string {
-  return '\u20A9' + amount.toLocaleString('ko-KR')
+  return String.fromCharCode(0x20A9) + amount.toLocaleString('ko-KR')
 }
 
 const statusLabels: Record<string, string> = {
-  requested: '\uC694\uCCAD',
-  approved: '\uC2B9\uC778',
-  ordered: '\uC8FC\uBB38\uC644\uB8CC',
-  delivered: '\uBC30\uC1A1\uC644\uB8CC',
-  returned: '\uBC18\uD488',
-  cancelled: '\uCDE8\uC18C',
+  requested: '요청',
+  approved: '승인',
+  ordered: '주문완료',
+  delivered: '배송완료',
+  returned: '반품',
+  cancelled: '취소',
 }
 
 const statusColors: Record<string, string> = {
@@ -37,13 +37,13 @@ const statusColors: Record<string, string> = {
 }
 
 const statusFilters = [
-  { value: '', label: '\uC804\uCCB4' },
-  { value: 'requested', label: '\uC694\uCCAD' },
-  { value: 'approved', label: '\uC2B9\uC778' },
-  { value: 'ordered', label: '\uC8FC\uBB38' },
-  { value: 'delivered', label: '\uBC30\uC1A1' },
-  { value: 'returned', label: '\uBC18\uD488' },
-  { value: 'cancelled', label: '\uCDE8\uC18C' },
+  { value: '', label: '전체' },
+  { value: 'requested', label: '요청' },
+  { value: 'approved', label: '승인' },
+  { value: 'ordered', label: '주문' },
+  { value: 'delivered', label: '배송' },
+  { value: 'returned', label: '반품' },
+  { value: 'cancelled', label: '취소' },
 ]
 
 export function PurchasesPage() {
@@ -122,38 +122,38 @@ export function PurchasesPage() {
       switch (action) {
         case 'approve':
           await purchaseApi.approve(id)
-          useToastStore.getState().addToast('success', '\uC2B9\uC778\uB418\uC5C8\uC2B5\uB2C8\uB2E4')
+          useToastStore.getState().addToast('success', '승인되었습니다')
           break
         case 'reject':
           await purchaseApi.reject(id)
-          useToastStore.getState().addToast('success', '\uBC18\uB824\uB418\uC5C8\uC2B5\uB2C8\uB2E4')
+          useToastStore.getState().addToast('success', '반려되었습니다')
           break
         case 'order':
           await purchaseApi.order(id)
-          useToastStore.getState().addToast('success', '\uC8FC\uBB38\uC644\uB8CC \uCC98\uB9AC\uB418\uC5C8\uC2B5\uB2C8\uB2E4')
+          useToastStore.getState().addToast('success', '주문완료 처리되었습니다')
           break
         case 'deliver':
           await purchaseApi.deliver(id)
-          useToastStore.getState().addToast('success', '\uBC30\uC1A1\uC644\uB8CC \uCC98\uB9AC\uB418\uC5C8\uC2B5\uB2C8\uB2E4')
+          useToastStore.getState().addToast('success', '배송완료 처리되었습니다')
           break
         case 'return':
           await purchaseApi.returnItem(id)
-          useToastStore.getState().addToast('success', '\uBC18\uD488 \uCC98\uB9AC\uB418\uC5C8\uC2B5\uB2C8\uB2E4')
+          useToastStore.getState().addToast('success', '반품 처리되었습니다')
           break
         case 'cancel':
           await purchaseApi.cancel(id)
-          useToastStore.getState().addToast('success', '\uCDE8\uC18C\uB418\uC5C8\uC2B5\uB2C8\uB2E4')
+          useToastStore.getState().addToast('success', '취소되었습니다')
           break
         case 'delete':
           await purchaseApi.softDelete(id)
-          useToastStore.getState().addToast('success', '\uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4')
+          useToastStore.getState().addToast('success', '삭제되었습니다')
           break
       }
       loadPurchases()
       loadStats()
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '\uCC98\uB9AC \uC2E4\uD328'
-      useToastStore.getState().addToast('error', '\uCC98\uB9AC \uC2E4\uD328', msg)
+      const msg = e instanceof Error ? e.message : '처리 실패'
+      useToastStore.getState().addToast('error', '처리 실패', msg)
     }
   }
 
@@ -166,10 +166,10 @@ export function PurchasesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <ShoppingCart size={24} /> \uBE44\uD488\uAD6C\uB9E4
+          <ShoppingCart size={24} /> 비품구매
         </h1>
         <Button onClick={() => setShowCreateModal(true)}>
-          <Plus size={16} className="mr-1" /> \uBE44\uD488 \uC694\uCCAD
+          <Plus size={16} className="mr-1" /> 비품 요청
         </Button>
       </div>
 
@@ -177,7 +177,7 @@ export function PurchasesPage() {
       <div className="bg-white rounded-xl border p-4">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">\uC6D4\uBCC4:</span>
+            <span className="text-sm text-gray-500">월별:</span>
             <input
               type="month"
               value={selectedMonth}
@@ -186,13 +186,13 @@ export function PurchasesPage() {
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">\uBD80\uC11C:</span>
+            <span className="text-sm text-gray-500">부서:</span>
             <select
               value={deptFilter}
               onChange={e => setDeptFilter(e.target.value)}
               className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
-              <option value="">\uC804\uCCB4 \uBD80\uC11C</option>
+              <option value="">전체 부서</option>
               {departments.map(d => (
                 <option key={d.id} value={d.id}>{d.name}</option>
               ))}
@@ -200,7 +200,7 @@ export function PurchasesPage() {
           </div>
           <div className="ml-auto text-right">
             <span className="text-lg font-bold text-gray-900">{formatKRW(totalAmount)}</span>
-            <span className="text-sm text-gray-500 ml-2">({totalCount}\uAC74)</span>
+            <span className="text-sm text-gray-500 ml-2">({totalCount}건)</span>
           </div>
         </div>
 
@@ -214,7 +214,7 @@ export function PurchasesPage() {
                   width: `${cat.percentage || 0}%`,
                   backgroundColor: cat.color || '#6B7280',
                 }}
-                title={`${cat.name}: ${formatKRW(cat.amount)} (${cat.count}\uAC74)`}
+                title={`${cat.name}: ${formatKRW(cat.amount)} (${cat.count}건)`}
                 className="h-full transition-all"
               />
             ))}
@@ -245,22 +245,22 @@ export function PurchasesPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
-                <th className="text-left px-4 py-2 font-medium">\uC0C1\uD0DC</th>
-                <th className="text-left px-4 py-2 font-medium">\uD488\uBA85</th>
-                <th className="text-right px-4 py-2 font-medium">\uC218\uB7C9</th>
-                <th className="text-right px-4 py-2 font-medium">\uB2E8\uAC00</th>
-                <th className="text-right px-4 py-2 font-medium">\uD569\uACC4</th>
-                <th className="text-left px-4 py-2 font-medium">\uC694\uCCAD\uC790</th>
-                <th className="text-left px-4 py-2 font-medium">\uCE74\uD14C\uACE0\uB9AC</th>
-                <th className="text-left px-4 py-2 font-medium">\uB0A0\uC9DC</th>
-                <th className="text-left px-4 py-2 font-medium">\uC791\uC5C5</th>
+                <th className="text-left px-4 py-2 font-medium">상태</th>
+                <th className="text-left px-4 py-2 font-medium">품명</th>
+                <th className="text-right px-4 py-2 font-medium">수량</th>
+                <th className="text-right px-4 py-2 font-medium">단가</th>
+                <th className="text-right px-4 py-2 font-medium">합계</th>
+                <th className="text-left px-4 py-2 font-medium">요청자</th>
+                <th className="text-left px-4 py-2 font-medium">카테고리</th>
+                <th className="text-left px-4 py-2 font-medium">날짜</th>
+                <th className="text-left px-4 py-2 font-medium">작업</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {purchases.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
-                    \uBE44\uD488 \uC694\uCCAD \uB0B4\uC5ED\uC774 \uC5C6\uC2B5\uB2C8\uB2E4
+                    비품 요청 내역이 없습니다
                   </td>
                 </tr>
               ) : purchases.map((p: any) => (
@@ -311,27 +311,27 @@ export function PurchasesPage() {
                     <div className="flex items-center gap-1">
                       {p.status === 'requested' && isAdmin && (
                         <Button size="sm" onClick={() => handleAction('approve', p.id)}>
-                          \uC2B9\uC778
+                          승인
                         </Button>
                       )}
                       {p.status === 'requested' && p.requester_id === user?.id && (
                         <Button size="sm" variant="secondary" onClick={() => handleAction('cancel', p.id)}>
-                          \uCDE8\uC18C
+                          취소
                         </Button>
                       )}
                       {p.status === 'approved' && isAdmin && (
                         <Button size="sm" onClick={() => handleAction('order', p.id)}>
-                          \uC8FC\uBB38\uC644\uB8CC
+                          주문완료
                         </Button>
                       )}
                       {p.status === 'ordered' && isAdmin && (
                         <Button size="sm" onClick={() => handleAction('deliver', p.id)}>
-                          \uBC30\uC1A1\uC644\uB8CC
+                          배송완료
                         </Button>
                       )}
                       {p.status === 'delivered' && isAdmin && (
                         <Button size="sm" variant="secondary" onClick={() => handleAction('return', p.id)}>
-                          \uBC18\uD488
+                          반품
                         </Button>
                       )}
                       {isAdmin && (
@@ -354,21 +354,21 @@ export function PurchasesPage() {
           onClick={() => { setShowStats(!showStats); if (!showStats) loadStats() }}
           className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
         >
-          <h3 className="font-semibold text-gray-900">\uD1B5\uACC4</h3>
+          <h3 className="font-semibold text-gray-900">통계</h3>
           {showStats ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>
         {showStats && stats && (
           <div className="border-t p-4 space-y-6">
             {/* Total */}
             <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-2">{selectedMonth} \uCD1D \uC9C0\uCD9C</h4>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">{selectedMonth} 총 지출</h4>
               <p className="text-2xl font-bold text-gray-900">{formatKRW(stats.total_amount || 0)}</p>
             </div>
 
             {/* Category Breakdown */}
             {stats.categories && stats.categories.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">\uCE74\uD14C\uACE0\uB9AC\uBCC4</h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-2">카테고리별</h4>
                 <div className="space-y-2">
                   {stats.categories.map((cat: any) => (
                     <div key={cat.name} className="flex items-center gap-3">
@@ -378,7 +378,7 @@ export function PurchasesPage() {
                       />
                       <span className="text-sm text-gray-700 w-24 truncate">{cat.name}</span>
                       <span className="text-sm font-medium text-gray-900 w-28 text-right">{formatKRW(cat.amount || 0)}</span>
-                      <span className="text-xs text-gray-500 w-12 text-right">{cat.count}\uAC74</span>
+                      <span className="text-xs text-gray-500 w-12 text-right">{cat.count}건</span>
                       <div className="flex-1 bg-gray-100 rounded-full h-2">
                         <div
                           className="h-2 rounded-full transition-all"
@@ -397,14 +397,14 @@ export function PurchasesPage() {
             {/* Department Breakdown */}
             {stats.departments && stats.departments.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">\uBD80\uC11C\uBCC4</h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-2">부서별</h4>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 text-gray-600">
                       <tr>
-                        <th className="text-left px-3 py-1.5 font-medium">\uBD80\uC11C</th>
-                        <th className="text-right px-3 py-1.5 font-medium">\uAE08\uC561</th>
-                        <th className="text-right px-3 py-1.5 font-medium">\uAC74\uC218</th>
+                        <th className="text-left px-3 py-1.5 font-medium">부서</th>
+                        <th className="text-right px-3 py-1.5 font-medium">금액</th>
+                        <th className="text-right px-3 py-1.5 font-medium">건수</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -424,14 +424,14 @@ export function PurchasesPage() {
             {/* Requester Breakdown */}
             {stats.requesters && stats.requesters.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">\uC694\uCCAD\uC790\uBCC4</h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-2">요청자별</h4>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 text-gray-600">
                       <tr>
-                        <th className="text-left px-3 py-1.5 font-medium">\uC694\uCCAD\uC790</th>
-                        <th className="text-right px-3 py-1.5 font-medium">\uAE08\uC561</th>
-                        <th className="text-right px-3 py-1.5 font-medium">\uAC74\uC218</th>
+                        <th className="text-left px-3 py-1.5 font-medium">요청자</th>
+                        <th className="text-right px-3 py-1.5 font-medium">금액</th>
+                        <th className="text-right px-3 py-1.5 font-medium">건수</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -503,11 +503,11 @@ function CreatePurchaseModal({
     setSeeding(true)
     try {
       await purchaseApi.seedCategories()
-      useToastStore.getState().addToast('success', '\uAE30\uBCF8 \uCE74\uD14C\uACE0\uB9AC\uAC00 \uC0DD\uC131\uB418\uC5C8\uC2B5\uB2C8\uB2E4')
+      useToastStore.getState().addToast('success', '기본 카테고리가 생성되었습니다')
       onCategoriesChange()
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '\uC0DD\uC131 \uC2E4\uD328'
-      useToastStore.getState().addToast('error', '\uCE74\uD14C\uACE0\uB9AC \uC0DD\uC131 \uC2E4\uD328', msg)
+      const msg = e instanceof Error ? e.message : '생성 실패'
+      useToastStore.getState().addToast('error', '카테고리 생성 실패', msg)
     } finally {
       setSeeding(false)
     }
@@ -515,11 +515,11 @@ function CreatePurchaseModal({
 
   const handleSubmit = async () => {
     if (!itemName.trim()) {
-      useToastStore.getState().addToast('error', '\uD488\uBA85\uC744 \uC785\uB825\uD574\uC8FC\uC138\uC694')
+      useToastStore.getState().addToast('error', '품명을 입력해주세요')
       return
     }
     if (quantity <= 0 || unitPrice <= 0) {
-      useToastStore.getState().addToast('error', '\uC218\uB7C9\uACFC \uB2E8\uAC00\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694')
+      useToastStore.getState().addToast('error', '수량과 단가를 입력해주세요')
       return
     }
     setLoading(true)
@@ -532,7 +532,7 @@ function CreatePurchaseModal({
         category_id: categoryId || undefined,
         memo: memo.trim() || undefined,
       })
-      useToastStore.getState().addToast('success', '\uBE44\uD488 \uC694\uCCAD\uC774 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4')
+      useToastStore.getState().addToast('success', '비품 요청이 완료되었습니다')
       // Reset form
       setItemName('')
       setItemUrl('')
@@ -542,31 +542,31 @@ function CreatePurchaseModal({
       setMemo('')
       onCreated()
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '\uC694\uCCAD \uC2E4\uD328'
-      useToastStore.getState().addToast('error', '\uBE44\uD488 \uC694\uCCAD \uC2E4\uD328', msg)
+      const msg = e instanceof Error ? e.message : '요청 실패'
+      useToastStore.getState().addToast('error', '비품 요청 실패', msg)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="\uBE44\uD488 \uC694\uCCAD" width="max-w-lg">
+    <Modal open={open} onClose={onClose} title="비품 요청" width="max-w-lg">
       <div className="space-y-4">
         {/* Item Name */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">\uD488\uBA85</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">품명</label>
           <input
             type="text"
             value={itemName}
             onChange={e => setItemName(e.target.value)}
-            placeholder="\uD488\uBA85\uC744 \uC785\uB825\uD558\uC138\uC694"
+            placeholder="품명을 입력하세요"
             className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
 
         {/* Item URL */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">URL (\uC120\uD0DD)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">URL (선택)</label>
           <input
             type="url"
             value={itemUrl}
@@ -579,7 +579,7 @@ function CreatePurchaseModal({
         {/* Quantity & Unit Price */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">\uC218\uB7C9</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">수량</label>
             <input
               type="number"
               min={1}
@@ -589,7 +589,7 @@ function CreatePurchaseModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">\uB2E8\uAC00 (\uC6D0)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">단가 (원)</label>
             <input
               type="number"
               min={0}
@@ -602,18 +602,18 @@ function CreatePurchaseModal({
 
         {/* Auto-calculated total */}
         <div className="bg-gray-50 rounded-lg px-4 py-2 flex items-center justify-between">
-          <span className="text-sm text-gray-600">\uD569\uACC4</span>
+          <span className="text-sm text-gray-600">합계</span>
           <span className="text-lg font-bold text-gray-900">{formatKRW(total)}</span>
         </div>
 
         {/* Category */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">\uCE74\uD14C\uACE0\uB9AC</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
           {categories.length === 0 ? (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400">\uCE74\uD14C\uACE0\uB9AC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4</span>
+              <span className="text-sm text-gray-400">카테고리가 없습니다</span>
               <Button size="sm" variant="secondary" onClick={handleSeedCategories} loading={seeding}>
-                \uAE30\uBCF8 \uC0DD\uC131
+                기본 생성
               </Button>
             </div>
           ) : (
@@ -622,7 +622,7 @@ function CreatePurchaseModal({
               onChange={e => setCategoryId(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
-              <option value="">\uCE74\uD14C\uACE0\uB9AC \uC120\uD0DD</option>
+              <option value="">카테고리 선택</option>
               {categories.map((cat: any) => (
                 <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
@@ -632,11 +632,11 @@ function CreatePurchaseModal({
 
         {/* Memo */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">\uBA54\uBAA8</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">메모</label>
           <textarea
             value={memo}
             onChange={e => setMemo(e.target.value)}
-            placeholder="\uBA54\uBAA8\uB97C \uC785\uB825\uD558\uC138\uC694 (\uC120\uD0DD)"
+            placeholder="메모를 입력하세요 (선택)"
             className="w-full border rounded-lg px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
@@ -644,10 +644,10 @@ function CreatePurchaseModal({
         {/* Submit */}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose}>
-            \uCDE8\uC18C
+            취소
           </Button>
           <Button onClick={handleSubmit} loading={loading}>
-            \uC694\uCCAD
+            요청
           </Button>
         </div>
       </div>
