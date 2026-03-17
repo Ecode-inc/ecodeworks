@@ -25,6 +25,67 @@ type Variables = { apiKeyOrgId: string; apiKeyScopes: string[] }
 
 export const aiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
+// GET action guide - JSON format for AI bots (no auth required)
+aiRoutes.get('/actions', (c) => {
+  return c.json({
+    guide: 'All actions use GET with ?key=API_KEY. Parameters via query string.',
+    base_url: 'https://ecode-internal-api.justin21lee.workers.dev/api/v1',
+    actions: {
+      telegram_mapping: {
+        'map-telegram-user': 'telegram_user_id, telegram_username, email',
+        'unmap-telegram-user': 'telegram_user_id',
+        'resolve-telegram-user': 'telegram_user_id or telegram_username',
+        'list-telegram-mappings': '',
+      },
+      user: {
+        'update-user-name': 'telegram_user_id or email or user_id, name',
+      },
+      attendance: {
+        'clock-in': 'telegram_user_id or user_id, time (HH:MM), date (YYYY-MM-DD)',
+        'clock-out': 'telegram_user_id or user_id, time, date',
+        'update-attendance': 'telegram_user_id or user_id, date, clock_in (HH:MM), clock_out (HH:MM), status, note',
+      },
+      calendar: {
+        'create-event': 'title, start_at (+09:00), end_at, telegram_user_id or user_id, visibility (personal/department/company), importance, department_id, freq, byDay, until',
+      },
+      kanban: {
+        'list-boards': 'dept_id',
+        'get-board': 'id',
+        'create-board': 'name, department_id',
+        'update-board': 'id, name',
+        'list-tasks': 'board_id, assignee_id',
+        'create-task': 'board_id, column_id, title, description, priority, due_date, assignee_ids (comma-separated)',
+        'update-task': 'id, title, description, column_id, priority, assignee_id, due_date',
+        'update-column': 'id, name, color',
+      },
+      documents: {
+        'search-docs': 'q (search term) - returns folder_path',
+        'list-docs': 'dept_id, parent_id, flat=true',
+        'get-doc': 'id',
+        'create-doc': 'title, content, department_id, parent_id, is_folder, visibility',
+        'update-doc': 'id, title, content, append (add to existing)',
+        'get-doc-share-link': 'q (title search) or id, expiry (1d/7d/30d/none)',
+        'get-folder-guide': 'parent_id',
+        'update-folder-guide': 'parent_id, content',
+      },
+      purchases: {
+        'create-purchase': 'item_name, unit_price, quantity, item_url, requester_name or requester_email, category, note, date (YYYY-MM-DD), status (requested/ordered/delivered)',
+        'create-purchases': 'items (JSON array), requester_name, date, status, note',
+        'list-purchases': 'month (YYYY-MM), status, requester_id',
+        'purchase-stats': 'month (YYYY-MM), dept_id',
+        'update-purchase-status': 'id, status',
+        'approve-all-purchases': 'from_status (default:requested), to_status (default:approved), month',
+      },
+    },
+    privacy: {
+      calendar_context: 'context=group hides personal events, context=private&user_id=X shows personal',
+    },
+    safety: {
+      blocked: ['DELETE operations', 'vault password exposure', 'user/org structure modification'],
+    },
+  })
+})
+
 // OpenAPI spec
 aiRoutes.get('/openapi.json', (c) => {
   return c.json({
