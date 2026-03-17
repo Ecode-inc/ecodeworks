@@ -2040,3 +2040,73 @@ aiRoutes.get('/action/update-folder-guide', async (c) => {
     return c.json({ success: true, document: doc })
   }
 })
+
+// 문서 공유링크 조회 (기존 링크 반환 또는 자동 생성)
+aiRoutes.get('/action/get-doc-share-link', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const docId = c.req.query('id')
+  const q = c.req.query('q')  // search by title
+  const expiry = c.req.query('expiry') || '7d' // 1d, 7d, 30d, none
+
+  // Find doc by ID or by search
+  let doc: any = null
+  if (docId) {
+    doc = await c.env.DB.prepare(`
+      SELECT d.* FROM documents d
+      JOIN departments dept ON dept.id = d.department_id
+      WHERE d.id = ? AND dept.org_id = ?
+    `).bind(docId, orgId).first()
+  } else if (q) {
+    // Search by title (fuzzy match)
+    doc = await c.env.DB.prepare(`
+      SELECT d.* FROM documents d
+      JOIN departments dept ON dept.id = d.department_id
+      WHERE d.title LIKE ? AND dept.org_id = ? AND d.is_folder = 0
+      ORDER BY d.updated_at DESC LIMIT 1
+    `).bind(`%${q}%`, orgId).first()
+  }
+
+  if (!doc) return c.json({ error: 'Document not found', url: null })
+
+  // Check for existing active external share link
+  const existing = await c.env.DB.prepare(
+    "SELECT * FROM doc_share_links WHERE document_id = ? AND share_type = 'external' AND is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now')) ORDER BY created_at DESC LIMIT 1"
+  ).bind(doc.id).first<any>()
+
+  if (existing) {
+    return c.json({
+      document: { id: doc.id, title: doc.title },
+      url: `https://work.e-code.kr/share/${existing.token}`,
+      expires_at: existing.expires_at,
+      existing: true,
+    })
+  }
+
+  // Auto-create a new share link
+  const ceoRow = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+  const creatorId = ceoRow?.id || ''
+  const token = crypto.randomUUID()
+  const id = generateId()
+
+  let expiresAt: string | null = null
+  if (expiry !== 'none') {
+    const now = new Date()
+    const days = expiry === '1d' ? 1 : expiry === '30d' ? 30 : 7
+    now.setDate(now.getDate() + days)
+    expiresAt = now.toISOString()
+  }
+
+  await c.env.DB.prepare(
+    "INSERT INTO doc_share_links (id, document_id, org_id, share_type, token, expires_at, created_by) VALUES (?, ?, ?, 'external', ?, ?, ?)"
+  ).bind(id, doc.id, orgId, token, expiresAt, creatorId).run()
+
+  return c.json({
+    document: { id: doc.id, title: doc.title },
+    url: `https://work.e-code.kr/share/${token}`,
+    expires_at: expiresAt,
+    existing: false,
+  })
+})
