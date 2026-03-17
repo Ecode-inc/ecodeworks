@@ -82,7 +82,8 @@ export function PurchasesPage() {
         month: selectedMonth || undefined,
         dept_id: deptFilter || undefined,
       })
-      setStats(res.stats)
+      // API returns data directly (not wrapped in stats key)
+      setStats(res.stats || res)
     } catch {
       // ignore
     }
@@ -205,19 +206,22 @@ export function PurchasesPage() {
         </div>
 
         {/* Category breakdown bars */}
-        {stats?.categories && stats.categories.length > 0 && (
+        {stats?.by_category && stats.by_category.length > 0 && (
           <div className="mt-3 flex gap-1 h-2 rounded-full overflow-hidden bg-gray-100">
-            {stats.categories.map((cat: any) => (
-              <div
-                key={cat.name}
-                style={{
-                  width: `${cat.percentage || 0}%`,
-                  backgroundColor: cat.color || '#6B7280',
-                }}
-                title={`${cat.name}: ${formatKRW(cat.amount)} (${cat.count}건)`}
-                className="h-full transition-all"
-              />
-            ))}
+            {stats.by_category.map((cat: any) => {
+              const pct = stats.total_amount > 0 ? (cat.amount / stats.total_amount * 100) : 0
+              return (
+                <div
+                  key={cat.name}
+                  style={{
+                    width: `${pct}%`,
+                    backgroundColor: cat.color || '#6B7280',
+                  }}
+                  title={`${cat.name}: ${formatKRW(cat.amount)} (${cat.count}건)`}
+                  className="h-full transition-all"
+                />
+              )
+            })}
           </div>
         )}
       </div>
@@ -366,11 +370,11 @@ export function PurchasesPage() {
             </div>
 
             {/* Category Breakdown */}
-            {stats.categories && stats.categories.length > 0 && (
+            {stats.by_category && stats.by_category.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium text-gray-700 mb-2">카테고리별</h4>
                 <div className="space-y-2">
-                  {stats.categories.map((cat: any) => (
+                  {stats.by_category.map((cat: any) => (
                     <div key={cat.name} className="flex items-center gap-3">
                       <span
                         className="w-3 h-3 rounded-full flex-shrink-0"
@@ -383,7 +387,7 @@ export function PurchasesPage() {
                         <div
                           className="h-2 rounded-full transition-all"
                           style={{
-                            width: `${cat.percentage || 0}%`,
+                            width: `${stats.total_amount > 0 ? (cat.amount / stats.total_amount * 100) : 0}%`,
                             backgroundColor: cat.color || '#6B7280',
                           }}
                         />
@@ -395,7 +399,7 @@ export function PurchasesPage() {
             )}
 
             {/* Department Breakdown */}
-            {stats.departments && stats.departments.length > 0 && (
+            {stats.by_department && stats.by_department.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium text-gray-700 mb-2">부서별</h4>
                 <div className="overflow-x-auto">
@@ -408,7 +412,7 @@ export function PurchasesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {stats.departments.map((dept: any) => (
+                      {stats.by_department.map((dept: any) => (
                         <tr key={dept.name}>
                           <td className="px-3 py-1.5 text-gray-700">{dept.name}</td>
                           <td className="px-3 py-1.5 text-right font-medium">{formatKRW(dept.amount || 0)}</td>
@@ -422,7 +426,7 @@ export function PurchasesPage() {
             )}
 
             {/* Requester Breakdown */}
-            {stats.requesters && stats.requesters.length > 0 && (
+            {stats.by_requester && stats.by_requester.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium text-gray-700 mb-2">요청자별</h4>
                 <div className="overflow-x-auto">
@@ -435,7 +439,7 @@ export function PurchasesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {stats.requesters.map((req: any) => (
+                      {stats.by_requester.map((req: any) => (
                         <tr key={req.name}>
                           <td className="px-3 py-1.5 text-gray-700">{req.name}</td>
                           <td className="px-3 py-1.5 text-right font-medium">{formatKRW(req.amount || 0)}</td>
