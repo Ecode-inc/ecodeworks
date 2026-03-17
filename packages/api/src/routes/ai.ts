@@ -1548,6 +1548,7 @@ aiRoutes.get('/action/create-task', async (c) => {
   const description = c.req.query('description') || ''
   const priority = c.req.query('priority') || 'medium'
   const dueDate = c.req.query('due_date') || null
+  const assigneeIds = c.req.query('assignee_ids')?.split(',').filter(Boolean) || []
 
   if (!boardId || !columnId || !title) return c.json({ error: 'board_id, column_id, title required' }, 400)
 
@@ -1555,11 +1556,28 @@ aiRoutes.get('/action/create-task', async (c) => {
   if (!board) return c.json({ error: 'Board not found' }, 404)
 
   const id = generateId()
-  await c.env.DB.prepare(
-    "INSERT INTO tasks (id, board_id, column_id, title, description, priority, due_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
-  ).bind(id, boardId, columnId, title, description, priority, dueDate).run()
+  const firstAssignee = assigneeIds[0] || null
 
-  const task = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(id).first()
+  const statements = [
+    c.env.DB.prepare(
+      "INSERT INTO tasks (id, board_id, column_id, title, description, assignee_id, priority, due_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+    ).bind(id, boardId, columnId, title, description, firstAssignee, priority, dueDate),
+    ...assigneeIds.map(uid =>
+      c.env.DB.prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)').bind(id, uid)
+    ),
+  ]
+  await c.env.DB.batch(statements)
+
+  const task = await c.env.DB.prepare(
+    `SELECT t.*,
+            GROUP_CONCAT(u.id) as assignee_ids,
+            GROUP_CONCAT(u.name) as assignee_names
+     FROM tasks t
+     LEFT JOIN task_assignees ta ON ta.task_id = t.id
+     LEFT JOIN users u ON u.id = ta.user_id
+     WHERE t.id = ?
+     GROUP BY t.id`
+  ).bind(id).first()
   return c.json({ success: true, task })
 })
 
@@ -1582,22 +1600,60 @@ aiRoutes.get('/action/update-task', async (c) => {
   const description = c.req.query('description')
   const columnId = c.req.query('column_id')
   const priority = c.req.query('priority')
+  const assigneeIdsParam = c.req.query('assignee_ids')
   const assigneeId = c.req.query('assignee_id')
   const dueDate = c.req.query('due_date')
+
+  // Resolve assignee_ids from param or fall back to single assignee_id
+  const assigneeIds = assigneeIdsParam ? assigneeIdsParam.split(',').filter(Boolean) : null
 
   if (title) { updates.push('title = ?'); values.push(title) }
   if (description !== undefined && description !== null) { updates.push('description = ?'); values.push(description) }
   if (columnId) { updates.push('column_id = ?'); values.push(columnId) }
   if (priority) { updates.push('priority = ?'); values.push(priority) }
-  if (assigneeId) { updates.push('assignee_id = ?'); values.push(assigneeId) }
+  if (assigneeIds) {
+    updates.push('assignee_id = ?'); values.push(assigneeIds[0] || null)
+  } else if (assigneeId) {
+    updates.push('assignee_id = ?'); values.push(assigneeId)
+  }
   if (dueDate) { updates.push('due_date = ?'); values.push(dueDate) }
 
-  if (updates.length === 0) return c.json({ error: 'No fields to update' }, 400)
-  updates.push("updated_at = datetime('now')")
-  values.push(taskId)
+  if (updates.length === 0 && !assigneeIds) return c.json({ error: 'No fields to update' }, 400)
 
-  await c.env.DB.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
-  const task = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(taskId).first()
+  const statements: ReturnType<typeof c.env.DB.prepare>[] = []
+
+  if (updates.length > 0) {
+    updates.push("updated_at = datetime('now')")
+    values.push(taskId)
+    statements.push(c.env.DB.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).bind(...values))
+  }
+
+  // Update junction table if assignee_ids provided
+  if (assigneeIds) {
+    statements.push(c.env.DB.prepare('DELETE FROM task_assignees WHERE task_id = ?').bind(taskId))
+    for (const uid of assigneeIds) {
+      statements.push(c.env.DB.prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)').bind(taskId, uid))
+    }
+  } else if (assigneeId) {
+    // Single assignee_id: sync to junction table too
+    statements.push(c.env.DB.prepare('DELETE FROM task_assignees WHERE task_id = ?').bind(taskId))
+    statements.push(c.env.DB.prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)').bind(taskId, assigneeId))
+  }
+
+  if (statements.length > 0) {
+    await c.env.DB.batch(statements)
+  }
+
+  const task = await c.env.DB.prepare(
+    `SELECT t.*,
+            GROUP_CONCAT(u.id) as assignee_ids,
+            GROUP_CONCAT(u.name) as assignee_names
+     FROM tasks t
+     LEFT JOIN task_assignees ta ON ta.task_id = t.id
+     LEFT JOIN users u ON u.id = ta.user_id
+     WHERE t.id = ?
+     GROUP BY t.id`
+  ).bind(taskId).first()
   return c.json({ success: true, task })
 })
 

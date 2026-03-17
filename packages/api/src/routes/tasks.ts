@@ -17,6 +17,7 @@ tasksRoutes.post('/', async (c) => {
     title: string
     description?: string
     assignee_id?: string
+    assignee_ids?: string[]
     priority?: string
     labels?: string[]
     due_date?: string
@@ -26,24 +27,42 @@ tasksRoutes.post('/', async (c) => {
     return c.json({ error: 'board_id, column_id, title required' }, 400)
   }
 
+  // Resolve assignee_ids: prefer array, fall back to single assignee_id
+  const assigneeIds: string[] = body.assignee_ids?.filter(Boolean) ||
+    (body.assignee_id ? [body.assignee_id] : [])
+  const firstAssignee = assigneeIds[0] || null
+
   const maxOrder = await c.env.DB.prepare(
     'SELECT COALESCE(MAX(order_index), -1) as max_idx FROM tasks WHERE column_id = ?'
   ).bind(body.column_id).first<{ max_idx: number }>()
 
   const id = generateId()
-  await c.env.DB.prepare(
-    `INSERT INTO tasks (id, board_id, column_id, title, description, assignee_id, priority, labels, due_date, order_index)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(
-    id, body.board_id, body.column_id, body.title,
-    body.description || '', body.assignee_id || null,
-    body.priority || 'medium', JSON.stringify(body.labels || []),
-    body.due_date || null, (maxOrder?.max_idx ?? -1) + 1
-  ).run()
+
+  const statements = [
+    c.env.DB.prepare(
+      `INSERT INTO tasks (id, board_id, column_id, title, description, assignee_id, priority, labels, due_date, order_index)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      id, body.board_id, body.column_id, body.title,
+      body.description || '', firstAssignee,
+      body.priority || 'medium', JSON.stringify(body.labels || []),
+      body.due_date || null, (maxOrder?.max_idx ?? -1) + 1
+    ),
+    ...assigneeIds.map(uid =>
+      c.env.DB.prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)').bind(id, uid)
+    ),
+  ]
+  await c.env.DB.batch(statements)
 
   const task = await c.env.DB.prepare(
-    `SELECT t.*, u.name as assignee_name FROM tasks t
-     LEFT JOIN users u ON u.id = t.assignee_id WHERE t.id = ?`
+    `SELECT t.*,
+            GROUP_CONCAT(u.id) as assignee_ids,
+            GROUP_CONCAT(u.name) as assignee_names
+     FROM tasks t
+     LEFT JOIN task_assignees ta ON ta.task_id = t.id
+     LEFT JOIN users u ON u.id = ta.user_id
+     WHERE t.id = ?
+     GROUP BY t.id`
   ).bind(id).first()
 
   // Broadcast
@@ -62,7 +81,18 @@ tasksRoutes.patch('/:id', async (c) => {
   const updates: string[] = []
   const values: unknown[] = []
 
+  // Handle assignee_ids array
+  const assigneeIds = body.assignee_ids as string[] | undefined
+  if (assigneeIds !== undefined) {
+    const filtered = assigneeIds.filter(Boolean)
+    // Keep assignee_id in sync for backward compat
+    updates.push('assignee_id = ?')
+    values.push(filtered[0] || null)
+  }
+
   for (const key of allowed) {
+    // Skip assignee_id if we already handled it via assignee_ids
+    if (key === 'assignee_id' && assigneeIds !== undefined) continue
     if (body[key] !== undefined) {
       updates.push(`${key} = ?`)
       values.push(body[key])
@@ -73,18 +103,44 @@ tasksRoutes.patch('/:id', async (c) => {
     values.push(JSON.stringify(body.labels))
   }
 
-  if (updates.length === 0) return c.json({ error: 'No fields' }, 400)
+  if (updates.length === 0 && assigneeIds === undefined) return c.json({ error: 'No fields' }, 400)
 
-  updates.push("updated_at = datetime('now')")
-  values.push(taskId)
+  const statements: ReturnType<typeof c.env.DB.prepare>[] = []
 
-  await c.env.DB.prepare(
-    `UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`
-  ).bind(...values).run()
+  if (updates.length > 0) {
+    updates.push("updated_at = datetime('now')")
+    values.push(taskId)
+    statements.push(
+      c.env.DB.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).bind(...values)
+    )
+  }
+
+  // Update junction table if assignee_ids provided
+  if (assigneeIds !== undefined) {
+    const filtered = assigneeIds.filter(Boolean)
+    statements.push(
+      c.env.DB.prepare('DELETE FROM task_assignees WHERE task_id = ?').bind(taskId)
+    )
+    for (const uid of filtered) {
+      statements.push(
+        c.env.DB.prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)').bind(taskId, uid)
+      )
+    }
+  }
+
+  if (statements.length > 0) {
+    await c.env.DB.batch(statements)
+  }
 
   const task = await c.env.DB.prepare(
-    `SELECT t.*, u.name as assignee_name FROM tasks t
-     LEFT JOIN users u ON u.id = t.assignee_id WHERE t.id = ?`
+    `SELECT t.*,
+            GROUP_CONCAT(u.id) as assignee_ids,
+            GROUP_CONCAT(u.name) as assignee_names
+     FROM tasks t
+     LEFT JOIN task_assignees ta ON ta.task_id = t.id
+     LEFT JOIN users u ON u.id = ta.user_id
+     WHERE t.id = ?
+     GROUP BY t.id`
   ).bind(taskId).first()
 
   // Broadcast

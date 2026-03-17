@@ -50,9 +50,15 @@ boardsRoutes.get('/:id', async (c) => {
   ).bind(boardId).all()
 
   const { results: tasks } = await c.env.DB.prepare(
-    `SELECT t.*, u.name as assignee_name FROM tasks t
-     LEFT JOIN users u ON u.id = t.assignee_id
-     WHERE t.board_id = ? ORDER BY t.order_index`
+    `SELECT t.*,
+            GROUP_CONCAT(u.id) as assignee_ids,
+            GROUP_CONCAT(u.name) as assignee_names
+     FROM tasks t
+     LEFT JOIN task_assignees ta ON ta.task_id = t.id
+     LEFT JOIN users u ON u.id = ta.user_id
+     WHERE t.board_id = ?
+     GROUP BY t.id
+     ORDER BY t.order_index`
   ).bind(boardId).all()
 
   return c.json({ board, columns, tasks })

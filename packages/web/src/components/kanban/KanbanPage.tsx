@@ -442,9 +442,12 @@ export function KanbanPage() {
                                 <span key={label} className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{label}</span>
                               ))}
                             </div>
-                            {task.assignee_name && (
-                              <div className="flex items-center gap-1 text-xs text-gray-400">
-                                <User size={12} />{task.assignee_name}
+                            {task.assignee_names && (
+                              <div className="flex items-center gap-1 text-xs text-gray-400 flex-wrap">
+                                <User size={12} />
+                                {task.assignee_names.split(',').map((name: string, i: number) => (
+                                  <span key={i} className="bg-gray-50 px-1 rounded">{name.trim()}</span>
+                                ))}
                               </div>
                             )}
                           </div>
@@ -564,7 +567,7 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState('medium')
   const [dueDate, setDueDate] = useState('')
-  const [assigneeId, setAssigneeId] = useState('')
+  const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([])
   const [labelsText, setLabelsText] = useState('')
   const [loading, setLoading] = useState(false)
   const [members, setMembers] = useState<any[]>([])
@@ -581,7 +584,11 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
       setDescription(task.description || '')
       setPriority(task.priority)
       setDueDate(task.due_date || '')
-      setAssigneeId(task.assignee_id || '')
+      // Parse assignee_ids from comma-separated string or fall back to single assignee_id
+      const ids = task.assignee_ids
+        ? String(task.assignee_ids).split(',').filter(Boolean)
+        : task.assignee_id ? [task.assignee_id] : []
+      setSelectedAssigneeIds(ids)
       try {
         let raw = Array.isArray(task.labels) ? task.labels : JSON.parse(task.labels || '[]')
         if (typeof raw === 'string') raw = JSON.parse(raw)
@@ -591,7 +598,7 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
       }
     } else {
       setTitle(''); setDescription(''); setPriority('medium'); setDueDate('')
-      setAssigneeId(''); setLabelsText('')
+      setSelectedAssigneeIds([]); setLabelsText('')
     }
   }, [task, open])
 
@@ -609,7 +616,7 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
           description,
           priority,
           due_date: dueDate || null,
-          assignee_id: assigneeId || null,
+          assignee_ids: selectedAssigneeIds,
           labels: JSON.stringify(labels),
         })
       } else {
@@ -620,7 +627,7 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
           description,
           priority,
           due_date: dueDate || null,
-          assignee_id: assigneeId || null,
+          assignee_ids: selectedAssigneeIds,
           labels: JSON.stringify(labels),
         })
       }
@@ -670,16 +677,47 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">담당자</label>
-          <select
-            value={assigneeId}
-            onChange={e => setAssigneeId(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="">미지정</option>
+          <div className="border rounded-lg px-3 py-2 max-h-40 overflow-y-auto space-y-1">
+            {members.length === 0 && (
+              <p className="text-xs text-gray-400">멤버 로딩 중...</p>
+            )}
             {members.map(m => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+              <label key={m.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded text-sm">
+                <input
+                  type="checkbox"
+                  checked={selectedAssigneeIds.includes(m.id)}
+                  onChange={e => {
+                    if (e.target.checked) {
+                      setSelectedAssigneeIds(prev => [...prev, m.id])
+                    } else {
+                      setSelectedAssigneeIds(prev => prev.filter(id => id !== m.id))
+                    }
+                  }}
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span>{m.name}</span>
+              </label>
             ))}
-          </select>
+          </div>
+          {selectedAssigneeIds.length > 0 && (
+            <div className="flex gap-1 flex-wrap mt-1.5">
+              {selectedAssigneeIds.map(id => {
+                const member = members.find(m => m.id === id)
+                return member ? (
+                  <span key={id} className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    {member.name}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAssigneeIds(prev => prev.filter(aid => aid !== id))}
+                      className="hover:text-blue-800"
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
+                ) : null
+              })}
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">라벨 (쉼표로 구분)</label>
