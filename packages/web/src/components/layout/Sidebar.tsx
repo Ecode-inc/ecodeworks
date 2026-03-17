@@ -20,6 +20,7 @@ import { leaveApi } from '../../lib/api'
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
+  onNavigate?: () => void
 }
 
 const navItems = [
@@ -44,7 +45,7 @@ function isLightColor(hex: string): boolean {
   return luminance > 0.5
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
@@ -150,7 +151,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           return (
             <button
               key={item.path}
-              onClick={() => navigate(item.path)}
+              onClick={() => { navigate(item.path); onNavigate?.() }}
               className={`relative flex items-center w-full px-4 py-2.5 text-sm transition-colors ${
                 active
                   ? themeStyles.activeBg
