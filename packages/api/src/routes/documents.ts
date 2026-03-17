@@ -232,3 +232,59 @@ documentsRoutes.get('/:id/versions/:versionId', async (c) => {
   if (!version) return c.json({ error: 'Version not found' }, 404)
   return c.json({ version })
 })
+
+// ── Share Links ──────────────────────────────────────────────
+
+// Create share link
+documentsRoutes.post('/:id/share', async (c) => {
+  const user = c.get('user')
+  const docId = c.req.param('id')
+
+  const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first()
+  if (!doc) return c.json({ error: 'Document not found' }, 404)
+
+  const body = await c.req.json<{
+    share_type: 'external' | 'internal'
+    expires_at?: string
+    internal_scope?: string
+    internal_target_ids?: string[]
+  }>()
+
+  if (!body.share_type || !['external', 'internal'].includes(body.share_type)) {
+    return c.json({ error: 'share_type must be "external" or "internal"' }, 400)
+  }
+
+  const id = generateId()
+  const token = body.share_type === 'external' ? crypto.randomUUID() : null
+  const expiresAt = body.expires_at || null
+  const internalScope = body.internal_scope || 'company'
+  const internalTargetIds = JSON.stringify(body.internal_target_ids || [])
+
+  await c.env.DB.prepare(
+    `INSERT INTO doc_share_links (id, document_id, org_id, share_type, token, expires_at, internal_scope, internal_target_ids, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id, docId, user.org_id, body.share_type, token, expiresAt, internalScope, internalTargetIds, user.id).run()
+
+  const share = await c.env.DB.prepare('SELECT * FROM doc_share_links WHERE id = ?').bind(id).first()
+
+  const url = token ? `https://work.e-code.kr/share/${token}` : null
+  return c.json({ share, url }, 201)
+})
+
+// List share links for a document
+documentsRoutes.get('/:id/shares', async (c) => {
+  const docId = c.req.param('id')
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM doc_share_links WHERE document_id = ? AND is_active = 1 ORDER BY created_at DESC'
+  ).bind(docId).all()
+  return c.json({ shares: results })
+})
+
+// Delete/deactivate share link
+documentsRoutes.delete('/shares/:shareId', async (c) => {
+  const shareId = c.req.param('shareId')
+  await c.env.DB.prepare(
+    'UPDATE doc_share_links SET is_active = 0 WHERE id = ?'
+  ).bind(shareId).run()
+  return c.json({ success: true })
+})

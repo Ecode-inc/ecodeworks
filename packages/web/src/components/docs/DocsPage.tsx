@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useOrgStore } from '../../stores/orgStore'
-import { docsApi } from '../../lib/api'
+import { docsApi, docShareApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { FileText, Folder, FolderOpen, FolderPlus, FilePlus, Search, ChevronRight, ChevronDown, Clock, Share2, Building2, Users, UserIcon, Trash2 } from 'lucide-react'
+import { FileText, Folder, FolderOpen, FolderPlus, FilePlus, Search, ChevronRight, ChevronDown, Clock, Share2, Building2, Users, UserIcon, Trash2, Link, Copy, Check, X as XIcon } from 'lucide-react'
 
 export function DocsPage() {
   const { currentDeptId } = useOrgStore()
@@ -28,6 +28,7 @@ export function DocsPage() {
   const [showVersions, setShowVersions] = useState(false)
   const [newVisibility, setNewVisibility] = useState<'company' | 'department' | 'personal'>('department')
   const [newShared, setNewShared] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
 
   const refreshTree = () => setTreeRefreshKey(k => k + 1)
 
@@ -237,6 +238,9 @@ export function DocsPage() {
                     title="글자 확대"
                   >A+</button>
                 </div>
+                <button onClick={() => setShowShareModal(true)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="공유">
+                  <Share2 size={16} />
+                </button>
                 <button onClick={loadVersions} className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="버전 히스토리">
                   <Clock size={16} />
                 </button>
@@ -337,6 +341,15 @@ export function DocsPage() {
           )}
         </div>
       </Modal>
+
+      {/* Share modal */}
+      {selectedDoc && (
+        <ShareModal
+          open={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          docId={selectedDoc.id}
+        />
+      )}
     </div>
   )
 }
@@ -359,6 +372,238 @@ function MarkdownPreview({ content, fontSize }: { content: string; fontSize: num
     .replace(/\n/g, '<br/>')
 
   return <div style={{ fontSize: `${fontSize}px`, lineHeight: '1.7' }} dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+// ── Share Modal ──────────────────────────────────────────────
+
+function ShareModal({ open, onClose, docId }: { open: boolean; onClose: () => void; docId: string }) {
+  const [tab, setTab] = useState<'external' | 'internal'>('external')
+  const [expiry, setExpiry] = useState<string>('7d')
+  const [internalScope, setInternalScope] = useState<string>('company')
+  const [shares, setShares] = useState<any[]>([])
+  const [generatedUrl, setGeneratedUrl] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      loadShares()
+      setGeneratedUrl(null)
+      setCopied(false)
+    }
+  }, [open, docId])
+
+  const loadShares = async () => {
+    try {
+      const res = await docShareApi.list(docId)
+      setShares(res.shares || [])
+    } catch (_e) {
+      // ignore
+    }
+  }
+
+  const getExpiresAt = (): string | undefined => {
+    if (expiry === 'none') return undefined
+    const now = new Date()
+    const days = expiry === '1d' ? 1 : expiry === '7d' ? 7 : 30
+    now.setDate(now.getDate() + days)
+    return now.toISOString()
+  }
+
+  const createShareLink = async () => {
+    setLoading(true)
+    try {
+      const data: { share_type: string; expires_at?: string; internal_scope?: string; internal_target_ids?: string[] } = {
+        share_type: tab,
+      }
+      if (tab === 'external') {
+        data.expires_at = getExpiresAt()
+      } else {
+        data.internal_scope = internalScope
+        data.internal_target_ids = []
+      }
+      const res = await docShareApi.create(docId, data)
+      if (res.url) {
+        setGeneratedUrl(res.url)
+      }
+      await loadShares()
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '공유 링크 생성 실패', e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const deactivateShare = async (shareId: string) => {
+    try {
+      await docShareApi.delete(shareId)
+      await loadShares()
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '비활성화 실패', e.message)
+    }
+  }
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const externalShares = shares.filter(s => s.share_type === 'external')
+  const internalShares = shares.filter(s => s.share_type === 'internal')
+
+  return (
+    <Modal open={open} onClose={onClose} title="문서 공유" width="max-w-lg">
+      <div>
+        {/* Tabs */}
+        <div className="flex border-b mb-4">
+          <button
+            onClick={() => { setTab('external'); setGeneratedUrl(null) }}
+            className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === 'external' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            외부 공유
+          </button>
+          <button
+            onClick={() => { setTab('internal'); setGeneratedUrl(null) }}
+            className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === 'internal' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            내부 공유
+          </button>
+        </div>
+
+        {tab === 'external' && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">만료일</label>
+              <select
+                value={expiry}
+                onChange={e => setExpiry(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="1d">1일</option>
+                <option value="7d">7일</option>
+                <option value="30d">30일</option>
+                <option value="none">무기한</option>
+              </select>
+            </div>
+
+            <button
+              onClick={createShareLink}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+            >
+              <Link size={14} />
+              {loading ? '생성 중...' : '공유 링크 생성'}
+            </button>
+
+            {generatedUrl && (
+              <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <input
+                  readOnly
+                  value={generatedUrl}
+                  className="flex-1 text-sm bg-transparent border-none focus:outline-none text-green-800"
+                />
+                <button
+                  onClick={() => copyToClipboard(generatedUrl)}
+                  className="p-1.5 text-green-600 hover:text-green-800 rounded hover:bg-green-100"
+                  title="복사"
+                >
+                  {copied ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+              </div>
+            )}
+
+            {externalShares.length > 0 && (
+              <div>
+                <h4 className="text-xs font-medium text-gray-500 mb-2">기존 외부 공유 링크</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {externalShares.map(s => (
+                    <div key={s.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-sm">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => copyToClipboard(`https://work.e-code.kr/share/${s.token}`)}
+                            className="text-xs text-primary-600 hover:underline truncate"
+                          >
+                            .../share/{s.token.slice(0, 8)}...
+                          </button>
+                          <Copy size={12} className="text-gray-400 flex-shrink-0 cursor-pointer hover:text-gray-600" onClick={() => copyToClipboard(`https://work.e-code.kr/share/${s.token}`)} />
+                        </div>
+                        <span className="text-xs text-gray-400">
+                          {s.expires_at ? `만료: ${new Date(s.expires_at).toLocaleDateString('ko')}` : '무기한'}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => deactivateShare(s.id)}
+                        className="p-1 text-gray-400 hover:text-red-500"
+                        title="비활성화"
+                      >
+                        <XIcon size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'internal' && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">공유 범위</label>
+              <select
+                value={internalScope}
+                onChange={e => setInternalScope(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="company">회사 전체</option>
+                <option value="department">부서</option>
+                <option value="users">특정 사용자</option>
+              </select>
+            </div>
+
+            <button
+              onClick={createShareLink}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+            >
+              <Link size={14} />
+              {loading ? '생성 중...' : '내부 공유 링크 생성'}
+            </button>
+
+            {internalShares.length > 0 && (
+              <div>
+                <h4 className="text-xs font-medium text-gray-500 mb-2">기존 내부 공유 링크</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {internalShares.map(s => (
+                    <div key={s.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-sm">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs text-gray-600">
+                          {s.internal_scope === 'company' ? '회사 전체' : s.internal_scope === 'department' ? '부서' : '특정 사용자'}
+                        </span>
+                        <br />
+                        <span className="text-xs text-gray-400">
+                          {new Date(s.created_at).toLocaleDateString('ko')} 생성
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => deactivateShare(s.id)}
+                        className="p-1 text-gray-400 hover:text-red-500"
+                        title="비활성화"
+                      >
+                        <XIcon size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
 }
 
 // ── Recursive Tree Components ────────────────────────────────

@@ -231,6 +231,25 @@ export const docsApi = {
   getVersion: (id: string, versionId: string) => request<{ version: any }>(`/docs/${id}/versions/${versionId}`),
 }
 
+// Document Share Links
+export const docShareApi = {
+  create: (docId: string, data: { share_type: string; expires_at?: string; internal_scope?: string; internal_target_ids?: string[] }) =>
+    request<{ share: any; url: string }>(`/docs/${docId}/share`, { method: 'POST', body: JSON.stringify(data) }),
+  list: (docId: string) => request<{ shares: any[] }>(`/docs/${docId}/shares`),
+  delete: (shareId: string) => request<{ success: boolean }>(`/docs/shares/${shareId}`, { method: 'DELETE' }),
+}
+
+// Public share view (no auth needed)
+export async function fetchSharedDoc(token: string): Promise<{ document: any }> {
+  const base = import.meta.env.VITE_API_URL || '/api'
+  const res = await fetch(`${base}/share/${token}`)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+    throw new Error((err as any).error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
 // Vault
 export const vaultApi = {
   list: (deptId: string) =>

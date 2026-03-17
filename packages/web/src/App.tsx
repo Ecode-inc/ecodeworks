@@ -20,6 +20,7 @@ import { AIPage } from './components/ai/AIPage'
 import { AIGuidePage } from './components/ai/AIGuidePage'
 import { ToastContainer } from './components/ui/Toast'
 import { SuperAdminPage } from './components/super/SuperAdminPage'
+import { SharedDocPage } from './components/docs/SharedDocPage'
 
 export default function App() {
   const { user, initialized, restore, departments } = useAuthStore()
@@ -34,6 +35,17 @@ export default function App() {
   const apiKey = searchParams.get('key')
   if (apiKey) {
     return <AIGuidePage apiKey={apiKey} />
+  }
+
+  // Public shared document page - no auth required
+  if (location.pathname.startsWith('/share/')) {
+    const token = location.pathname.replace('/share/', '')
+    return (
+      <>
+        <SharedDocPage token={token} />
+        <ToastContainer />
+      </>
+    )
   }
 
   // Super admin page is completely separate - render it immediately if on /super path

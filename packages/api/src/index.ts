@@ -58,6 +58,32 @@ app.route('/api/tasks', tasksRoutes)
 // Phase 4: Documents
 app.route('/api/docs', documentsRoutes)
 
+// Public share link (no auth required)
+app.get('/api/share/:token', async (c) => {
+  const token = c.req.param('token')
+  const share = await c.env.DB.prepare(
+    'SELECT * FROM doc_share_links WHERE token = ? AND is_active = 1'
+  ).bind(token).first<{ document_id: string; expires_at: string | null }>()
+
+  if (!share) {
+    return c.json({ error: '링크가 만료되었거나 유효하지 않습니다' }, 404)
+  }
+
+  if (share.expires_at && new Date(share.expires_at) < new Date()) {
+    return c.json({ error: '링크가 만료되었거나 유효하지 않습니다' }, 410)
+  }
+
+  const doc = await c.env.DB.prepare(
+    'SELECT id, title, content, created_at, updated_at FROM documents WHERE id = ?'
+  ).bind(share.document_id).first()
+
+  if (!doc) {
+    return c.json({ error: '문서를 찾을 수 없습니다' }, 404)
+  }
+
+  return c.json({ document: doc })
+})
+
 // Phase 5: Vault
 app.route('/api/vault', credentialsRoutes)
 
