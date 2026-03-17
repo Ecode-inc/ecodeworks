@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useParams } from 'react-router-dom'
 import { useOrgStore } from '../../stores/orgStore'
 import { docsApi, docShareApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
@@ -8,10 +9,12 @@ import { Input } from '../ui/Input'
 import { FileText, Folder, FolderOpen, FolderPlus, FilePlus, Search, ChevronRight, ChevronDown, Clock, Share2, Building2, Users, UserIcon, Trash2, Link, Copy, Check, X as XIcon } from 'lucide-react'
 
 export function DocsPage() {
+  const { docId: urlDocId } = useParams<{ docId?: string }>()
   const { currentDeptId } = useOrgStore()
   const [treeRefreshKey, setTreeRefreshKey] = useState(0)
   const [selectedDoc, setSelectedDoc] = useState<any>(null)
   const [newParentId, setNewParentId] = useState<string | null>(null)
+  const [showSidebar, setShowSidebar] = useState(true)
   const [fontSize, setFontSize] = useState(() => {
     const saved = localStorage.getItem('docFontSize')
     return saved ? parseInt(saved) : 14
@@ -32,11 +35,22 @@ export function DocsPage() {
 
   const refreshTree = () => setTreeRefreshKey(k => k + 1)
 
+  // Open document from URL param
+  useEffect(() => {
+    if (urlDocId && !selectedDoc) {
+      docsApi.get(urlDocId).then(res => {
+        setSelectedDoc(res.document)
+        setShowSidebar(false) // hide sidebar on mobile when opening direct link
+      }).catch(() => {})
+    }
+  }, [urlDocId])
+
   const openDocument = async (doc: any) => {
     try {
       const res = await docsApi.get(doc.id)
       setSelectedDoc(res.document)
       setEditing(false)
+      setShowSidebar(false) // hide sidebar on mobile
     } catch (e: any) {
       useToastStore.getState().addToast('error', '문서 열기 실패', e.message)
     }
@@ -129,9 +143,23 @@ export function DocsPage() {
   }
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-8rem)]">
+    <div className="flex flex-col md:flex-row gap-4 md:gap-6 h-[calc(100vh-8rem)]">
+      {/* Mobile toggle */}
+      <div className="flex md:hidden items-center gap-2">
+        <button
+          onClick={() => setShowSidebar(!showSidebar)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white border rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+        >
+          <Folder size={14} />
+          {showSidebar ? '문서 보기' : '폴더 목록'}
+        </button>
+        {selectedDoc && (
+          <span className="text-sm text-gray-500 truncate">{selectedDoc.title}</span>
+        )}
+      </div>
+
       {/* Sidebar - Document Tree */}
-      <div className="w-72 flex-shrink-0 bg-white rounded-xl border p-4 overflow-y-auto">
+      <div className={`w-full md:w-72 flex-shrink-0 bg-white rounded-xl border p-4 overflow-y-auto ${showSidebar ? '' : 'hidden md:block'}`}>
         <div className="flex items-center gap-2 mb-4">
           <div className="flex-1 relative">
             <Search size={14} className="absolute left-2 top-2.5 text-gray-400" />
@@ -210,7 +238,7 @@ export function DocsPage() {
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 bg-white rounded-xl border overflow-y-auto">
+      <div className={`flex-1 bg-white rounded-xl border overflow-y-auto min-h-0 ${showSidebar ? 'hidden md:block' : ''}`}>
         {selectedDoc ? (
           <div className="h-full flex flex-col">
             <div className="flex items-center justify-between px-6 py-3 border-b">

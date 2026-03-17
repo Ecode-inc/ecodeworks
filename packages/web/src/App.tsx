@@ -121,6 +121,7 @@ export default function App() {
         <Route path="/purchases" element={<PurchasesPage />} />
         <Route path="/kanban" element={<KanbanPage />} />
         <Route path="/docs" element={<DocsPage />} />
+        <Route path="/docs/:docId" element={<DocsPage />} />
         <Route path="/vault" element={<VaultPage />} />
         <Route path="/qa" element={<QAPage />} />
         <Route path="/ai" element={<AIPage />} />
