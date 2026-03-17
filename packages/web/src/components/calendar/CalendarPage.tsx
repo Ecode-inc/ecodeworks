@@ -65,6 +65,12 @@ export function CalendarPage() {
   const [googleConnected, setGoogleConnected] = useState(false)
   const [googleAvailable, setGoogleAvailable] = useState(false)
   const [showAttendance, setShowAttendance] = useState(false)
+  const [visibilityFilter, setVisibilityFilter] = useState({
+    personal: true,
+    department: true,
+    company: true,
+    shared: true,
+  })
   const [attendanceRecords, setAttendanceRecords] = useState<{date: string; status: string}[]>([])
 
   const loadEvents = useCallback(async () => {
@@ -163,7 +169,11 @@ export function CalendarPage() {
     return events.filter(e => {
       const start = dayjs(e.start_at).format('YYYY-MM-DD')
       const end = dayjs(e.end_at).format('YYYY-MM-DD')
-      return dayStr >= start && dayStr <= end
+      if (dayStr < start || dayStr > end) return false
+      // Apply visibility filter
+      const vis = e.visibility || 'department'
+      if (!(visibilityFilter as Record<string, boolean>)[vis]) return false
+      return true
     })
   }
 
@@ -184,15 +194,35 @@ export function CalendarPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none mr-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Visibility filters */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg px-2 py-1">
+            {([
+              { key: 'personal', label: '개인', color: 'bg-purple-500' },
+              { key: 'department', label: '부서', color: 'bg-blue-500' },
+              { key: 'company', label: '회사', color: 'bg-green-500' },
+              { key: 'shared', label: '공유', color: 'bg-amber-500' },
+            ] as const).map(opt => (
+              <label key={opt.key} className="flex items-center gap-1 text-xs cursor-pointer select-none px-1.5 py-0.5 rounded hover:bg-gray-200">
+                <span className={`w-2 h-2 rounded-full ${opt.color} ${!(visibilityFilter as Record<string, boolean>)[opt.key] ? 'opacity-30' : ''}`} />
+                <input
+                  type="checkbox"
+                  checked={(visibilityFilter as Record<string, boolean>)[opt.key]}
+                  onChange={e => setVisibilityFilter(prev => ({ ...prev, [opt.key]: e.target.checked }))}
+                  className="sr-only"
+                />
+                <span className={`${!(visibilityFilter as Record<string, boolean>)[opt.key] ? 'text-gray-400 line-through' : 'text-gray-600'}`}>{opt.label}</span>
+              </label>
+            ))}
+          </div>
+          <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={showAttendance}
               onChange={e => setShowAttendance(e.target.checked)}
-              className="rounded"
+              className="rounded w-3.5 h-3.5"
             />
-            근태 표시
+            근태
           </label>
           {googleAvailable && (
             googleConnected ? (
