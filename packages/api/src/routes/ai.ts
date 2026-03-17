@@ -1758,7 +1758,7 @@ aiRoutes.get('/action/update-user-name', async (c) => {
 
 // ── Document actions (GET-based) ──────────────────────────────
 
-// 문서 검색
+// 문서 검색 - FTS + 폴더 경로 포함
 aiRoutes.get('/action/search-docs', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
@@ -1767,7 +1767,7 @@ aiRoutes.get('/action/search-docs', async (c) => {
   if (!q) return c.json({ documents: [] })
 
   const { results } = await c.env.DB.prepare(`
-    SELECT d.id, d.title, d.department_id, d.content, d.visibility, d.shared, d.is_folder, d.created_at, d.updated_at,
+    SELECT d.id, d.title, d.department_id, d.parent_id, d.content, d.visibility, d.shared, d.is_folder, d.created_at, d.updated_at,
            snippet(documents_fts, 1, '<mark>', '</mark>', '...', 64) as snippet
     FROM documents_fts fts
     JOIN documents d ON d.rowid = fts.rowid
@@ -1776,16 +1776,31 @@ aiRoutes.get('/action/search-docs', async (c) => {
     ORDER BY rank LIMIT 20
   `).bind(q, orgId).all()
 
-  return c.json({ documents: results })
+  // Attach folder path for each result
+  const docsWithPath = await Promise.all((results || []).map(async (doc: any) => {
+    const path: string[] = []
+    let pid = doc.parent_id
+    while (pid) {
+      const parent = await c.env.DB.prepare('SELECT id, title, parent_id FROM documents WHERE id = ?').bind(pid).first<any>()
+      if (!parent) break
+      path.unshift(parent.title)
+      pid = parent.parent_id
+    }
+    return { ...doc, folder_path: path.join(' / ') || '(루트)' }
+  }))
+
+  return c.json({ documents: docsWithPath })
 })
 
 // 문서 목록 (폴더 탐색)
+// flat=true 파라미터로 모든 문서를 플랫 리스트로 조회 가능
 aiRoutes.get('/action/list-docs', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
   const orgId = c.get('apiKeyOrgId')
   const parentId = c.req.query('parent_id')
   const deptId = c.req.query('dept_id')
+  const flat = c.req.query('flat') // flat=true: return ALL docs regardless of folder
 
   let query = `SELECT d.id, d.title, d.department_id, d.parent_id, d.is_folder, d.visibility, d.shared, d.order_index, d.created_at, d.updated_at
     FROM documents d
@@ -1794,8 +1809,14 @@ aiRoutes.get('/action/list-docs', async (c) => {
   const params: unknown[] = [orgId]
 
   if (deptId) { query += ' AND d.department_id = ?'; params.push(deptId) }
-  if (parentId) { query += ' AND d.parent_id = ?'; params.push(parentId) }
-  else if (deptId) { query += ' AND d.parent_id IS NULL' }
+
+  if (flat === 'true') {
+    // Return all docs flat (no parent_id filter)
+  } else if (parentId) {
+    query += ' AND d.parent_id = ?'; params.push(parentId)
+  } else if (deptId) {
+    query += ' AND d.parent_id IS NULL'
+  }
 
   query += ' ORDER BY d.is_folder DESC, d.order_index ASC LIMIT 100'
   const { results } = await c.env.DB.prepare(query).bind(...params).all()

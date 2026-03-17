@@ -57,8 +57,8 @@ const getActions = [
   {
     category: '📝 문서',
     items: [
-      { path: '/action/search-docs', desc: '문서 검색 (전문 검색)', params: 'q (검색어)' },
-      { path: '/action/list-docs', desc: '문서/폴더 목록', params: 'dept_id (선택), parent_id (폴더 ID, 선택)' },
+      { path: '/action/search-docs', desc: '문서 검색 (전문 검색, 폴더 경로 포함)', params: 'q (검색어) - 모든 폴더 깊이에서 검색, folder_path 반환' },
+      { path: '/action/list-docs', desc: '문서/폴더 목록', params: 'dept_id (선택), parent_id (폴더 ID, 선택), flat=true (전체 플랫 리스트)' },
       { path: '/action/get-doc', desc: '문서 상세 (내용 포함)', params: 'id' },
       { path: '/action/create-doc', desc: '문서 생성', params: 'title, content, department_id (선택), parent_id (상위폴더, 선택), is_folder (true/false), visibility' },
       { path: '/action/update-doc', desc: '문서 수정', params: 'id, title (선택), content (전체 덮어쓰기), append (기존 내용에 추가)' },
@@ -155,13 +155,15 @@ export function AIGuidePage({ apiKey }: AIGuidePageProps) {
             <strong> 한글 검색 시 반드시 URL 인코딩</strong>하세요.
           </p>
           <div className="text-xs font-mono bg-white rounded-lg p-3 border border-green-100 space-y-2">
-            <p className="text-gray-500">1단계: 문서 검색 (한글은 URL 인코딩 필수)</p>
-            <p className="text-gray-800">/action/search-docs?key=KEY&q=맛집</p>
-            <p className="text-gray-500">2단계: 폴더 내 문서 탐색</p>
-            <p className="text-gray-800">/action/list-docs?key=KEY&parent_id=폴더ID</p>
-            <p className="text-gray-500">3단계: 문서 내용 읽기</p>
+            <p className="text-green-800 font-semibold">★ 핵심: 사용자가 문서 관련 질문을 하면 반드시 search-docs로 먼저 검색하세요!</p>
+            <p className="text-gray-500 mt-2">1단계: 문서 검색 (모든 폴더에서 자동 검색, folder_path 반환)</p>
+            <p className="text-gray-800">/action/search-docs?key=KEY&q=대화역</p>
+            <p className="text-gray-400">→ 결과: {'{'}id, title, content, folder_path: "맛집"{'}'}</p>
+            <p className="text-gray-500 mt-1">2단계: 문서 내용 읽기</p>
             <p className="text-gray-800">/action/get-doc?key=KEY&id=문서ID</p>
-            <p className="text-gray-500">4단계: 문서 추가/수정</p>
+            <p className="text-gray-500 mt-1">전체 문서 목록 (폴더 무관 플랫):</p>
+            <p className="text-gray-800">/action/list-docs?key=KEY&flat=true</p>
+            <p className="text-gray-500 mt-1">문서 추가/수정:</p>
             <p className="text-gray-800">/action/create-doc?key=KEY&title=제목&content=내용&parent_id=폴더ID</p>
             <p className="text-gray-800">/action/update-doc?key=KEY&id=문서ID&content=새내용</p>
           </div>
