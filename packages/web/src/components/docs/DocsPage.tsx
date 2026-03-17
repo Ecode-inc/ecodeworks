@@ -12,6 +12,10 @@ export function DocsPage() {
   const [treeRefreshKey, setTreeRefreshKey] = useState(0)
   const [selectedDoc, setSelectedDoc] = useState<any>(null)
   const [newParentId, setNewParentId] = useState<string | null>(null)
+  const [fontSize, setFontSize] = useState(() => {
+    const saved = localStorage.getItem('docFontSize')
+    return saved ? parseInt(saved) : 14
+  })
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
   const [editTitle, setEditTitle] = useState('')
@@ -219,6 +223,20 @@ export function DocsPage() {
                 <h2 className="text-lg font-semibold text-gray-900">{selectedDoc.title}</h2>
               )}
               <div className="flex items-center gap-2">
+                {/* Font size controls */}
+                <div className="flex items-center gap-0.5 border rounded-lg px-1">
+                  <button
+                    onClick={() => { const s = Math.max(10, fontSize - 1); setFontSize(s); localStorage.setItem('docFontSize', String(s)) }}
+                    className="px-1.5 py-0.5 text-gray-500 hover:text-gray-700 text-xs font-bold"
+                    title="글자 축소"
+                  >A-</button>
+                  <span className="text-xs text-gray-400 w-6 text-center">{fontSize}</span>
+                  <button
+                    onClick={() => { const s = Math.min(24, fontSize + 1); setFontSize(s); localStorage.setItem('docFontSize', String(s)) }}
+                    className="px-1.5 py-0.5 text-gray-500 hover:text-gray-700 text-sm font-bold"
+                    title="글자 확대"
+                  >A+</button>
+                </div>
                 <button onClick={loadVersions} className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="버전 히스토리">
                   <Clock size={16} />
                 </button>
@@ -246,7 +264,7 @@ export function DocsPage() {
                 />
               ) : (
                 <div className="prose prose-sm max-w-none">
-                  <MarkdownPreview content={selectedDoc.content || ''} />
+                  <MarkdownPreview content={selectedDoc.content || ''} fontSize={fontSize} />
                 </div>
               )}
             </div>
@@ -323,22 +341,24 @@ export function DocsPage() {
   )
 }
 
-function MarkdownPreview({ content }: { content: string }) {
-  // Simple markdown rendering (headings, bold, italic, code, lists, links)
+function MarkdownPreview({ content, fontSize }: { content: string; fontSize: number }) {
   const html = content
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-4 mb-2">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-semibold mt-5 mb-2">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-6 mb-3">$1</h1>')
+    .replace(/^### (.+)$/gm, '<h3 class="font-semibold mt-4 mb-2" style="font-size:1.1em">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 class="font-semibold mt-5 mb-2" style="font-size:1.25em">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 class="font-bold mt-6 mb-3" style="font-size:1.4em">$1</h1>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code class="bg-gray-100 px-1 rounded text-sm">$1</code>')
+    .replace(/`(.+?)`/g, '<code class="bg-gray-100 px-1 rounded" style="font-size:0.9em">$1</code>')
     .replace(/^\- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
     .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary-600 underline" target="_blank" rel="noopener noreferrer">$1</a>')
+    // Markdown links [text](url)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary-600 underline hover:text-primary-800" target="_blank" rel="noopener noreferrer">$1</a>')
+    // Auto-link bare URLs (not already inside href="")
+    .replace(/(?<!="|'>)(https?:\/\/[^\s<,)]+)/g, '<a href="$1" class="text-primary-600 underline hover:text-primary-800" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/\n\n/g, '<br/><br/>')
     .replace(/\n/g, '<br/>')
 
-  return <div dangerouslySetInnerHTML={{ __html: html }} />
+  return <div style={{ fontSize: `${fontSize}px`, lineHeight: '1.7' }} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 // ── Recursive Tree Components ────────────────────────────────
