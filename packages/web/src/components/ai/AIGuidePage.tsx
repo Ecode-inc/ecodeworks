@@ -37,7 +37,7 @@ const getActions = [
   {
     category: '👥 사용자 관리',
     items: [
-      { path: '/action/update-user-name', desc: '사용자 이름 변경', params: 'user_id or telegram_user_id, name' },
+      { path: '/action/update-user-name', desc: '사용자 이름 변경', params: 'telegram_user_id or email or user_id, name (새 이름)' },
     ],
   },
   {

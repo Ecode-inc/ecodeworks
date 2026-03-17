@@ -58,7 +58,39 @@ app.route('/api/tasks', tasksRoutes)
 // Phase 4: Documents
 app.route('/api/docs', documentsRoutes)
 
-// Public share link (no auth required)
+// OG meta for link preview (Telegram, etc.) - serves HTML with meta tags
+app.get('/share/:token', async (c) => {
+  const token = c.req.param('token')
+  const share = await c.env.DB.prepare(
+    'SELECT * FROM doc_share_links WHERE token = ? AND is_active = 1'
+  ).bind(token).first<{ document_id: string; expires_at: string | null }>()
+
+  let title = '이코드웍스 - 공유 문서'
+  let description = '공유된 문서를 확인하세요'
+
+  if (share && (!share.expires_at || new Date(share.expires_at) >= new Date())) {
+    const doc = await c.env.DB.prepare('SELECT title, content FROM documents WHERE id = ?').bind(share.document_id).first<{ title: string; content: string }>()
+    if (doc) {
+      title = `${doc.title} - 이코드웍스`
+      description = (doc.content || '').replace(/[#*_`\[\]]/g, '').slice(0, 150)
+    }
+  }
+
+  const safeTitle = title.replace(/"/g, '&quot;')
+  const safeDesc = description.replace(/"/g, '&quot;')
+
+  return c.html(`<!DOCTYPE html><html lang="ko"><head>
+<meta charset="UTF-8"><title>${safeTitle}</title>
+<meta property="og:title" content="${safeTitle}">
+<meta property="og:description" content="${safeDesc}">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://work.e-code.kr/share/${token}">
+<meta name="description" content="${safeDesc}">
+<meta http-equiv="refresh" content="0;url=https://work.e-code.kr/share/${token}">
+</head><body>Redirecting...</body></html>`)
+})
+
+// Public share link JSON API (no auth required)
 app.get('/api/share/:token', async (c) => {
   const token = c.req.param('token')
   const share = await c.env.DB.prepare(

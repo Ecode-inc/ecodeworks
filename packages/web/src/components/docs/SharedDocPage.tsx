@@ -27,7 +27,12 @@ export function SharedDocPage({ token }: { token: string }) {
 
   useEffect(() => {
     fetchSharedDoc(token)
-      .then(res => setDoc(res.document))
+      .then(res => {
+        setDoc(res.document)
+        if (res.document?.title) {
+          document.title = `${res.document.title} - 이코드웍스`
+        }
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
   }, [token])

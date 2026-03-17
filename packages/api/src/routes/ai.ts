@@ -1794,15 +1794,22 @@ aiRoutes.get('/action/update-user-name', async (c) => {
   const orgId = c.get('apiKeyOrgId')
   const userId = c.req.query('user_id')
   const tgUserId = c.req.query('telegram_user_id')
+  const email = c.req.query('email')
   const name = c.req.query('name')
   if (!name) return c.json({ error: 'name required' }, 400)
 
   let targetUserId = userId
+  // Resolve by telegram user ID
   if (!targetUserId && tgUserId) {
     const mapping = await c.env.DB.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, tgUserId).first<{ user_id: string }>()
     if (mapping?.user_id) targetUserId = mapping.user_id
   }
-  if (!targetUserId) return c.json({ error: 'user_id or telegram_user_id required' }, 400)
+  // Resolve by email
+  if (!targetUserId && email) {
+    const byEmail = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND email = ?').bind(orgId, email).first<{ id: string }>()
+    if (byEmail) targetUserId = byEmail.id
+  }
+  if (!targetUserId) return c.json({ error: 'user_id, telegram_user_id, or email required' }, 400)
 
   const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ? AND org_id = ?').bind(targetUserId, orgId).first()
   if (!user) return c.json({ error: 'User not found' }, 404)
