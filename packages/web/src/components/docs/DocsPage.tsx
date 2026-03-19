@@ -7,6 +7,7 @@ import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
 import { FileText, Folder, FolderOpen, FolderPlus, FilePlus, Search, ChevronRight, ChevronDown, Clock, Share2, Building2, Users, UserIcon, Trash2, Link, Copy, Check, X as XIcon } from 'lucide-react'
+import { ImageGallery } from './ImageGallery'
 
 export function DocsPage() {
   const { docId: urlDocId } = useParams<{ docId?: string }>()
@@ -295,9 +296,14 @@ export function DocsPage() {
                   placeholder="마크다운으로 작성하세요..."
                 />
               ) : (
-                <div className="prose prose-sm max-w-none">
-                  <MarkdownPreview content={selectedDoc.content || ''} fontSize={fontSize} />
-                </div>
+                <>
+                  <div className="prose prose-sm max-w-none">
+                    <MarkdownPreview content={selectedDoc.content || ''} fontSize={fontSize} />
+                  </div>
+                  {!selectedDoc.is_folder && (
+                    <ImageGallery documentId={selectedDoc.id} />
+                  )}
+                </>
               )}
             </div>
           </div>

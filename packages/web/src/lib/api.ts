@@ -362,6 +362,35 @@ export const superApi = {
   },
 }
 
+// Document Images
+export const docImageApi = {
+  list: (params: { document_id: string; tag?: string; person?: string }) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([,v]) => v) as [string,string][]).toString()
+    return request<{ images: any[] }>(`/doc-images?${qs}`)
+  },
+  upload: async (documentId: string, file: File, tags?: string[]): Promise<{ image: any }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('document_id', documentId)
+    if (tags?.length) formData.append('tags', tags.join(','))
+    const headers: Record<string, string> = {}
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`
+    const res = await fetch(`${API_BASE}/doc-images/upload`, { method: 'POST', headers, body: formData })
+    if (!res.ok) throw new Error('Upload failed')
+    return res.json()
+  },
+  update: (id: string, data: { tags?: string[]; people?: {name: string}[]; ai_description?: string }) =>
+    request<{ image: any }>(`/doc-images/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/doc-images/${id}`, { method: 'DELETE' }),
+  tagPerson: (id: string, name: string) =>
+    request<{ image: any }>(`/doc-images/${id}/tag-person`, { method: 'POST', body: JSON.stringify({ name }) }),
+  search: (params: { tag?: string; person?: string; document_id?: string }) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([,v]) => v) as [string,string][]).toString()
+    return request<{ images: any[] }>(`/doc-images/search?${qs}`)
+  },
+}
+
 // Join Requests
 export const joinRequestApi = {
   submit: (data: { orgSlug: string; email: string; password: string; name: string; message?: string; departmentId?: string }) =>

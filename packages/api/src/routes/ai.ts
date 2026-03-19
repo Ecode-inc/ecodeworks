@@ -76,6 +76,13 @@ aiRoutes.get('/actions', (c) => {
         'update-purchase-status': 'id, status',
         'approve-all-purchases': 'from_status (default:requested), to_status (default:approved), month',
       },
+      doc_images: {
+        'list-doc-images': 'document_id, tag, person',
+        'tag-doc-image': 'id (image ID), tags (comma-separated)',
+        'tag-person-in-image': 'id (image ID), name',
+        'search-images': 'tag, person, document_id',
+        'bulk-tag-person': 'image_ids (comma-separated), name',
+      },
     },
     privacy: {
       calendar_context: 'context=group hides personal events, context=private&user_id=X shows personal',
@@ -2559,4 +2566,172 @@ aiRoutes.get('/action/approve-all-purchases', async (c) => {
   const result = await c.env.DB.prepare(query).bind(...params).run()
 
   return c.json({ success: true, updated_count: result.meta.changes })
+})
+
+// ──────────────────────────────────────────────────────────────
+// 문서 이미지 action endpoints
+// ──────────────────────────────────────────────────────────────
+
+// 문서 이미지 목록
+aiRoutes.get('/action/list-doc-images', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const documentId = c.req.query('document_id')
+  const tag = c.req.query('tag')
+  const person = c.req.query('person')
+
+  let query = 'SELECT * FROM doc_images WHERE org_id = ?'
+  const params: unknown[] = [orgId]
+
+  if (documentId) {
+    query += ' AND document_id = ?'
+    params.push(documentId)
+  }
+
+  if (tag) {
+    query += ' AND tags LIKE ?'
+    params.push(`%${tag}%`)
+  }
+
+  if (person) {
+    query += ' AND people LIKE ?'
+    params.push(`%${person}%`)
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT 100'
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ images: results })
+})
+
+// 문서 이미지 태그 추가
+aiRoutes.get('/action/tag-doc-image', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const imageId = c.req.query('id')
+  const tagsRaw = c.req.query('tags')
+
+  if (!imageId) return c.json({ error: 'id required' }, 400)
+  if (!tagsRaw) return c.json({ error: 'tags required (comma-separated)' }, 400)
+
+  const newTags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean)
+
+  const image = await c.env.DB.prepare(
+    'SELECT id, tags FROM doc_images WHERE id = ? AND org_id = ?'
+  ).bind(imageId, orgId).first<{ id: string; tags: string }>()
+
+  if (!image) return c.json({ error: 'Image not found' }, 404)
+
+  let existingTags: string[] = []
+  try { existingTags = JSON.parse(image.tags || '[]') } catch { /* ignore */ }
+
+  const merged = Array.from(new Set([...existingTags, ...newTags]))
+  await c.env.DB.prepare(
+    'UPDATE doc_images SET tags = ? WHERE id = ?'
+  ).bind(JSON.stringify(merged), imageId).run()
+
+  const updated = await c.env.DB.prepare('SELECT * FROM doc_images WHERE id = ?').bind(imageId).first()
+  return c.json({ success: true, image: updated })
+})
+
+// 문서 이미지 인물 태그
+aiRoutes.get('/action/tag-person-in-image', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const imageId = c.req.query('id')
+  const personName = c.req.query('name')
+
+  if (!imageId) return c.json({ error: 'id required' }, 400)
+  if (!personName) return c.json({ error: 'name required' }, 400)
+
+  const image = await c.env.DB.prepare(
+    'SELECT id, people FROM doc_images WHERE id = ? AND org_id = ?'
+  ).bind(imageId, orgId).first<{ id: string; people: string }>()
+
+  if (!image) return c.json({ error: 'Image not found' }, 404)
+
+  let existingPeople: Array<{ name: string }> = []
+  try { existingPeople = JSON.parse(image.people || '[]') } catch { /* ignore */ }
+
+  if (!existingPeople.some(p => p.name === personName)) {
+    existingPeople.push({ name: personName })
+  }
+
+  await c.env.DB.prepare(
+    'UPDATE doc_images SET people = ? WHERE id = ?'
+  ).bind(JSON.stringify(existingPeople), imageId).run()
+
+  const updated = await c.env.DB.prepare('SELECT * FROM doc_images WHERE id = ?').bind(imageId).first()
+  return c.json({ success: true, image: updated })
+})
+
+// 문서 이미지 검색 (태그/인물)
+aiRoutes.get('/action/search-images', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const tag = c.req.query('tag')
+  const person = c.req.query('person')
+  const documentId = c.req.query('document_id')
+
+  let query = 'SELECT * FROM doc_images WHERE org_id = ?'
+  const params: unknown[] = [orgId]
+
+  if (documentId) {
+    query += ' AND document_id = ?'
+    params.push(documentId)
+  }
+
+  if (tag) {
+    query += ' AND tags LIKE ?'
+    params.push(`%${tag}%`)
+  }
+
+  if (person) {
+    query += ' AND people LIKE ?'
+    params.push(`%${person}%`)
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT 100'
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ images: results })
+})
+
+// 일괄 인물 태그
+aiRoutes.get('/action/bulk-tag-person', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const imageIdsRaw = c.req.query('image_ids')
+  const personName = c.req.query('name')
+
+  if (!imageIdsRaw) return c.json({ error: 'image_ids required (comma-separated)' }, 400)
+  if (!personName) return c.json({ error: 'name required' }, 400)
+
+  const imageIds = imageIdsRaw.split(',').map(id => id.trim()).filter(Boolean)
+  const updated: string[] = []
+
+  for (const imageId of imageIds) {
+    const image = await c.env.DB.prepare(
+      'SELECT id, people FROM doc_images WHERE id = ? AND org_id = ?'
+    ).bind(imageId, orgId).first<{ id: string; people: string }>()
+
+    if (!image) continue
+
+    let existingPeople: Array<{ name: string }> = []
+    try { existingPeople = JSON.parse(image.people || '[]') } catch { /* ignore */ }
+
+    if (!existingPeople.some(p => p.name === personName)) {
+      existingPeople.push({ name: personName })
+      await c.env.DB.prepare(
+        'UPDATE doc_images SET people = ? WHERE id = ?'
+      ).bind(JSON.stringify(existingPeople), imageId).run()
+    }
+
+    updated.push(imageId)
+  }
+
+  return c.json({ success: true, updated_count: updated.length, updated_ids: updated })
 })
