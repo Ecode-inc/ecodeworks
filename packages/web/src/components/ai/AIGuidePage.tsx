@@ -68,6 +68,14 @@ const getActions = [
     ],
   },
   {
+    category: '🏖️ 휴가/결재',
+    items: [
+      { path: '/action/create-leave', desc: '휴가/결재 신청', params: 'telegram_user_id or email, type (vacation/half_day_am/half_day_pm/sick/remote), start_date, end_date, reason' },
+      { path: '/action/list-leaves', desc: '휴가 목록', params: 'telegram_user_id, month, status' },
+      { path: '/action/approve-leave', desc: '휴가 승인', params: 'id (결재 ID)' },
+    ],
+  },
+  {
     category: '\uD83D\uDED2 비품구매',
     items: [
       { path: '/action/create-purchase', desc: '비품구매 등록 (단건)', params: 'item_name, unit_price, quantity, item_url, requester_name or requester_email or telegram_user_id, category, note, date (YYYY-MM-DD), status (requested/ordered/delivered)' },

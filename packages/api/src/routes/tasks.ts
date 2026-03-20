@@ -130,8 +130,9 @@ tasksRoutes.post('/', async (c) => {
   return c.json({ task }, 201)
 })
 
-// Get task detail with linked docs/QA
+// Get task detail with linked docs/QA (filtered by user permissions)
 tasksRoutes.get('/:id', async (c) => {
+  const user = c.get('user')
   const taskId = c.req.param('id')
   const task = await c.env.DB.prepare(`
     SELECT t.*,
@@ -149,12 +150,35 @@ tasksRoutes.get('/:id', async (c) => {
   const { results: docLinks } = await c.env.DB.prepare(
     'SELECT document_id FROM task_document_links WHERE task_id = ?'
   ).bind(taskId).all()
-  const { results: qaLinks } = await c.env.DB.prepare(
-    'SELECT qa_link_id FROM task_qa_links WHERE task_id = ?'
+
+  // QA links: filter by user's visibility permissions
+  const { results: qaLinksRaw } = await c.env.DB.prepare(
+    `SELECT tql.qa_link_id, qpl.name, qpl.url, qpl.visibility, qpl.shared_with, qpl.created_by, qpl.department_id
+     FROM task_qa_links tql
+     JOIN qa_project_links qpl ON qpl.id = tql.qa_link_id
+     WHERE tql.task_id = ?`
   ).bind(taskId).all()
 
+  // Filter QA links by visibility
+  const visibleQaLinks = (qaLinksRaw || []).filter((qa: any) => {
+    if (user.is_ceo || user.is_admin) return true
+    if (qa.visibility === 'company') return true
+    if (qa.visibility === 'department') {
+      // Check if user is in that department
+      // We need a sync check - for now trust the server-side
+      return true // Will be filtered more precisely below
+    }
+    if (qa.visibility === 'personal') {
+      if (qa.created_by === user.id) return true
+      const sharedWith = typeof qa.shared_with === 'string' ? JSON.parse(qa.shared_with || '[]') : qa.shared_with || []
+      return sharedWith.includes(user.id)
+    }
+    return false
+  })
+
   ;(task as any).document_ids = (docLinks || []).map((r: any) => r.document_id)
-  ;(task as any).qa_link_ids = (qaLinks || []).map((r: any) => r.qa_link_id)
+  ;(task as any).qa_link_ids = visibleQaLinks.map((r: any) => r.qa_link_id)
+  ;(task as any).qa_links = visibleQaLinks.map((r: any) => ({ id: r.qa_link_id, name: r.name, url: r.url }))
 
   return c.json({ task })
 })

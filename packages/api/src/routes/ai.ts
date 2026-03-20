@@ -72,6 +72,11 @@ aiRoutes.get('/actions', (c) => {
         'list-doc-files': 'document_id',
         'rename-doc-file': 'id (file id), name (new filename)',
       },
+      leave: {
+        'create-leave': 'telegram_user_id or email or user_id, type (vacation/half_day_am/half_day_pm/sick/special/remote), start_date (YYYY-MM-DD), end_date (YYYY-MM-DD, default=start), reason',
+        'list-leaves': 'telegram_user_id (선택), month (YYYY-MM), status (pending/approved/rejected)',
+        'approve-leave': 'id (leave request ID)',
+      },
       purchases: {
         'create-purchase': 'item_name, unit_price, quantity, item_url, requester_name or requester_email, category, note, date (YYYY-MM-DD), status (requested/ordered/delivered)',
         'create-purchases': 'items (JSON array), requester_name, date, status, note',
@@ -2236,6 +2241,144 @@ async function findOrCreateCategory(db: D1Database, orgId: string, name: string)
   ).bind(id, orgId, name).run()
   return id
 }
+
+// ── 휴가/결재 (GET-based) ──────────────────────────────────
+
+// 휴가 신청
+aiRoutes.get('/action/create-leave', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const tgUserId = c.req.query('telegram_user_id')
+  const directUserId = c.req.query('user_id')
+  const email = c.req.query('email')
+  const type = c.req.query('type') || 'vacation' // vacation, half_day_am, half_day_pm, sick, special, remote
+  const startDate = c.req.query('start_date')
+  const endDate = c.req.query('end_date')
+  const reason = c.req.query('reason') || ''
+
+  if (!startDate) return c.json({ error: 'start_date required (YYYY-MM-DD)' }, 400)
+
+  // Resolve user
+  let userId = directUserId
+  if (!userId && tgUserId) {
+    const mapping = await c.env.DB.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, tgUserId).first<{ user_id: string }>()
+    if (mapping?.user_id) userId = mapping.user_id
+  }
+  if (!userId && email) {
+    const byEmail = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND email = ?').bind(orgId, email).first<{ id: string }>()
+    if (byEmail) userId = byEmail.id
+  }
+  if (!userId) {
+    const ceo = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+    userId = ceo?.id
+  }
+  if (!userId) return c.json({ error: 'User not found' }, 400)
+
+  const finalEndDate = endDate || startDate
+  const dept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(userId).first<{ department_id: string }>()
+
+  // Find approvers
+  let approver1Id: string | null = null
+  let approver1Status = 'pending'
+  if (dept?.department_id) {
+    const head = await c.env.DB.prepare("SELECT user_id FROM user_departments WHERE department_id = ? AND role = 'head' AND user_id != ? LIMIT 1").bind(dept.department_id, userId).first<{ user_id: string }>()
+    if (head) approver1Id = head.user_id
+  }
+
+  const ceo = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+  const approver2Id = ceo?.id || null
+
+  // If user is CEO, auto-approve everything
+  const userInfo = await c.env.DB.prepare('SELECT is_ceo FROM users WHERE id = ?').bind(userId).first<{ is_ceo: number }>()
+  let status = 'pending'
+  let approver2Status = 'pending'
+  if (userInfo?.is_ceo) {
+    status = 'approved'
+    approver1Status = 'approved'
+    approver2Status = 'approved'
+  } else if (!approver1Id) {
+    approver1Status = 'approved' // no dept head, auto-approve step 1
+  }
+
+  const id = generateId()
+  await c.env.DB.prepare(`
+    INSERT INTO leave_requests (id, org_id, user_id, department_id, type, start_date, end_date, reason, status,
+      approver1_id, approver1_status, approver2_id, approver2_status, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, orgId, userId, dept?.department_id || null, type, startDate, finalEndDate, reason, status,
+    approver1Id, approver1Status, approver2Id, approver2Status, userId).run()
+
+  const userName = await c.env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(userId).first<{ name: string }>()
+
+  const typeLabels: Record<string, string> = {
+    vacation: '휴가', half_day_am: '오전반차', half_day_pm: '오후반차',
+    sick: '병가', special: '특별휴가', remote: '재택근무'
+  }
+
+  return c.json({
+    success: true,
+    request: { id, user_name: userName?.name, type, type_label: typeLabels[type] || type, start_date: startDate, end_date: finalEndDate, status },
+    message: status === 'approved'
+      ? `${userName?.name}님의 ${typeLabels[type] || type} (${startDate}~${finalEndDate}) 신청 및 자동승인 완료`
+      : `${userName?.name}님의 ${typeLabels[type] || type} (${startDate}~${finalEndDate}) 신청 완료. 결재 대기 중.`,
+  })
+})
+
+// 휴가 목록
+aiRoutes.get('/action/list-leaves', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const month = c.req.query('month')
+  const status = c.req.query('status')
+  const tgUserId = c.req.query('telegram_user_id')
+
+  let userId: string | undefined
+  if (tgUserId) {
+    const mapping = await c.env.DB.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, tgUserId).first<{ user_id: string }>()
+    if (mapping?.user_id) userId = mapping.user_id
+  }
+
+  let query = `SELECT lr.*, u.name as user_name FROM leave_requests lr JOIN users u ON u.id = lr.user_id WHERE lr.org_id = ? AND lr.is_deleted = 0`
+  const params: unknown[] = [orgId]
+
+  if (userId) { query += ' AND lr.user_id = ?'; params.push(userId) }
+  if (status) { query += ' AND lr.status = ?'; params.push(status) }
+  if (month) { query += ' AND lr.start_date >= ? AND lr.start_date < ?'; params.push(`${month}-01`, `${month}-31`) }
+
+  query += ' ORDER BY lr.created_at DESC LIMIT 50'
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+
+  return c.json({ requests: results || [] })
+})
+
+// 휴가 승인
+aiRoutes.get('/action/approve-leave', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const leaveId = c.req.query('id')
+  if (!leaveId) return c.json({ error: 'id required' }, 400)
+
+  const leave = await c.env.DB.prepare('SELECT * FROM leave_requests WHERE id = ? AND org_id = ?').bind(leaveId, orgId).first<any>()
+  if (!leave) return c.json({ error: 'Leave request not found' }, 404)
+
+  const now = new Date().toISOString()
+
+  if (leave.approver1_status === 'pending') {
+    await c.env.DB.prepare("UPDATE leave_requests SET approver1_status = 'approved', approver1_at = ?, updated_at = datetime('now') WHERE id = ?").bind(now, leaveId).run()
+    return c.json({ success: true, message: '부서장 승인 완료. 대표 승인 대기 중.' })
+  }
+
+  if (leave.approver2_status === 'pending' && leave.approver1_status === 'approved') {
+    await c.env.DB.prepare("UPDATE leave_requests SET approver2_status = 'approved', approver2_at = ?, status = 'approved', updated_at = datetime('now') WHERE id = ?").bind(now, leaveId).run()
+    return c.json({ success: true, message: '최종 승인 완료.' })
+  }
+
+  return c.json({ error: '승인할 단계가 없습니다', status: leave.status })
+})
 
 // 비품구매 등록 (단건)
 aiRoutes.get('/action/create-purchase', async (c) => {
