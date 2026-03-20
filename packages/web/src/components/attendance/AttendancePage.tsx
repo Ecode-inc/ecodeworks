@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAuthStore } from '../../stores/authStore'
 import { useOrgStore } from '../../stores/orgStore'
 import { attendanceApi, deptApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
-import { Clock, LogIn, LogOut, ChevronLeft, ChevronRight, Users } from 'lucide-react'
+import { Clock, LogIn, LogOut, ChevronLeft, ChevronRight, Users, Calendar, User } from 'lucide-react'
 import dayjs from 'dayjs'
 
 interface AttendanceRecord {
@@ -27,6 +27,18 @@ interface DeptOption {
   id: string
   name: string
   color: string
+  parent_id?: string | null
+}
+
+interface TeamMember {
+  id: string
+  name: string
+  email: string
+  avatar_url: string | null
+  position_id: string | null
+  position_name: string | null
+  position_level: number | null
+  departments: { id: string; name: string; color: string }[]
 }
 
 interface StatRow {
@@ -68,6 +80,17 @@ const CALENDAR_DOT_COLORS: Record<string, string> = {
   vacation: 'bg-purple-500',
 }
 
+const STATUS_DOT_TITLES: Record<string, string> = {
+  present: '출근',
+  late: '지각',
+  half_day: '반차',
+  absent: '결근',
+  remote: '재택',
+  vacation: '휴가',
+}
+
+type TeamTab = 'daily' | 'weekly' | 'monthly' | 'individual'
+
 function formatTime(iso: string | null): string {
   if (!iso) return '-'
   return dayjs(iso).format('HH:mm')
@@ -84,7 +107,7 @@ function calcWorkHours(clockIn: string | null, clockOut: string | null): string 
 export function AttendancePage() {
   const { user } = useAuthStore()
   const { currentDeptId } = useOrgStore()
-  const isManager = user?.is_ceo || user?.is_admin
+  const isManager = user?.is_ceo || user?.is_admin || user?.is_attendance_admin
 
   return (
     <div className="space-y-8">
@@ -285,25 +308,104 @@ function MyAttendanceSection() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Team Attendance Section
+// Team Attendance Section (Enhanced Admin View)
 // ──────────────────────────────────────────────────────────────
 function TeamAttendanceSection({ currentDeptId }: { currentDeptId: string | null }) {
   const { organization } = useAuthStore()
-  const [selectedDate, setSelectedDate] = useState(dayjs().format('YYYY-MM-DD'))
-  const [selectedDeptId, setSelectedDeptId] = useState(currentDeptId || '')
+  const [activeTab, setActiveTab] = useState<TeamTab>('daily')
   const [departments, setDepartments] = useState<DeptOption[]>([])
-  const [records, setRecords] = useState<AttendanceRecord[]>([])
-  const [stats, setStats] = useState<StatRow[]>([])
-  const [showStats, setShowStats] = useState(false)
+  const [members, setMembers] = useState<TeamMember[]>([])
+  const [selectedDeptId, setSelectedDeptId] = useState(currentDeptId || '')
 
   useEffect(() => {
     deptApi.list().then(res => setDepartments(res.departments as DeptOption[])).catch(() => {})
+    attendanceApi.teamMembers().then(res => setMembers(res.members)).catch(() => {})
   }, [])
 
-  // Sync with top-bar department selector
   useEffect(() => {
     setSelectedDeptId(currentDeptId || '')
   }, [currentDeptId])
+
+  const filteredMembers = useMemo(() => {
+    if (!selectedDeptId) return members
+    return members.filter(m => m.departments.some(d => d.id === selectedDeptId))
+  }, [members, selectedDeptId])
+
+  const tabs: { key: TeamTab; label: string; icon: React.ReactNode }[] = [
+    { key: 'daily', label: '일별 현황', icon: <Calendar size={14} /> },
+    { key: 'weekly', label: '주간 현황', icon: <Calendar size={14} /> },
+    { key: 'monthly', label: '월간 현황', icon: <Calendar size={14} /> },
+    { key: 'individual', label: '개인별 현황', icon: <User size={14} /> },
+  ]
+
+  const deptSelector = (
+    <select
+      value={selectedDeptId}
+      onChange={e => setSelectedDeptId(e.target.value)}
+      className="border rounded-lg px-3 py-1.5 text-sm"
+    >
+      {(() => {
+        const root = departments.find((d: DeptOption) => !(d as any).parent_id)
+        const children = departments.filter((d: DeptOption) => (d as any).parent_id)
+        return <>
+          <option value="">{root?.name || organization?.name || '전체'}</option>
+          {children.map(d => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </>
+      })()}
+    </select>
+  )
+
+  return (
+    <div className="bg-white rounded-xl border overflow-hidden">
+      <div className="px-4 py-3 border-b">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Users size={18} /> 팀 근태 현황
+          </h3>
+          {deptSelector}
+        </div>
+        <div className="flex gap-1 mt-3">
+          {tabs.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? 'bg-primary-100 text-primary-700'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {activeTab === 'daily' && (
+        <DailyView members={filteredMembers} selectedDeptId={selectedDeptId} />
+      )}
+      {activeTab === 'weekly' && (
+        <WeeklyView members={filteredMembers} />
+      )}
+      {activeTab === 'monthly' && (
+        <MonthlyView members={filteredMembers} />
+      )}
+      {activeTab === 'individual' && (
+        <IndividualView members={filteredMembers} />
+      )}
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────
+// Tab 1: Daily View
+// ──────────────────────────────────────────────────────────────
+function DailyView({ members, selectedDeptId }: { members: TeamMember[]; selectedDeptId: string }) {
+  const [selectedDate, setSelectedDate] = useState(dayjs().format('YYYY-MM-DD'))
+  const [records, setRecords] = useState<AttendanceRecord[]>([])
 
   const loadTeam = useCallback(async () => {
     try {
@@ -317,131 +419,489 @@ function TeamAttendanceSection({ currentDeptId }: { currentDeptId: string | null
     }
   }, [selectedDeptId, selectedDate])
 
-  const loadStats = useCallback(async () => {
-    const month = selectedDate.slice(0, 7)
-    try {
-      const res = await attendanceApi.stats({
-        dept_id: selectedDeptId || undefined,
-        month,
+  useEffect(() => { loadTeam() }, [loadTeam])
+
+  // Build rows: merge members with records, show un-clocked members as "미출근"
+  const rows = useMemo(() => {
+    const recordMap = new Map<string, AttendanceRecord>()
+    records.forEach(r => recordMap.set(r.user_id, r))
+
+    return members
+      .map(m => ({
+        member: m,
+        record: recordMap.get(m.id) || null,
+        deptName: m.departments.map(d => d.name).join(', ') || '-',
+      }))
+      .sort((a, b) => {
+        // Sort by department name, then by member name
+        const deptCmp = a.deptName.localeCompare(b.deptName)
+        if (deptCmp !== 0) return deptCmp
+        return a.member.name.localeCompare(b.member.name)
       })
-      setStats(Array.isArray(res.stats) ? res.stats : [])
+  }, [members, records])
+
+  return (
+    <div>
+      <div className="px-4 py-2 bg-gray-50 border-b flex items-center gap-3">
+        <input
+          type="date"
+          value={selectedDate}
+          onChange={e => setSelectedDate(e.target.value)}
+          className="border rounded-lg px-3 py-1.5 text-sm"
+        />
+        <span className="text-xs text-gray-500">
+          {rows.filter(r => r.record).length}/{rows.length}명 출근
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr>
+              <th className="text-left px-4 py-2 font-medium">이름</th>
+              <th className="text-left px-4 py-2 font-medium">직급</th>
+              <th className="text-left px-4 py-2 font-medium">부서</th>
+              <th className="text-left px-4 py-2 font-medium">출근</th>
+              <th className="text-left px-4 py-2 font-medium">퇴근</th>
+              <th className="text-left px-4 py-2 font-medium">근무시간</th>
+              <th className="text-left px-4 py-2 font-medium">상태</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">멤버가 없습니다</td>
+              </tr>
+            ) : rows.map(({ member, record, deptName }) => (
+              <tr key={member.id} className="hover:bg-gray-50">
+                <td className="px-4 py-2 font-medium text-gray-900">{member.name}</td>
+                <td className="px-4 py-2 text-gray-600 text-xs">{member.position_name || '-'}</td>
+                <td className="px-4 py-2 text-gray-600 text-xs">{deptName}</td>
+                <td className="px-4 py-2 text-gray-600">{record ? formatTime(record.clock_in) : '-'}</td>
+                <td className="px-4 py-2 text-gray-600">{record ? formatTime(record.clock_out) : '-'}</td>
+                <td className="px-4 py-2 text-gray-600">{record ? calcWorkHours(record.clock_in, record.clock_out) : '-'}</td>
+                <td className="px-4 py-2">
+                  {record ? (
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[record.status] || 'bg-gray-100 text-gray-600'}`}>
+                      {STATUS_LABELS[record.status] || record.status}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400">미출근</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────
+// Tab 2: Weekly View
+// ──────────────────────────────────────────────────────────────
+function WeeklyView({ members }: { members: TeamMember[] }) {
+  const [weekStart, setWeekStart] = useState(() => dayjs().startOf('week'))
+  const [records, setRecords] = useState<AttendanceRecord[]>([])
+
+  const weekDays = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => weekStart.add(i, 'day'))
+  }, [weekStart])
+
+  const loadWeekRecords = useCallback(async () => {
+    const month1 = weekStart.format('YYYY-MM')
+    const month2 = weekStart.add(6, 'day').format('YYYY-MM')
+    try {
+      const res1 = await attendanceApi.teamMonthly(month1)
+      let allRecords = res1.records
+      if (month2 !== month1) {
+        const res2 = await attendanceApi.teamMonthly(month2)
+        allRecords = [...allRecords, ...res2.records]
+      }
+      // Filter to this week only
+      const startStr = weekStart.format('YYYY-MM-DD')
+      const endStr = weekStart.add(6, 'day').format('YYYY-MM-DD')
+      setRecords(allRecords.filter(r => r.date >= startStr && r.date <= endStr))
     } catch {
       // ignore
     }
-  }, [selectedDeptId, selectedDate])
+  }, [weekStart])
 
-  useEffect(() => { loadTeam() }, [loadTeam])
-  useEffect(() => { if (showStats) loadStats() }, [loadStats, showStats])
+  useEffect(() => { loadWeekRecords() }, [loadWeekRecords])
+
+  // Build record lookup: userId -> date -> record
+  const recordMap = useMemo(() => {
+    const map = new Map<string, Map<string, AttendanceRecord>>()
+    records.forEach(r => {
+      if (!map.has(r.user_id)) map.set(r.user_id, new Map())
+      map.get(r.user_id)!.set(r.date, r)
+    })
+    return map
+  }, [records])
+
+  const dayLabels = ['일', '월', '화', '수', '목', '금', '토']
+
+  // Daily attendance count
+  const dailyCounts = useMemo(() => {
+    return weekDays.map(day => {
+      const dateStr = day.format('YYYY-MM-DD')
+      let count = 0
+      records.forEach(r => { if (r.date === dateStr) count++ })
+      return count
+    })
+  }, [weekDays, records])
 
   return (
-    <div className="bg-white rounded-xl border overflow-hidden">
-      <div className="px-4 py-3 border-b flex items-center justify-between flex-wrap gap-3">
-        <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-          <Users size={18} /> 팀 근태 현황
-        </h3>
-        <div className="flex items-center gap-3 flex-wrap">
-          <select
-            value={selectedDeptId}
-            onChange={e => setSelectedDeptId(e.target.value)}
-            className="border rounded-lg px-3 py-1.5 text-sm"
-          >
-            {(() => {
-              const root = departments.find((d: any) => !d.parent_id)
-              const children = departments.filter((d: any) => d.parent_id)
-              return <>
-                <option value="">{root?.name || organization?.name || '전체'}</option>
-                {children.map(d => (
-                  <option key={d.id} value={d.id}>ㄴ {d.name}</option>
-                ))}
-              </>
-            })()}
-          </select>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={e => setSelectedDate(e.target.value)}
-            className="border rounded-lg px-3 py-1.5 text-sm"
-          />
-          <Button
-            size="sm"
-            variant={showStats ? 'primary' : 'secondary'}
-            onClick={() => setShowStats(!showStats)}
-          >
-            월간 통계
-          </Button>
+    <div>
+      <div className="px-4 py-2 bg-gray-50 border-b flex items-center gap-3">
+        <button onClick={() => setWeekStart(w => w.subtract(7, 'day'))} className="p-1 hover:bg-gray-200 rounded">
+          <ChevronLeft size={16} />
+        </button>
+        <span className="text-sm font-medium min-w-[180px] text-center">
+          {weekStart.format('YYYY.MM.DD')} ~ {weekStart.add(6, 'day').format('MM.DD')}
+        </span>
+        <button onClick={() => setWeekStart(w => w.add(7, 'day'))} className="p-1 hover:bg-gray-200 rounded">
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-50 border-b text-xs">
+        {Object.entries(CALENDAR_DOT_COLORS).map(([status, color]) => (
+          <span key={status} className="flex items-center gap-1">
+            <span className={`w-2 h-2 rounded-full ${color}`} />
+            {STATUS_LABELS[status]}
+          </span>
+        ))}
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-gray-300" />
+          미출근
+        </span>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr>
+              <th className="text-left px-4 py-2 font-medium sticky left-0 bg-gray-50 min-w-[140px]">이름 (부서)</th>
+              {weekDays.map((day, i) => (
+                <th key={i} className="text-center px-2 py-2 font-medium min-w-[60px]">
+                  <div>{dayLabels[day.day()]}</div>
+                  <div className="text-[10px] text-gray-400 font-normal">{day.format('M/D')}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {members.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">멤버가 없습니다</td>
+              </tr>
+            ) : members.map(member => {
+              const memberRecords = recordMap.get(member.id)
+              const deptName = member.departments.map(d => d.name).join(', ')
+              return (
+                <tr key={member.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-2 sticky left-0 bg-white">
+                    <div className="font-medium text-gray-900 text-xs">{member.name}</div>
+                    <div className="text-[10px] text-gray-400">{deptName || '-'}</div>
+                  </td>
+                  {weekDays.map((day, i) => {
+                    const dateStr = day.format('YYYY-MM-DD')
+                    const record = memberRecords?.get(dateStr)
+                    return (
+                      <td key={i} className="text-center px-2 py-2">
+                        {record ? (
+                          <span
+                            className={`inline-block w-3 h-3 rounded-full ${CALENDAR_DOT_COLORS[record.status] || 'bg-gray-400'}`}
+                            title={`${STATUS_DOT_TITLES[record.status] || record.status} ${formatTime(record.clock_in)}~${formatTime(record.clock_out)}`}
+                          />
+                        ) : (
+                          <span className="inline-block w-3 h-3 rounded-full bg-gray-200" title="미출근" />
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })}
+            {/* Summary row */}
+            <tr className="bg-gray-50 font-medium">
+              <td className="px-4 py-2 text-xs text-gray-600 sticky left-0 bg-gray-50">출근 인원</td>
+              {dailyCounts.map((count, i) => (
+                <td key={i} className="text-center px-2 py-2 text-xs text-gray-600">{count}</td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────
+// Tab 3: Monthly View
+// ──────────────────────────────────────────────────────────────
+function MonthlyView({ members }: { members: TeamMember[] }) {
+  const [currentMonth, setCurrentMonth] = useState(dayjs())
+  const [records, setRecords] = useState<AttendanceRecord[]>([])
+  const [stats, setStats] = useState<StatRow[]>([])
+
+  const monthStr = currentMonth.format('YYYY-MM')
+  const daysCount = currentMonth.daysInMonth()
+  const dayNumbers = useMemo(() => Array.from({ length: daysCount }, (_, i) => i + 1), [daysCount])
+
+  const loadData = useCallback(async () => {
+    try {
+      const [recordsRes, statsRes] = await Promise.all([
+        attendanceApi.teamMonthly(monthStr),
+        attendanceApi.stats({ month: monthStr }),
+      ])
+      setRecords(recordsRes.records)
+      setStats(Array.isArray(statsRes.stats) ? statsRes.stats : [])
+    } catch {
+      // ignore
+    }
+  }, [monthStr])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  // Build record lookup: userId -> date -> record
+  const recordMap = useMemo(() => {
+    const map = new Map<string, Map<string, AttendanceRecord>>()
+    records.forEach(r => {
+      if (!map.has(r.user_id)) map.set(r.user_id, new Map())
+      map.get(r.user_id)!.set(r.date, r)
+    })
+    return map
+  }, [records])
+
+  const statsMap = useMemo(() => {
+    const map = new Map<string, StatRow>()
+    stats.forEach(s => map.set(s.user_id, s))
+    return map
+  }, [stats])
+
+  return (
+    <div>
+      <div className="px-4 py-2 bg-gray-50 border-b flex items-center gap-3">
+        <button onClick={() => setCurrentMonth(m => m.subtract(1, 'month'))} className="p-1 hover:bg-gray-200 rounded">
+          <ChevronLeft size={16} />
+        </button>
+        <span className="text-sm font-medium min-w-[100px] text-center">{currentMonth.format('YYYY년 M월')}</span>
+        <button onClick={() => setCurrentMonth(m => m.add(1, 'month'))} className="p-1 hover:bg-gray-200 rounded">
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-50 border-b text-xs">
+        {Object.entries(CALENDAR_DOT_COLORS).map(([status, color]) => (
+          <span key={status} className="flex items-center gap-1">
+            <span className={`w-2 h-2 rounded-full ${color}`} />
+            {STATUS_LABELS[status]}
+          </span>
+        ))}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11px]">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr>
+              <th className="text-left px-3 py-2 font-medium sticky left-0 bg-gray-50 min-w-[120px] text-xs">이름</th>
+              {dayNumbers.map(d => (
+                <th key={d} className="text-center px-0.5 py-2 font-medium min-w-[22px]">{d}</th>
+              ))}
+              <th className="text-center px-2 py-2 font-medium bg-green-50 text-green-700 min-w-[28px]" title="출근">출</th>
+              <th className="text-center px-2 py-2 font-medium bg-yellow-50 text-yellow-700 min-w-[28px]" title="지각">지</th>
+              <th className="text-center px-2 py-2 font-medium bg-red-50 text-red-700 min-w-[28px]" title="결근">결</th>
+              <th className="text-center px-2 py-2 font-medium bg-purple-50 text-purple-700 min-w-[28px]" title="휴가">휴</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {members.length === 0 ? (
+              <tr>
+                <td colSpan={daysCount + 5} className="px-4 py-8 text-center text-gray-400">멤버가 없습니다</td>
+              </tr>
+            ) : members.map(member => {
+              const memberRecords = recordMap.get(member.id)
+              const memberStats = statsMap.get(member.id)
+              return (
+                <tr key={member.id} className="hover:bg-gray-50">
+                  <td className="px-3 py-1.5 sticky left-0 bg-white text-xs">
+                    <div className="font-medium text-gray-900 truncate max-w-[110px]">{member.name}</div>
+                  </td>
+                  {dayNumbers.map(d => {
+                    const dateStr = `${monthStr}-${String(d).padStart(2, '0')}`
+                    const record = memberRecords?.get(dateStr)
+                    return (
+                      <td key={d} className="text-center px-0.5 py-1.5">
+                        {record ? (
+                          <span
+                            className={`inline-block w-2 h-2 rounded-full ${CALENDAR_DOT_COLORS[record.status] || 'bg-gray-400'}`}
+                            title={`${d}일: ${STATUS_DOT_TITLES[record.status] || record.status}`}
+                          />
+                        ) : null}
+                      </td>
+                    )
+                  })}
+                  <td className="text-center px-2 py-1.5 text-green-700 font-medium">{memberStats?.present_count || 0}</td>
+                  <td className="text-center px-2 py-1.5 text-yellow-700 font-medium">{memberStats?.late_count || 0}</td>
+                  <td className="text-center px-2 py-1.5 text-red-700 font-medium">{memberStats?.absent_count || 0}</td>
+                  <td className="text-center px-2 py-1.5 text-purple-700 font-medium">{(memberStats?.vacation_count || 0) + (memberStats?.half_day_count || 0)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────
+// Tab 4: Individual View
+// ──────────────────────────────────────────────────────────────
+function IndividualView({ members }: { members: TeamMember[] }) {
+  const [selectedMemberId, setSelectedMemberId] = useState('')
+  const [currentMonth, setCurrentMonth] = useState(dayjs())
+  const [records, setRecords] = useState<AttendanceRecord[]>([])
+
+  // Auto-select first member
+  useEffect(() => {
+    if (members.length > 0 && !selectedMemberId) {
+      setSelectedMemberId(members[0].id)
+    }
+  }, [members, selectedMemberId])
+
+  const monthStr = currentMonth.format('YYYY-MM')
+
+  const loadRecords = useCallback(async () => {
+    if (!selectedMemberId) return
+    try {
+      const res = await attendanceApi.teamMonthly(monthStr)
+      setRecords(res.records.filter((r: AttendanceRecord) => r.user_id === selectedMemberId))
+    } catch {
+      // ignore
+    }
+  }, [selectedMemberId, monthStr])
+
+  useEffect(() => { loadRecords() }, [loadRecords])
+
+  const selectedMember = members.find(m => m.id === selectedMemberId)
+
+  // Calendar rendering
+  const daysInMonth = () => {
+    const startOfMonth = currentMonth.startOf('month')
+    const startDay = startOfMonth.day()
+    const days: dayjs.Dayjs[] = []
+    for (let i = -startDay; i < 42 - startDay; i++) {
+      days.push(startOfMonth.add(i, 'day'))
+    }
+    return days
+  }
+
+  const getRecordForDay = (day: dayjs.Dayjs): AttendanceRecord | undefined => {
+    const dayStr = day.format('YYYY-MM-DD')
+    return records.find(r => r.date === dayStr)
+  }
+
+  // Summary stats
+  const summary = useMemo(() => {
+    const counts: Record<string, number> = {
+      present: 0, late: 0, absent: 0, remote: 0, vacation: 0, half_day: 0,
+    }
+    records.forEach(r => {
+      if (counts[r.status] !== undefined) counts[r.status]++
+    })
+    return counts
+  }, [records])
+
+  return (
+    <div>
+      <div className="px-4 py-2 bg-gray-50 border-b flex items-center gap-3 flex-wrap">
+        <select
+          value={selectedMemberId}
+          onChange={e => setSelectedMemberId(e.target.value)}
+          className="border rounded-lg px-3 py-1.5 text-sm"
+        >
+          <option value="">멤버 선택</option>
+          {members.map(m => (
+            <option key={m.id} value={m.id}>
+              {m.name} {m.departments.length > 0 ? `(${m.departments.map(d => d.name).join(', ')})` : ''}
+            </option>
+          ))}
+        </select>
+
+        <div className="flex items-center gap-2">
+          <button onClick={() => setCurrentMonth(m => m.subtract(1, 'month'))} className="p-1 hover:bg-gray-200 rounded">
+            <ChevronLeft size={16} />
+          </button>
+          <span className="text-sm font-medium min-w-[100px] text-center">{currentMonth.format('YYYY년 M월')}</span>
+          <button onClick={() => setCurrentMonth(m => m.add(1, 'month'))} className="p-1 hover:bg-gray-200 rounded">
+            <ChevronRight size={16} />
+          </button>
         </div>
       </div>
 
-      {!showStats ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium">이름</th>
-                <th className="text-left px-4 py-2 font-medium">출근</th>
-                <th className="text-left px-4 py-2 font-medium">퇴근</th>
-                <th className="text-left px-4 py-2 font-medium">상태</th>
-                <th className="text-left px-4 py-2 font-medium">근무시간</th>
-                <th className="text-left px-4 py-2 font-medium">비고</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {records.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-400">기록이 없습니다</td>
-                </tr>
-              ) : records.map(r => (
-                <tr key={r.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 font-medium text-gray-900">{r.user_name || '-'}</td>
-                  <td className="px-4 py-2 text-gray-600">{formatTime(r.clock_in)}</td>
-                  <td className="px-4 py-2 text-gray-600">{formatTime(r.clock_out)}</td>
-                  <td className="px-4 py-2">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-600'}`}>
-                      {STATUS_LABELS[r.status] || r.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 text-gray-600">{calcWorkHours(r.clock_in, r.clock_out)}</td>
-                  <td className="px-4 py-2 text-gray-500 text-xs">{r.note || '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500 border-b">
-            {selectedDate.slice(0, 7)} 월간 통계
+      {selectedMember && (
+        <>
+          {/* Summary Stats */}
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 p-4 border-b">
+            {Object.entries(STATUS_LABELS).map(([status, label]) => (
+              <div key={status} className={`rounded-lg p-2 text-center ${STATUS_COLORS[status] || 'bg-gray-100 text-gray-600'}`}>
+                <div className="text-lg font-bold">{summary[status] || 0}</div>
+                <div className="text-[10px]">{label}</div>
+              </div>
+            ))}
           </div>
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium">이름</th>
-                <th className="text-center px-4 py-2 font-medium">출근</th>
-                <th className="text-center px-4 py-2 font-medium">지각</th>
-                <th className="text-center px-4 py-2 font-medium">결근</th>
-                <th className="text-center px-4 py-2 font-medium">재택</th>
-                <th className="text-center px-4 py-2 font-medium">휴가</th>
-                <th className="text-center px-4 py-2 font-medium">반차</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {stats.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-400">통계가 없습니다</td>
-                </tr>
-              ) : stats.map((s) => (
-                <tr key={s.user_id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 font-medium text-gray-900">{s.user_name}</td>
-                  <td className="px-4 py-2 text-center text-green-700">{s.present_count}</td>
-                  <td className="px-4 py-2 text-center text-yellow-700">{s.late_count}</td>
-                  <td className="px-4 py-2 text-center text-red-700">{s.absent_count}</td>
-                  <td className="px-4 py-2 text-center text-blue-700">{s.remote_count}</td>
-                  <td className="px-4 py-2 text-center text-purple-700">{s.vacation_count}</td>
-                  <td className="px-4 py-2 text-center text-orange-700">{s.half_day_count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+          {/* Legend */}
+          <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-50 border-b text-xs">
+            {Object.entries(CALENDAR_DOT_COLORS).map(([status, color]) => (
+              <span key={status} className="flex items-center gap-1">
+                <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
+                {STATUS_LABELS[status]}
+              </span>
+            ))}
+          </div>
+
+          {/* Calendar */}
+          <div className="grid grid-cols-7 border-b">
+            {['일', '월', '화', '수', '목', '금', '토'].map(d => (
+              <div key={d} className="px-2 py-2 text-center text-xs font-medium text-gray-500">{d}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7">
+            {daysInMonth().map((day, i) => {
+              const isToday = day.isSame(dayjs(), 'day')
+              const isCurrentMonth = day.month() === currentMonth.month()
+              const record = getRecordForDay(day)
+
+              return (
+                <div
+                  key={i}
+                  className={`min-h-[60px] border-b border-r p-1 ${!isCurrentMonth ? 'bg-gray-50' : ''}`}
+                >
+                  <div className={`text-xs mb-1 ${isToday ? 'w-5 h-5 bg-primary-600 text-white rounded-full flex items-center justify-center text-[10px]' : isCurrentMonth ? 'text-gray-700' : 'text-gray-400'}`}>
+                    {day.date()}
+                  </div>
+                  {record && (
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span className={`w-2.5 h-2.5 rounded-full ${CALENDAR_DOT_COLORS[record.status] || 'bg-gray-400'}`} />
+                      <span className="text-[9px] text-gray-400">{formatTime(record.clock_in)}</span>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {!selectedMember && (
+        <div className="px-4 py-12 text-center text-gray-400 text-sm">
+          멤버를 선택해주세요
         </div>
       )}
     </div>

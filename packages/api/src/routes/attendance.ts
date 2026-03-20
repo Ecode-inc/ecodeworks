@@ -127,6 +127,93 @@ attendanceRoutes.post('/clock-out', async (c) => {
 })
 
 // ──────────────────────────────────────────────────────────────
+// Management: GET /team-members (all org members with dept info)
+// ──────────────────────────────────────────────────────────────
+attendanceRoutes.get('/team-members', async (c) => {
+  const user = c.get('user')
+
+  // Check attendance admin flag
+  const userRow = await c.env.DB.prepare('SELECT is_attendance_admin FROM users WHERE id = ?').bind(user.id).first<{ is_attendance_admin: number }>()
+  const isAttendanceAdmin = !!userRow?.is_attendance_admin
+
+  if (!user.is_ceo && !user.is_admin && !isAttendanceAdmin) {
+    // Check if dept head
+    const headCheck = await c.env.DB.prepare(
+      "SELECT department_id FROM user_departments WHERE user_id = ? AND role = 'head'"
+    ).bind(user.id).first()
+    if (!headCheck) {
+      return c.json({ error: '권한이 없습니다' }, 403)
+    }
+  }
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT u.id, u.name, u.email, u.avatar_url, u.position_id,
+           p.name as position_name, p.level as position_level,
+           GROUP_CONCAT(d.id || '::' || d.name || '::' || COALESCE(d.color,''), '|||') as dept_info
+    FROM users u
+    LEFT JOIN positions p ON p.id = u.position_id
+    LEFT JOIN user_departments ud ON ud.user_id = u.id
+    LEFT JOIN departments d ON d.id = ud.department_id
+    WHERE u.org_id = ?
+    GROUP BY u.id
+    ORDER BY u.name
+  `).bind(user.org_id).all()
+
+  const members = results.map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    avatar_url: r.avatar_url,
+    position_id: r.position_id,
+    position_name: r.position_name,
+    position_level: r.position_level,
+    departments: r.dept_info
+      ? (r.dept_info as string).split('|||').map((d: string) => {
+          const [id, name, color] = d.split('::')
+          return { id, name, color }
+        })
+      : [],
+  }))
+
+  return c.json({ members })
+})
+
+// ──────────────────────────────────────────────────────────────
+// Management: GET /team-monthly (all records for a month)
+// ──────────────────────────────────────────────────────────────
+attendanceRoutes.get('/team-monthly', async (c) => {
+  const user = c.get('user')
+  const month = c.req.query('month') // YYYY-MM
+
+  if (!month) {
+    return c.json({ error: 'month query parameter is required (YYYY-MM)' }, 400)
+  }
+
+  // Check attendance admin flag
+  const userRow = await c.env.DB.prepare('SELECT is_attendance_admin FROM users WHERE id = ?').bind(user.id).first<{ is_attendance_admin: number }>()
+  const isAttendanceAdmin = !!userRow?.is_attendance_admin
+
+  if (!user.is_ceo && !user.is_admin && !isAttendanceAdmin) {
+    const headCheck = await c.env.DB.prepare(
+      "SELECT department_id FROM user_departments WHERE user_id = ? AND role = 'head'"
+    ).bind(user.id).first()
+    if (!headCheck) {
+      return c.json({ error: '권한이 없습니다' }, 403)
+    }
+  }
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT ar.*, u.name as user_name, u.email as user_email
+    FROM attendance_records ar
+    JOIN users u ON u.id = ar.user_id
+    WHERE ar.org_id = ? AND ar.date >= ? AND ar.date <= ?
+    ORDER BY ar.date ASC, u.name ASC
+  `).bind(user.org_id, `${month}-01`, `${month}-31`).all()
+
+  return c.json({ records: results })
+})
+
+// ──────────────────────────────────────────────────────────────
 // Management: GET /team
 // ──────────────────────────────────────────────────────────────
 attendanceRoutes.get('/team', async (c) => {
@@ -135,8 +222,12 @@ attendanceRoutes.get('/team', async (c) => {
   const date = c.req.query('date')
   const month = c.req.query('month')
 
-  // Permission check: CEO/admin can see all; dept head can see their dept only
-  if (!user.is_ceo && !user.is_admin) {
+  // Check attendance admin flag
+  const userRow = await c.env.DB.prepare('SELECT is_attendance_admin FROM users WHERE id = ?').bind(user.id).first<{ is_attendance_admin: number }>()
+  const isAttendanceAdmin = !!userRow?.is_attendance_admin
+
+  // Permission check: CEO/admin/attendance_admin can see all; dept head can see their dept only
+  if (!user.is_ceo && !user.is_admin && !isAttendanceAdmin) {
     if (!deptId) {
       return c.json({ error: '부서 ID가 필요합니다' }, 400)
     }
@@ -182,8 +273,12 @@ attendanceRoutes.get('/stats', async (c) => {
   const deptId = c.req.query('dept_id')
   const month = c.req.query('month')
 
+  // Check attendance admin flag
+  const userRow = await c.env.DB.prepare('SELECT is_attendance_admin FROM users WHERE id = ?').bind(user.id).first<{ is_attendance_admin: number }>()
+  const isAttendanceAdmin = !!userRow?.is_attendance_admin
+
   // Permission check
-  if (!user.is_ceo && !user.is_admin) {
+  if (!user.is_ceo && !user.is_admin && !isAttendanceAdmin) {
     if (!deptId) {
       return c.json({ error: '부서 ID가 필요합니다' }, 400)
     }

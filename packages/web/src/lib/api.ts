@@ -304,6 +304,10 @@ export const attendanceApi = {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString()
     return request<{ stats: any }>(`/attendance/stats${qs ? '?' + qs : ''}`)
   },
+  teamMonthly: (month: string) =>
+    request<{ records: any[] }>(`/attendance/team-monthly?month=${month}`),
+  teamMembers: () =>
+    request<{ members: any[] }>('/attendance/team-members'),
 }
 
 // AI API Key Management

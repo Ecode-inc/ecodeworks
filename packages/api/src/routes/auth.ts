@@ -179,7 +179,7 @@ authRoutes.get('/me', authMiddleware, async (c) => {
   const authUser = c.get('user')
 
   const user = await c.env.DB.prepare(`
-    SELECT u.id, u.org_id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.position_id,
+    SELECT u.id, u.org_id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.is_attendance_admin, u.position_id,
            p.name as position_name, p.level as position_level
     FROM users u
     LEFT JOIN positions p ON p.id = u.position_id
