@@ -693,9 +693,17 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
 
   // Load all docs on open for browsing
   const [allDocs, setAllDocs] = useState<any[]>([])
+  const [folderMap, setFolderMap] = useState<Record<string, string>>({})
   useEffect(() => {
     if (open) {
-      docsApi.list({ flat: 'true' } as any).then(r => setAllDocs((r.documents || []).filter((d: any) => !d.is_folder))).catch(() => {})
+      docsApi.list({ flat: 'true' } as any).then(r => {
+        const docs = r.documents || []
+        // Build folder name map
+        const folders: Record<string, string> = {}
+        docs.filter((d: any) => d.is_folder).forEach((d: any) => { folders[d.id] = d.title })
+        setFolderMap(folders)
+        setAllDocs(docs.filter((d: any) => !d.is_folder))
+      }).catch(() => {})
     }
   }, [open])
 
@@ -768,7 +776,7 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={task ? '태스크 수정' : '태스크 추가'}>
+    <Modal open={open} onClose={onClose} title={task ? '태스크 수정' : '태스크 추가'} width="max-w-md md:max-w-2xl lg:max-w-3xl">
       <div className="space-y-4 max-h-[80vh] overflow-y-auto">
         <Input label="제목" value={title} onChange={e => setTitle(e.target.value)} required />
         <div>
@@ -911,7 +919,10 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
                 className="w-full text-left px-3 py-1.5 text-sm hover:bg-green-50 border-b last:border-b-0 flex items-center gap-2"
               >
                 <span className="text-gray-400">📄</span>
-                <span className="truncate">{doc.title}</span>
+                <span className="truncate flex-1">{doc.title}</span>
+                {doc.parent_id && folderMap[doc.parent_id] && (
+                  <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">{folderMap[doc.parent_id]}</span>
+                )}
               </button>
             )) : (
               <p className="text-xs text-gray-400 p-2 text-center">문서가 없습니다</p>

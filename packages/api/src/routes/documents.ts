@@ -15,6 +15,7 @@ documentsRoutes.get('/', async (c) => {
   const user = c.get('user')
   const deptId = c.req.query('dept_id')
   const parentId = c.req.query('parent_id')
+  const flat = c.req.query('flat')
 
   let query = `SELECT d.id, d.department_id, d.parent_id, d.title, d.is_folder, d.order_index, d.created_by, d.created_at, d.updated_at, d.visibility, d.shared FROM documents d WHERE 1=1`
   const params: unknown[] = []
@@ -36,7 +37,9 @@ documentsRoutes.get('/', async (c) => {
     params.push(deptId)
   }
 
-  if (parentId) {
+  if (flat === 'true') {
+    // Return all docs flat (no parent_id filter)
+  } else if (parentId) {
     query += ' AND d.parent_id = ?'
     params.push(parentId)
   } else {
