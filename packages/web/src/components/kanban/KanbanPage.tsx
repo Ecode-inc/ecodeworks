@@ -21,7 +21,10 @@ const visibilityLabels: Record<string, string> = {
 
 export function KanbanPage() {
   const { currentDeptId } = useOrgStore()
-  const { departments } = useAuthStore()
+  const { departments, user } = useAuthStore()
+  const [viewMode, setViewMode] = useState<'unified' | 'board'>('unified')
+  const [allTasks, setAllTasks] = useState<any[]>([])
+  const [unifiedFilter, setUnifiedFilter] = useState<'all' | 'mine'>('all')
   const [boards, setBoards] = useState<any[]>([])
   const [selectedBoard, setSelectedBoard] = useState<any>(null)
   const [columns, setColumns] = useState<any[]>([])
@@ -55,14 +58,24 @@ export function KanbanPage() {
   // Touch drag state
   const touchStart = useRef<{ x: number; y: number; taskId: string; columnId: string } | null>(null)
 
+  // Load unified view
+  const loadAllTasks = () => {
+    const params = unifiedFilter === 'mine' ? { assignee_id: user?.id } : undefined
+    tasksApi.all(params).then(r => setAllTasks(r.tasks || [])).catch(() => {})
+  }
+
+  useEffect(() => {
+    if (viewMode === 'unified') loadAllTasks()
+  }, [viewMode, unifiedFilter])
+
   useEffect(() => {
     boardsApi.list(currentDeptId || undefined).then(r => {
       setBoards(r.boards || [])
-      if ((r.boards || []).length > 0 && !selectedBoard) {
+      if ((r.boards || []).length > 0 && !selectedBoard && viewMode === 'board') {
         loadBoard(r.boards[0].id)
       }
     }).catch(() => {})
-  }, [currentDeptId])
+  }, [currentDeptId, viewMode])
 
   const loadBoard = async (boardId: string) => {
     try {
@@ -231,14 +244,36 @@ export function KanbanPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-gray-900">칸반</h1>
-          {boards.length > 0 && (
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+            <button
+              onClick={() => setViewMode('unified')}
+              className={`px-3 py-1 text-sm rounded-md ${viewMode === 'unified' ? 'bg-white shadow-sm font-medium' : 'text-gray-500'}`}
+            >통합</button>
+            <button
+              onClick={() => setViewMode('board')}
+              className={`px-3 py-1 text-sm rounded-md ${viewMode === 'board' ? 'bg-white shadow-sm font-medium' : 'text-gray-500'}`}
+            >보드별</button>
+          </div>
+          {viewMode === 'unified' && (
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+              <button
+                onClick={() => setUnifiedFilter('all')}
+                className={`px-3 py-1 text-sm rounded-md ${unifiedFilter === 'all' ? 'bg-white shadow-sm font-medium' : 'text-gray-500'}`}
+              >전체</button>
+              <button
+                onClick={() => setUnifiedFilter('mine')}
+                className={`px-3 py-1 text-sm rounded-md ${unifiedFilter === 'mine' ? 'bg-white shadow-sm font-medium' : 'text-gray-500'}`}
+              >내 태스크</button>
+            </div>
+          )}
+          {viewMode === 'board' && boards.length > 0 && (
             <select
               value={selectedBoard?.id || ''}
               onChange={e => loadBoard(e.target.value)}
               className="text-sm border rounded-lg px-3 py-1.5"
             >
               {boards.map(b => (
-                <option key={b.id} value={b.id}>{b.name}</option>
+                <option key={b.id} value={b.id}>{b.name}{b.department_name ? ` (${b.department_name})` : ''}</option>
               ))}
             </select>
           )}
@@ -303,8 +338,16 @@ export function KanbanPage() {
         </div>
       )}
 
-      {/* Kanban Board */}
-      {selectedBoard ? (
+      {/* Unified View */}
+      {viewMode === 'unified' && (
+        <UnifiedKanbanView
+          tasks={allTasks}
+          onTaskClick={(task) => { setEditingTask(task); setTargetColumnId(task.column_id); setShowTaskModal(true) }}
+        />
+      )}
+
+      {/* Board View */}
+      {viewMode === 'board' && selectedBoard ? (
         <div className="flex gap-4 overflow-x-auto pb-4">
           {columns.map(col => (
             <div
@@ -503,11 +546,11 @@ export function KanbanPage() {
             )}
           </div>
         </div>
-      ) : (
+      ) : viewMode === 'board' ? (
         <div className="text-center text-gray-400 py-20">
           보드를 만들어주세요
         </div>
-      )}
+      ) : null}
 
       {/* New Board Modal */}
       <Modal open={showNewBoard} onClose={() => setShowNewBoard(false)} title="새 보드">
@@ -749,5 +792,106 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
         </div>
       </div>
     </Modal>
+  )
+}
+
+// ── Unified Kanban View ──────────────────────────────────────
+
+function UnifiedKanbanView({ tasks, onTaskClick }: {
+  tasks: any[]
+  onTaskClick: (task: any) => void
+}) {
+  // Group by column status (To Do / In Progress / Done based on column name patterns)
+  const groups = [
+    { key: 'todo', label: 'To Do', color: '#6B7280', match: (c: string) => /to.?do|할.?일|대기/i.test(c) },
+    { key: 'progress', label: 'In Progress', color: '#3B82F6', match: (c: string) => /progress|진행/i.test(c) },
+    { key: 'done', label: 'Done', color: '#10B981', match: (c: string) => /done|완료/i.test(c) },
+    { key: 'other', label: '기타', color: '#8B5CF6', match: () => true },
+  ]
+
+  const categorized = groups.map(g => ({
+    ...g,
+    tasks: tasks.filter(t => {
+      const colName = t.column_name || ''
+      // Find first matching group
+      for (const grp of groups) {
+        if (grp.key === 'other') continue
+        if (grp.match(colName)) return grp.key === g.key
+      }
+      return g.key === 'other'
+    }),
+  })).filter(g => g.tasks.length > 0 || g.key !== 'other')
+
+  if (tasks.length === 0) {
+    return <div className="text-center text-gray-400 py-20">태스크가 없습니다</div>
+  }
+
+  return (
+    <div className="flex gap-4 overflow-x-auto pb-4">
+      {categorized.map(group => (
+        <div key={group.key} className="flex-shrink-0 w-80 bg-gray-100 rounded-xl p-3">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: group.color }} />
+            <h3 className="text-sm font-semibold text-gray-700">{group.label}</h3>
+            <span className="text-xs text-gray-400 bg-gray-200 px-1.5 rounded-full">{group.tasks.length}</span>
+          </div>
+          <div className="space-y-2 min-h-[50px]">
+            {group.tasks.map(task => {
+              const assignees = task.assignee_names ? task.assignee_names.split(',') : []
+              const labels: string[] = (() => {
+                try {
+                  let p = typeof task.labels === 'string' ? JSON.parse(task.labels || '[]') : task.labels
+                  if (typeof p === 'string') p = JSON.parse(p)
+                  return Array.isArray(p) ? p : []
+                } catch { return [] }
+              })()
+
+              return (
+                <div
+                  key={task.id}
+                  onClick={() => onTaskClick(task)}
+                  className={`bg-white rounded-lg p-3 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${
+                    task.priority === 'urgent' ? 'border-l-red-500' :
+                    task.priority === 'high' ? 'border-l-orange-500' :
+                    task.priority === 'low' ? 'border-l-gray-300' : 'border-l-blue-500'
+                  }`}
+                >
+                  {/* Board/Dept badge */}
+                  <div className="flex items-center gap-1 mb-1.5">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 truncate max-w-[120px]">
+                      {task.department_name}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 truncate max-w-[120px]">
+                      {task.board_name}
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium text-gray-800">{task.title}</p>
+                  {task.description && (
+                    <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{task.description}</p>
+                  )}
+                  <div className="flex items-center justify-between mt-2">
+                    <div className="flex gap-1 flex-wrap">
+                      {labels.slice(0, 2).map((l: string) => (
+                        <span key={l} className="text-[10px] bg-gray-100 text-gray-600 px-1 py-0.5 rounded">{l}</span>
+                      ))}
+                      {task.due_date && (
+                        <span className="text-[10px] text-gray-400">{task.due_date}</span>
+                      )}
+                    </div>
+                    {assignees.length > 0 && (
+                      <div className="flex items-center gap-1 text-[10px] text-gray-400">
+                        <User size={10} />
+                        {assignees.slice(0, 2).join(', ')}
+                        {assignees.length > 2 && ` +${assignees.length - 2}`}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }

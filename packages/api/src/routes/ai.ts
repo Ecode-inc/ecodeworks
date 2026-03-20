@@ -67,6 +67,10 @@ aiRoutes.get('/actions', (c) => {
         'get-doc-share-link': 'q (title search) or id, expiry (1d/7d/30d/none)',
         'get-folder-guide': 'parent_id',
         'update-folder-guide': 'parent_id, content',
+        'attach-file-url': 'document_id, url (file URL to download and attach), name (optional filename)',
+        'attach-file': 'POST multipart: curl -F "file=@/path/to/file" -F "document_id=ID" URL?key=KEY',
+        'list-doc-files': 'document_id',
+        'rename-doc-file': 'id (file id), name (new filename)',
       },
       purchases: {
         'create-purchase': 'item_name, unit_price, quantity, item_url, requester_name or requester_email, category, note, date (YYYY-MM-DD), status (requested/ordered/delivered)',
@@ -2919,4 +2923,174 @@ aiRoutes.get('/action/create-weekly-meeting-doc', async (c) => {
   const document = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first()
 
   return c.json({ document, created: true, folder_id: folder.id })
+})
+
+// ── 문서 파일 첨부 (URL → R2 다운로드) ─────────────────────────
+aiRoutes.get('/action/attach-file-url', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const documentId = c.req.query('document_id')
+  const fileUrl = c.req.query('url')
+  const fileName = c.req.query('name')
+
+  if (!documentId) return c.json({ error: 'document_id required' }, 400)
+  if (!fileUrl) return c.json({ error: 'url required' }, 400)
+
+  // Verify document belongs to org
+  const doc = await c.env.DB.prepare(`
+    SELECT d.id, d.department_id FROM documents d
+    JOIN departments dept ON dept.id = d.department_id
+    WHERE d.id = ? AND dept.org_id = ?
+  `).bind(documentId, orgId).first<{ id: string; department_id: string }>()
+  if (!doc) return c.json({ error: 'Document not found' }, 404)
+
+  // Get org slug for R2 key
+  const org = await c.env.DB.prepare('SELECT slug FROM organizations WHERE id = ?').bind(orgId).first<{ slug: string }>()
+  if (!org) return c.json({ error: 'Organization not found' }, 404)
+
+  // Download the file
+  let fileData: ArrayBuffer
+  let contentType = 'application/octet-stream'
+  let resolvedName = fileName || ''
+  try {
+    const resp = await fetch(fileUrl)
+    if (!resp.ok) return c.json({ error: `Failed to download file: ${resp.status}` }, 400)
+    fileData = await resp.arrayBuffer()
+    contentType = resp.headers.get('content-type') || contentType
+    if (!resolvedName) {
+      // Try to get filename from URL or content-disposition
+      const cd = resp.headers.get('content-disposition')
+      if (cd) {
+        const match = cd.match(/filename[*]?=(?:UTF-8''|"?)([^";]+)/)
+        if (match) resolvedName = decodeURIComponent(match[1])
+      }
+      if (!resolvedName) {
+        const urlPath = new URL(fileUrl).pathname
+        resolvedName = urlPath.split('/').pop() || 'file'
+      }
+    }
+  } catch (e) {
+    return c.json({ error: `Download failed: ${e instanceof Error ? e.message : 'unknown'}` }, 400)
+  }
+
+  const timestamp = Date.now()
+  const r2Key = `${org.slug}/docs/${documentId}/files/${timestamp}_${resolvedName}`
+
+  // Upload to R2
+  await c.env.FILES.put(r2Key, fileData, {
+    httpMetadata: { contentType },
+  })
+
+  // Get creator user for FK
+  const creator = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+    || await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>()
+  const uploadedBy = creator?.id || ''
+
+  const id = generateId()
+  await c.env.DB.prepare(`
+    INSERT INTO doc_files (id, document_id, org_id, file_url, file_name, file_size, mime_type, uploaded_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).bind(id, documentId, orgId, r2Key, resolvedName, fileData.byteLength, contentType, uploadedBy).run()
+
+  const record = await c.env.DB.prepare('SELECT * FROM doc_files WHERE id = ?').bind(id).first()
+
+  // Build public URL
+  const publicUrl = `https://ecode-internal-api.justin21lee.workers.dev/api/files/${r2Key}`
+
+  return c.json({ success: true, file: record, public_url: publicUrl })
+})
+
+// ── 문서 파일 첨부 (multipart/form-data) ────────────────────────
+// Usage: curl -F "file=@/path/to/file.pdf" -F "document_id=xxx" "URL/action/attach-file?key=API_KEY"
+aiRoutes.post('/action/attach-file', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const formData = await c.req.formData()
+  const file = formData.get('file') as File | null
+  const documentId = formData.get('document_id') as string | null
+
+  if (!file) return c.json({ error: 'file is required (multipart form field)' }, 400)
+  if (!documentId) return c.json({ error: 'document_id is required' }, 400)
+
+  // Verify document belongs to org
+  const doc = await c.env.DB.prepare(`
+    SELECT d.id, d.department_id FROM documents d
+    JOIN departments dept ON dept.id = d.department_id
+    WHERE d.id = ? AND dept.org_id = ?
+  `).bind(documentId, orgId).first<{ id: string; department_id: string }>()
+  if (!doc) return c.json({ error: 'Document not found' }, 404)
+
+  const org = await c.env.DB.prepare('SELECT slug FROM organizations WHERE id = ?').bind(orgId).first<{ slug: string }>()
+  if (!org) return c.json({ error: 'Organization not found' }, 404)
+
+  const fileName = file.name || 'file'
+  const contentType = file.type || 'application/octet-stream'
+  const timestamp = Date.now()
+  const r2Key = `${org.slug}/docs/${documentId}/files/${timestamp}_${fileName}`
+
+  const arrayBuffer = await file.arrayBuffer()
+  await c.env.FILES.put(r2Key, arrayBuffer, {
+    httpMetadata: { contentType },
+  })
+
+  const creator = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+    || await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>()
+  const uploadedBy = creator?.id || ''
+
+  const id = generateId()
+  await c.env.DB.prepare(`
+    INSERT INTO doc_files (id, document_id, org_id, file_url, file_name, file_size, mime_type, uploaded_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).bind(id, documentId, orgId, r2Key, fileName, arrayBuffer.byteLength, contentType, uploadedBy).run()
+
+  const record = await c.env.DB.prepare('SELECT * FROM doc_files WHERE id = ?').bind(id).first()
+  const publicUrl = `https://ecode-internal-api.justin21lee.workers.dev/api/files/${r2Key}`
+
+  return c.json({ success: true, file: record, public_url: publicUrl })
+})
+
+// ── 문서 첨부파일 목록 ────────────────────────────────────────
+aiRoutes.get('/action/list-doc-files', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const documentId = c.req.query('document_id')
+  if (!documentId) return c.json({ error: 'document_id required' }, 400)
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM doc_files WHERE document_id = ? AND org_id = ? ORDER BY created_at DESC'
+  ).bind(documentId, orgId).all()
+
+  return c.json({ files: results })
+})
+
+// ── 첨부파일 이름 변경 ──────────────────────────────────────────
+aiRoutes.get('/action/rename-doc-file', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const fileId = c.req.query('id')
+  const newName = c.req.query('name')
+
+  if (!fileId) return c.json({ error: 'id required' }, 400)
+  if (!newName) return c.json({ error: 'name required' }, 400)
+
+  const file = await c.env.DB.prepare(
+    'SELECT id FROM doc_files WHERE id = ? AND org_id = ?'
+  ).bind(fileId, orgId).first<{ id: string }>()
+
+  if (!file) return c.json({ error: 'File not found' }, 404)
+
+  await c.env.DB.prepare(
+    'UPDATE doc_files SET file_name = ? WHERE id = ? AND org_id = ?'
+  ).bind(newName, fileId, orgId).run()
+
+  const updated = await c.env.DB.prepare('SELECT * FROM doc_files WHERE id = ?').bind(fileId).first()
+  return c.json({ success: true, file: updated })
 })

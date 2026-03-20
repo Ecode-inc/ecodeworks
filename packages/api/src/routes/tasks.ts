@@ -9,6 +9,52 @@ export const tasksRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 tasksRoutes.use('/*', authMiddleware)
 
+// All tasks across all boards (unified kanban view)
+tasksRoutes.get('/all', async (c) => {
+  const user = c.get('user')
+  const status = c.req.query('status') // column filter
+  const assigneeId = c.req.query('assignee_id')
+
+  let query = `
+    SELECT t.*,
+           GROUP_CONCAT(u.id) as assignee_ids,
+           GROUP_CONCAT(u.name) as assignee_names,
+           b.name as board_name,
+           b.department_id,
+           d.name as department_name,
+           bc.name as column_name,
+           bc.color as column_color
+    FROM tasks t
+    JOIN boards b ON b.id = t.board_id
+    JOIN departments d ON d.id = b.department_id
+    JOIN board_columns bc ON bc.id = t.column_id
+    LEFT JOIN task_assignees ta ON ta.task_id = t.id
+    LEFT JOIN users u ON u.id = ta.user_id
+    WHERE d.org_id = ?`
+  const params: unknown[] = [user.org_id]
+
+  // Non-admin: only boards they can see
+  if (!user.is_ceo && !user.is_admin) {
+    query += ` AND (
+      b.visibility = 'company'
+      OR (b.visibility = 'department' AND b.department_id IN (SELECT department_id FROM user_departments WHERE user_id = ?))
+      OR (b.visibility = 'personal' AND b.created_by = ?)
+      OR t.id IN (SELECT task_id FROM task_assignees WHERE user_id = ?)
+    )`
+    params.push(user.id, user.id, user.id)
+  }
+
+  if (assigneeId) {
+    query += ' AND t.id IN (SELECT task_id FROM task_assignees WHERE user_id = ?)'
+    params.push(assigneeId)
+  }
+
+  query += ' GROUP BY t.id ORDER BY bc.order_index, t.order_index'
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+
+  return c.json({ tasks: results || [] })
+})
+
 // Create task
 tasksRoutes.post('/', async (c) => {
   const body = await c.req.json<{

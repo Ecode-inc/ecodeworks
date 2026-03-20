@@ -18,14 +18,15 @@ boardsRoutes.get('/', async (c) => {
   let query = 'SELECT * FROM boards WHERE 1=1'
   const params: unknown[] = []
 
-  // Visibility filtering (CEO sees everything)
-  if (!user.is_ceo) {
+  // Visibility filtering (CEO/admin sees everything)
+  if (!user.is_ceo && !user.is_admin) {
     query += ` AND (
       visibility = 'company'
       OR (visibility = 'department' AND department_id IN (SELECT department_id FROM user_departments WHERE user_id = ?))
       OR (visibility = 'personal' AND created_by = ?)
+      OR id IN (SELECT DISTINCT t.board_id FROM tasks t JOIN task_assignees ta ON ta.task_id = t.id WHERE ta.user_id = ?)
     )`
-    params.push(user.id, user.id)
+    params.push(user.id, user.id, user.id)
   }
 
   if (deptId) {
@@ -35,7 +36,14 @@ boardsRoutes.get('/', async (c) => {
 
   query += ' ORDER BY created_at DESC'
   const { results } = await c.env.DB.prepare(query).bind(...params).all()
-  return c.json({ boards: results })
+
+  // Attach department name to each board
+  const boardsWithDept = await Promise.all((results || []).map(async (b: any) => {
+    const dept = await c.env.DB.prepare('SELECT name FROM departments WHERE id = ?').bind(b.department_id).first<{ name: string }>()
+    return { ...b, department_name: dept?.name || '' }
+  }))
+
+  return c.json({ boards: boardsWithDept })
 })
 
 // Get board with columns and tasks

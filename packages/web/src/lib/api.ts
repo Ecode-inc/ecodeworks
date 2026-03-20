@@ -202,6 +202,10 @@ export const boardsApi = {
 }
 
 export const tasksApi = {
+  all: (params?: { assignee_id?: string }) => {
+    const qs = params?.assignee_id ? `?assignee_id=${params.assignee_id}` : ''
+    return request<{ tasks: any[] }>(`/tasks/all${qs}`)
+  },
   create: (data: any) =>
     request<{ task: any }>('/tasks', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: any) =>
