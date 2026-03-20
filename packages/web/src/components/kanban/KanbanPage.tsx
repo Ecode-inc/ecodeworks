@@ -348,10 +348,17 @@ export function KanbanPage() {
 
       {/* Unified View */}
       {viewMode === 'unified' && (
-        <UnifiedKanbanView
-          tasks={allTasks}
-          onTaskClick={(task) => { setEditingTask(task); setTargetColumnId(task.column_id); setShowTaskModal(true) }}
-        />
+        <>
+          <div className="flex justify-end mb-3">
+            <Button size="sm" onClick={() => { setEditingTask(null); setTargetColumnId(null); setShowTaskModal(true) }}>
+              <Plus size={14} className="mr-1" /> 태스크 추가
+            </Button>
+          </div>
+          <UnifiedKanbanView
+            tasks={allTasks}
+            onTaskClick={(task) => { setEditingTask(task); setTargetColumnId(task.column_id); setShowTaskModal(true) }}
+          />
+        </>
       )}
 
       {/* Board View */}
@@ -614,15 +621,22 @@ export function KanbanPage() {
         boardId={selectedBoard?.id}
         columnId={targetColumnId}
         onSave={handleTaskSave}
+        boards={boards}
+        unifiedMode={viewMode === 'unified'}
       />
     </div>
   )
 }
 
-function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
+function TaskModal({ open, onClose, task, boardId, columnId, onSave, boards, unifiedMode }: {
   open: boolean; onClose: () => void; task: any; boardId: string | null; columnId: string | null; onSave: () => void
+  boards?: any[]; unifiedMode?: boolean
 }) {
   const [title, setTitle] = useState('')
+  // Board/column selection for unified mode
+  const [selectedBoardId, setSelectedBoardId] = useState(boardId || '')
+  const [selectedColumnId, setSelectedColumnId] = useState(columnId || '')
+  const [boardColumns, setBoardColumns] = useState<any[]>([])
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState('medium')
   const [dueDate, setDueDate] = useState('')
@@ -645,6 +659,14 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
     if (open) {
       membersApi.list().then(r => setMembers(r.members || [])).catch(() => {})
       qaApi.listLinks().then(r => setQaLinks(r.links || [])).catch(() => {})
+      // For unified mode: set initial board/column
+      if (!task && unifiedMode && boards?.length) {
+        setSelectedBoardId(boards[0].id)
+        boardsApi.get(boards[0].id).then(r => {
+          setBoardColumns(r.columns || [])
+          if (r.columns?.length) setSelectedColumnId(r.columns[0].id)
+        }).catch(() => {})
+      }
     }
   }, [open])
 
@@ -745,9 +767,16 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
           qa_link_ids: selectedQaLinks.map(q => q.id),
         })
       } else {
+        const effectiveBoardId = unifiedMode ? selectedBoardId : boardId
+        const effectiveColumnId = unifiedMode ? selectedColumnId : columnId
+        if (!effectiveBoardId || !effectiveColumnId) {
+          useToastStore.getState().addToast('error', '보드와 컬럼을 선택해주세요')
+          setLoading(false)
+          return
+        }
         await tasksApi.create({
-          board_id: boardId,
-          column_id: columnId,
+          board_id: effectiveBoardId,
+          column_id: effectiveColumnId,
           title,
           description,
           priority,
@@ -778,6 +807,47 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
   return (
     <Modal open={open} onClose={onClose} title={task ? '태스크 수정' : '태스크 추가'} width="max-w-md md:max-w-2xl lg:max-w-3xl">
       <div className="space-y-4 max-h-[80vh] overflow-y-auto">
+        {/* Board/Column selector for unified mode (new task only) */}
+        {unifiedMode && !task && boards && boards.length > 0 && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">보드</label>
+              <select
+                value={selectedBoardId}
+                onChange={e => {
+                  const bid = e.target.value
+                  setSelectedBoardId(bid)
+                  setBoardColumns([])
+                  setSelectedColumnId('')
+                  if (bid) {
+                    boardsApi.get(bid).then(r => {
+                      setBoardColumns(r.columns || [])
+                      if (r.columns?.length) setSelectedColumnId(r.columns[0].id)
+                    }).catch(() => {})
+                  }
+                }}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+              >
+                {boards.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}{b.department_name ? ` (${b.department_name})` : ''}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">컬럼</label>
+              <select
+                value={selectedColumnId}
+                onChange={e => setSelectedColumnId(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+              >
+                {boardColumns.map(col => (
+                  <option key={col.id} value={col.id}>{col.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
         <Input label="제목" value={title} onChange={e => setTitle(e.target.value)} required />
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">설명</label>
