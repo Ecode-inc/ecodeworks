@@ -49,6 +49,43 @@ documentsRoutes.get('/', async (c) => {
   return c.json({ documents: results })
 })
 
+// Search documents (FTS5) - MUST be before /:id to avoid matching "search" as an id
+documentsRoutes.get('/search', async (c) => {
+  const user = c.get('user')
+  const q = c.req.query('q')
+  const deptId = c.req.query('dept_id')
+
+  if (!q) return c.json({ documents: [] })
+
+  let query = `
+    SELECT d.id, d.department_id, d.parent_id, d.title, d.is_folder, d.created_at, d.updated_at, d.visibility, d.shared,
+           snippet(documents_fts, 1, '<mark>', '</mark>', '...', 32) as snippet
+    FROM documents_fts fts
+    JOIN documents d ON d.rowid = fts.rowid
+    WHERE documents_fts MATCH ?`
+  const params: unknown[] = [q]
+
+  if (!user.is_ceo) {
+    query += ` AND (
+      (d.visibility = 'company')
+      OR (d.visibility = 'department' AND d.shared = 0 AND d.department_id IN (SELECT department_id FROM user_departments WHERE user_id = ?))
+      OR (d.visibility = 'department' AND d.shared = 1)
+      OR (d.visibility = 'personal' AND d.shared = 0 AND d.created_by = ?)
+      OR (d.visibility = 'personal' AND d.shared = 1)
+    )`
+    params.push(user.id, user.id)
+  }
+
+  if (deptId) {
+    query += ' AND d.department_id = ?'
+    params.push(deptId)
+  }
+
+  query += ' ORDER BY rank LIMIT 50'
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ documents: results })
+})
+
 // Get document (with content)
 documentsRoutes.get('/:id', async (c) => {
   const docId = c.req.param('id')
@@ -170,46 +207,6 @@ documentsRoutes.delete('/:id', authMiddleware, async (c) => {
   const docId = c.req.param('id')
   await c.env.DB.prepare('DELETE FROM documents WHERE id = ?').bind(docId).run()
   return c.json({ success: true })
-})
-
-// Search documents (FTS5)
-documentsRoutes.get('/search', async (c) => {
-  const user = c.get('user')
-  const q = c.req.query('q')
-  const deptId = c.req.query('dept_id')
-
-  if (!q) return c.json({ documents: [] })
-
-  // FTS5 search with visibility filtering
-  let query = `
-    SELECT d.id, d.department_id, d.parent_id, d.title, d.is_folder, d.created_at, d.updated_at, d.visibility, d.shared,
-           snippet(documents_fts, 1, '<mark>', '</mark>', '...', 32) as snippet
-    FROM documents_fts fts
-    JOIN documents d ON d.rowid = fts.rowid
-    WHERE documents_fts MATCH ?`
-  const params: unknown[] = [q]
-
-  // Visibility filtering (CEO sees everything)
-  if (!user.is_ceo) {
-    query += ` AND (
-      (d.visibility = 'company')
-      OR (d.visibility = 'department' AND d.shared = 0 AND d.department_id IN (SELECT department_id FROM user_departments WHERE user_id = ?))
-      OR (d.visibility = 'department' AND d.shared = 1)
-      OR (d.visibility = 'personal' AND d.shared = 0 AND d.created_by = ?)
-      OR (d.visibility = 'personal' AND d.shared = 1)
-    )`
-    params.push(user.id, user.id)
-  }
-
-  if (deptId) {
-    query += ' AND d.department_id = ?'
-    params.push(deptId)
-  }
-
-  query += ' ORDER BY rank LIMIT 50'
-
-  const { results } = await c.env.DB.prepare(query).bind(...params).all()
-  return c.json({ documents: results })
 })
 
 // Get version history
