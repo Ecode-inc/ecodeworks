@@ -1922,10 +1922,25 @@ aiRoutes.get('/action/search-docs', async (c) => {
       path.unshift(parent.title)
       pid = parent.parent_id
     }
-    return { ...doc, folder_path: path.join(' / ') || '(루트)' }
+    // Count images and files for this document
+    const imgCount = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM doc_images WHERE document_id = ?').bind(doc.id).first<{ cnt: number }>()
+    const fileCount = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM doc_files WHERE document_id = ?').bind(doc.id).first<{ cnt: number }>()
+
+    return {
+      ...doc,
+      folder_path: path.join(' / ') || '(루트)',
+      image_count: imgCount?.cnt || 0,
+      file_count: fileCount?.cnt || 0,
+    }
   }))
 
-  return c.json({ documents: docsWithPath })
+  // Add hint if any doc has images
+  const hasImages = docsWithPath.some((d: any) => d.image_count > 0)
+  const hint = hasImages
+    ? '이미지가 있는 문서가 있습니다. 이미지를 보려면 /action/find-doc-images?q=검색어 를 사용하세요.'
+    : null
+
+  return c.json({ documents: docsWithPath, hint })
 })
 
 // 문서 목록 (폴더 탐색)
@@ -1983,7 +1998,16 @@ aiRoutes.get('/action/get-doc', async (c) => {
   `).bind(docId, orgId).first()
 
   if (!doc) return c.json({ error: 'Document not found' }, 404)
-  return c.json({ document: doc })
+
+  const imgCount = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM doc_images WHERE document_id = ?').bind(docId).first<{ cnt: number }>()
+  const fileCount = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM doc_files WHERE document_id = ?').bind(docId).first<{ cnt: number }>()
+
+  return c.json({
+    document: doc,
+    image_count: imgCount?.cnt || 0,
+    file_count: fileCount?.cnt || 0,
+    hint: (imgCount?.cnt || 0) > 0 ? `이 문서에 ${imgCount?.cnt}개의 이미지가 있습니다. /action/find-doc-images?q=제목 으로 조회하세요.` : null,
+  })
 })
 
 // 문서 생성
