@@ -234,6 +234,7 @@ export const docsApi = {
     request<{ documents: any[] }>(`/docs/search?q=${encodeURIComponent(q)}${deptId ? `&dept_id=${deptId}` : ''}`),
   versions: (id: string) => request<{ versions: any[] }>(`/docs/${id}/versions`),
   getVersion: (id: string, versionId: string) => request<{ version: any }>(`/docs/${id}/versions/${versionId}`),
+  linkedTasks: (id: string) => request<{ tasks: any[] }>(`/docs/${id}/tasks`),
 }
 
 // Document Share Links

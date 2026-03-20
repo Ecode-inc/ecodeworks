@@ -860,10 +860,37 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
         {/* Document linking */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">문서 연결</label>
+          {/* Selected docs - clickable to open */}
+          {selectedDocs.length > 0 && (
+            <div className="space-y-1 mb-2">
+              {selectedDocs.map(doc => (
+                <div key={doc.id} className="flex items-center gap-2 p-2 bg-green-50 rounded-lg border border-green-100">
+                  <span className="text-sm">📄</span>
+                  <a
+                    href={`/docs/${doc.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-green-800 hover:underline flex-1 truncate"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    {doc.title}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDocs(prev => prev.filter(d => d.id !== doc.id))}
+                    className="p-0.5 text-green-400 hover:text-red-500"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Search + browse */}
           <div className="relative">
             <input
               type="text"
-              placeholder="문서 제목으로 검색..."
+              placeholder="문서 검색 또는 아래 목록에서 선택..."
               value={docSearchQuery}
               onChange={e => searchDocs(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none pl-8"
@@ -871,40 +898,25 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
             <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
           </div>
           {docSearching && <p className="text-xs text-gray-400 mt-1">검색 중...</p>}
-          {visibleDocs.length > 0 && (
-            <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto">
-              {visibleDocs.map((doc: any) => (
-                <button
-                  key={doc.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedDocs(prev => [...prev, doc])
-                    setDocSearchResults(prev => prev.filter(d => d.id !== doc.id))
-                    setDocSearchQuery('')
-                  }}
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
-                >
-                  {doc.title}
-                </button>
-              ))}
-            </div>
-          )}
-          {selectedDocs.length > 0 && (
-            <div className="flex gap-1 flex-wrap mt-1.5">
-              {selectedDocs.map(doc => (
-                <span key={doc.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  {'📄'} {doc.title}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedDocs(prev => prev.filter(d => d.id !== doc.id))}
-                    className="hover:text-green-900"
-                  >
-                    <X size={10} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
+          <div className="border rounded-lg mt-1 max-h-40 overflow-y-auto">
+            {visibleDocs.length > 0 ? visibleDocs.map((doc: any) => (
+              <button
+                key={doc.id}
+                type="button"
+                onClick={() => {
+                  setSelectedDocs(prev => [...prev, doc])
+                  setDocSearchResults(prev => prev.filter(d => d.id !== doc.id))
+                  setDocSearchQuery('')
+                }}
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-green-50 border-b last:border-b-0 flex items-center gap-2"
+              >
+                <span className="text-gray-400">📄</span>
+                <span className="truncate">{doc.title}</span>
+              </button>
+            )) : (
+              <p className="text-xs text-gray-400 p-2 text-center">문서가 없습니다</p>
+            )}
+          </div>
         </div>
 
         {/* QA linking */}

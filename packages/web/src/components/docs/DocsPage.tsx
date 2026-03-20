@@ -303,6 +303,7 @@ export function DocsPage() {
                   </div>
                   {!selectedDoc.is_folder && (
                     <>
+                      <LinkedTasks documentId={selectedDoc.id} />
                       <ImageGallery documentId={selectedDoc.id} />
                       <FileAttachments documentId={selectedDoc.id} />
                     </>
@@ -820,6 +821,55 @@ function TreeItem({ doc, selectedId, onSelect, onDelete }: {
       >
         <Trash2 size={13} />
       </button>
+    </div>
+  )
+}
+
+// ── Linked Tasks (reverse link from tasks → this document) ───
+
+function LinkedTasks({ documentId }: { documentId: string }) {
+  const [tasks, setTasks] = useState<any[]>([])
+  const [expanded, setExpanded] = useState(true)
+
+  useEffect(() => {
+    docsApi.linkedTasks(documentId).then(r => setTasks(r.tasks || [])).catch(() => setTasks([]))
+  }, [documentId])
+
+  if (tasks.length === 0) return null
+
+  const statusColors: Record<string, string> = {
+    'To Do': 'bg-gray-100 text-gray-600',
+    'In Progress': 'bg-blue-100 text-blue-700',
+    'Done': 'bg-green-100 text-green-700',
+  }
+
+  return (
+    <div className="border-t mt-4">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 w-full px-4 py-3 text-left hover:bg-gray-50"
+      >
+        {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        <span className="text-sm font-medium text-gray-700">연결된 태스크</span>
+        <span className="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full">{tasks.length}</span>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-3 space-y-1.5">
+          {tasks.map((t: any) => (
+            <a
+              key={t.id}
+              href={`/kanban`}
+              className="flex items-center gap-2 p-2 rounded-lg border hover:border-blue-300 hover:bg-blue-50 transition-colors"
+            >
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusColors[t.column_name] || 'bg-gray-100 text-gray-600'}`}>
+                {t.column_name}
+              </span>
+              <span className="text-sm text-gray-800 truncate flex-1">{t.title}</span>
+              <span className="text-[10px] text-gray-400">{t.board_name}</span>
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

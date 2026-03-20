@@ -209,6 +209,21 @@ documentsRoutes.delete('/:id', authMiddleware, async (c) => {
   return c.json({ success: true })
 })
 
+// Get linked tasks for a document (reverse link)
+documentsRoutes.get('/:id/tasks', async (c) => {
+  const docId = c.req.param('id')
+  const { results } = await c.env.DB.prepare(`
+    SELECT t.id, t.title, t.priority, t.column_id, bc.name as column_name, b.name as board_name
+    FROM task_document_links tdl
+    JOIN tasks t ON t.id = tdl.task_id
+    JOIN board_columns bc ON bc.id = t.column_id
+    JOIN boards b ON b.id = t.board_id
+    WHERE tdl.document_id = ?
+    ORDER BY t.updated_at DESC
+  `).bind(docId).all()
+  return c.json({ tasks: results || [] })
+})
+
 // Get version history
 documentsRoutes.get('/:id/versions', async (c) => {
   const docId = c.req.param('id')
