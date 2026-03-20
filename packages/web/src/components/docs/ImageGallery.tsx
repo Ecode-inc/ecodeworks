@@ -4,6 +4,15 @@ import { useToastStore } from '../../stores/toastStore'
 import { Modal } from '../ui/Modal'
 import { Image, Upload, X, User, Tag, Plus, ChevronDown, ChevronRight, Trash2 } from 'lucide-react'
 
+const API_BASE = import.meta.env.VITE_API_URL || '/api'
+
+function getImageUrl(fileUrl: string): string {
+  if (!fileUrl) return ''
+  if (fileUrl.startsWith('http')) return fileUrl
+  // R2 key like "이코드/docs/xxx/file.jpg" → "/api/files/이코드/docs/xxx/file.jpg"
+  return `${API_BASE.replace(/\/api$/, '')}/api/files/${encodeURI(fileUrl)}`
+}
+
 interface ImageGalleryProps {
   documentId: string
 }
@@ -210,8 +219,8 @@ export function ImageGallery({ documentId }: ImageGalleryProps) {
                 >
                   <div className="aspect-square bg-gray-100">
                     <img
-                      src={img.url || img.thumbnail_url}
-                      alt={img.ai_description || img.filename}
+                      src={getImageUrl(img.file_url)}
+                      alt={img.ai_description || img.file_name}
                       className="w-full h-full object-cover"
                       loading="lazy"
                     />
@@ -359,8 +368,8 @@ function ImageDetailModal({ image, onClose, onUpdate, onDelete }: {
         {/* Full-size image */}
         <div className="rounded-lg overflow-hidden bg-gray-100 max-h-[50vh] flex items-center justify-center">
           <img
-            src={image.url || image.thumbnail_url}
-            alt={image.ai_description || image.filename}
+            src={getImageUrl(image.file_url)}
+            alt={image.ai_description || image.file_name}
             className="max-w-full max-h-[50vh] object-contain"
           />
         </div>
