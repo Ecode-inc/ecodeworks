@@ -186,45 +186,8 @@ export function LeavePage() {
         />
       )}
 
-      {/* All Requests (managers only, excluding own) */}
-      {isManager && allRequests.filter(r => r.user_id !== user?.id).length > 0 && (
-        <div className="bg-white rounded-xl border overflow-hidden">
-          <div className="px-4 py-3 border-b">
-            <h3 className="font-semibold text-gray-900">전체 결재 내역</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-600">
-                <tr>
-                  <th className="text-left px-4 py-2 font-medium">신청자</th>
-                  <th className="text-left px-4 py-2 font-medium">유형</th>
-                  <th className="text-left px-4 py-2 font-medium">기간</th>
-                  <th className="text-left px-4 py-2 font-medium">사유</th>
-                  <th className="text-left px-4 py-2 font-medium">상태</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {allRequests.filter(r => r.user_id !== user?.id).map((req: any) => (
-                  <tr key={req.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 font-medium text-gray-900">{req.user_name}</td>
-                    <td className="px-4 py-2">{typeLabels[req.type] || req.type}</td>
-                    <td className="px-4 py-2 text-gray-600">
-                      {dayjs(req.start_date).format('MM/DD')}
-                      {req.start_date !== req.end_date && ` - ${dayjs(req.end_date).format('MM/DD')}`}
-                    </td>
-                    <td className="px-4 py-2 text-gray-500 text-xs max-w-[200px] truncate">{req.reason || '-'}</td>
-                    <td className="px-4 py-2">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[req.status] || 'bg-gray-100 text-gray-600'}`}>
-                        {statusLabels[req.status] || req.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {/* All Requests (managers only) */}
+      {isManager && <AllRequestsSection requests={allRequests} currentUserId={user?.id} />}
 
       {/* Trash (CEO only) */}
       {isCeo && (
@@ -764,5 +727,158 @@ function CreateLeaveModal({
         </div>
       </div>
     </Modal>
+  )
+}
+
+// ── All Requests Section (managers) ──────────────────────────
+
+function AllRequestsSection({ requests, currentUserId }: { requests: any[]; currentUserId?: string }) {
+  const [filterMonth, setFilterMonth] = useState(dayjs().format('YYYY-MM'))
+  const [filterPerson, setFilterPerson] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [filterType, setFilterType] = useState('')
+
+  // Get unique people
+  const people = Array.from(new Map(requests.map(r => [r.user_id, { id: r.user_id, name: r.user_name }])).values())
+
+  // Filter
+  const filtered = requests.filter(r => {
+    if (r.user_id === currentUserId) return false // exclude own
+    if (filterPerson && r.user_id !== filterPerson) return false
+    if (filterStatus && r.status !== filterStatus) return false
+    if (filterType && r.type !== filterType) return false
+    if (filterMonth) {
+      const m = filterMonth
+      if (r.start_date > `${m}-31` || r.end_date < `${m}-01`) return false
+    }
+    return true
+  })
+
+  // Stats
+  const totalDays = filtered.reduce((sum, r) => {
+    const start = dayjs(r.start_date)
+    const end = dayjs(r.end_date)
+    return sum + end.diff(start, 'day') + 1
+  }, 0)
+  const byStatus: Record<string, number> = {}
+  filtered.forEach(r => { byStatus[r.status] = (byStatus[r.status] || 0) + 1 })
+
+  if (requests.filter(r => r.user_id !== currentUserId).length === 0) return null
+
+  return (
+    <div className="bg-white rounded-xl border overflow-hidden">
+      <div className="px-4 py-3 border-b">
+        <h3 className="font-semibold text-gray-900">전체 결재 내역</h3>
+      </div>
+
+      {/* Filters */}
+      <div className="px-4 py-3 border-b bg-gray-50 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-500">월별</span>
+          <input
+            type="month"
+            value={filterMonth}
+            onChange={e => setFilterMonth(e.target.value)}
+            className="border rounded-lg px-2 py-1 text-sm"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-500">신청자</span>
+          <select
+            value={filterPerson}
+            onChange={e => setFilterPerson(e.target.value)}
+            className="border rounded-lg px-2 py-1 text-sm"
+          >
+            <option value="">전체</option>
+            {people.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-500">상태</span>
+          <select
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+            className="border rounded-lg px-2 py-1 text-sm"
+          >
+            <option value="">전체</option>
+            <option value="pending">대기</option>
+            <option value="approved">승인</option>
+            <option value="rejected">반려</option>
+            <option value="cancelled">취소</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-500">유형</span>
+          <select
+            value={filterType}
+            onChange={e => setFilterType(e.target.value)}
+            className="border rounded-lg px-2 py-1 text-sm"
+          >
+            <option value="">전체</option>
+            <option value="vacation">휴가</option>
+            <option value="half_day_am">오전반차</option>
+            <option value="half_day_pm">오후반차</option>
+            <option value="sick">병가</option>
+            <option value="special">특별휴가</option>
+            <option value="remote">재택근무</option>
+          </select>
+        </div>
+
+        {/* Summary */}
+        <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
+          <span>{filtered.length}건</span>
+          <span>{totalDays}일</span>
+          {Object.entries(byStatus).map(([s, cnt]) => (
+            <span key={s} className={`px-1.5 py-0.5 rounded ${statusColors[s] || 'bg-gray-100'}`}>
+              {statusLabels[s] || s} {cnt}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr>
+              <th className="text-left px-4 py-2 font-medium">신청자</th>
+              <th className="text-left px-4 py-2 font-medium">유형</th>
+              <th className="text-left px-4 py-2 font-medium">기간</th>
+              <th className="text-left px-4 py-2 font-medium">일수</th>
+              <th className="text-left px-4 py-2 font-medium">사유</th>
+              <th className="text-left px-4 py-2 font-medium">상태</th>
+              <th className="text-left px-4 py-2 font-medium">신청일</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {filtered.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">해당 조건의 결재 내역이 없습니다</td></tr>
+            ) : filtered.map((req: any) => {
+              const days = dayjs(req.end_date).diff(dayjs(req.start_date), 'day') + 1
+              return (
+                <tr key={req.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-2 font-medium text-gray-900">{req.user_name}</td>
+                  <td className="px-4 py-2">{typeLabels[req.type] || req.type}</td>
+                  <td className="px-4 py-2 text-gray-600">
+                    {dayjs(req.start_date).format('MM/DD')}
+                    {req.start_date !== req.end_date && ` - ${dayjs(req.end_date).format('MM/DD')}`}
+                  </td>
+                  <td className="px-4 py-2 text-gray-500">{days}일</td>
+                  <td className="px-4 py-2 text-gray-500 text-xs max-w-[200px] truncate">{req.reason || '-'}</td>
+                  <td className="px-4 py-2">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[req.status] || 'bg-gray-100 text-gray-600'}`}>
+                      {statusLabels[req.status] || req.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-gray-400 text-xs">{dayjs(req.created_at).format('MM/DD')}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   )
 }
