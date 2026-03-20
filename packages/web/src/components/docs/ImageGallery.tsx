@@ -24,6 +24,10 @@ export function ImageGallery({ documentId }: ImageGalleryProps) {
   const [filterPerson, setFilterPerson] = useState('')
   const [uploading, setUploading] = useState(false)
   const [expanded, setExpanded] = useState(true)
+  const [gridCols, setGridCols] = useState(() => {
+    const saved = localStorage.getItem('imgGridCols')
+    return saved ? parseInt(saved) : 4
+  })
   const [dragActive, setDragActive] = useState(false)
   const [uploadTags, setUploadTags] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -119,19 +123,34 @@ export function ImageGallery({ documentId }: ImageGalleryProps) {
   return (
     <div className="border-t mt-4">
       {/* Header */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 w-full px-4 py-3 text-left hover:bg-gray-50"
-      >
-        {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        <Image size={16} className="text-gray-500" />
-        <span className="text-sm font-medium text-gray-700">이미지</span>
-        {images.length > 0 && (
-          <span className="px-1.5 py-0.5 text-xs bg-gray-200 text-gray-600 rounded-full">
-            {images.length}
-          </span>
+      <div className="flex items-center px-4 py-3">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-2 flex-1 text-left hover:bg-gray-50 rounded -ml-2 px-2 py-1"
+        >
+          {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          <Image size={16} className="text-gray-500" />
+          <span className="text-sm font-medium text-gray-700">이미지</span>
+          {images.length > 0 && (
+            <span className="px-1.5 py-0.5 text-xs bg-gray-200 text-gray-600 rounded-full">
+              {images.length}
+            </span>
+          )}
+        </button>
+        {expanded && (
+          <div className="flex items-center gap-0.5 border rounded-lg px-1 py-0.5">
+            {[2, 3, 4, 5, 6].map(n => (
+              <button
+                key={n}
+                onClick={() => { setGridCols(n); localStorage.setItem('imgGridCols', String(n)) }}
+                className={`w-6 h-6 text-xs rounded ${gridCols === n ? 'bg-primary-100 text-primary-700 font-bold' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
         )}
-      </button>
+      </div>
 
       {expanded && (
         <div className="px-4 pb-4">
@@ -210,7 +229,7 @@ export function ImageGallery({ documentId }: ImageGalleryProps) {
 
           {/* Image Grid */}
           {images.length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
               {images.map((img: any) => (
                 <div
                   key={img.id}
