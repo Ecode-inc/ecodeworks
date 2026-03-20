@@ -85,6 +85,7 @@ const getActions = [
       { path: '/action/tag-doc-image', desc: '이미지 태그 추가', params: 'id (이미지 ID), tags (쉼표 구분, 예: 워크샵,단체사진)' },
       { path: '/action/tag-person-in-image', desc: '이미지 인물 태그', params: 'id (이미지 ID), name (인물명)' },
       { path: '/action/search-images', desc: '이미지 검색 (태그/인물)', params: 'tag, person, document_id (선택)' },
+      { path: '/action/find-doc-images', desc: '문서 제목으로 이미지 검색 (핵심!)', params: 'q (문서 제목, 예: 워크샵), person (인물 필터), tag (태그 필터)' },
       { path: '/action/bulk-tag-person', desc: '일괄 인물 태그', params: 'image_ids (쉼표 구분 ID), name (인물명)' },
     ],
   },

@@ -81,6 +81,7 @@ aiRoutes.get('/actions', (c) => {
         'tag-doc-image': 'id (image ID), tags (comma-separated)',
         'tag-person-in-image': 'id (image ID), name',
         'search-images': 'tag, person, document_id',
+        'find-doc-images': 'q (문서 제목 검색, 예: 워크샵), person (인물 필터), tag (태그 필터) - 문서 제목으로 이미지를 한번에 검색',
         'bulk-tag-person': 'image_ids (comma-separated), name',
       },
       doc_files: {
@@ -2700,7 +2701,70 @@ aiRoutes.get('/action/search-images', async (c) => {
 
   query += ' ORDER BY created_at DESC LIMIT 100'
   const { results } = await c.env.DB.prepare(query).bind(...params).all()
-  return c.json({ images: results })
+
+  // Add full URLs
+  const org = await c.env.DB.prepare('SELECT slug FROM organizations WHERE id = ?').bind(orgId).first<{ slug: string }>()
+  const withUrls = (results || []).map((img: any) => ({
+    ...img,
+    full_url: `https://ecode-internal-api.justin21lee.workers.dev/api/files/${encodeURI(img.file_url)}`,
+  }))
+
+  return c.json({ images: withUrls })
+})
+
+// 문서 제목으로 이미지 검색 (한 번에)
+aiRoutes.get('/action/find-doc-images', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const q = c.req.query('q')          // 문서 제목 검색어 (예: "워크샵")
+  const person = c.req.query('person') // 인물 필터
+  const tag = c.req.query('tag')       // 태그 필터
+
+  if (!q) return c.json({ error: 'q (문서 제목 검색어) required' }, 400)
+
+  // 1. Find documents matching the title
+  const { results: docs } = await c.env.DB.prepare(`
+    SELECT d.id, d.title FROM documents d
+    JOIN departments dept ON dept.id = d.department_id
+    WHERE d.title LIKE ? AND dept.org_id = ? AND d.is_folder = 0
+    LIMIT 5
+  `).bind(`%${q}%`, orgId).all()
+
+  if (!docs || docs.length === 0) {
+    return c.json({ error: `"${q}" 관련 문서를 찾을 수 없습니다`, documents: [], images: [] })
+  }
+
+  // 2. Get images from those documents
+  const docIds = docs.map((d: any) => d.id)
+  const placeholders = docIds.map(() => '?').join(',')
+
+  let imgQuery = `SELECT * FROM doc_images WHERE org_id = ? AND document_id IN (${placeholders})`
+  const imgParams: unknown[] = [orgId, ...docIds]
+
+  if (person) {
+    imgQuery += ' AND people LIKE ?'
+    imgParams.push(`%${person}%`)
+  }
+  if (tag) {
+    imgQuery += ' AND tags LIKE ?'
+    imgParams.push(`%${tag}%`)
+  }
+
+  imgQuery += ' ORDER BY created_at DESC LIMIT 50'
+  const { results: images } = await c.env.DB.prepare(imgQuery).bind(...imgParams).all()
+
+  const withUrls = (images || []).map((img: any) => ({
+    ...img,
+    full_url: `https://ecode-internal-api.justin21lee.workers.dev/api/files/${encodeURI(img.file_url)}`,
+  }))
+
+  return c.json({
+    documents: docs,
+    images: withUrls,
+    count: withUrls.length,
+    message: `"${q}" 관련 문서에서 ${withUrls.length}개의 이미지를 찾았습니다`,
+  })
 })
 
 // 일괄 인물 태그
