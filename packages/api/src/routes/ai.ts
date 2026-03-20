@@ -83,6 +83,10 @@ aiRoutes.get('/actions', (c) => {
         'search-images': 'tag, person, document_id',
         'bulk-tag-person': 'image_ids (comma-separated), name',
       },
+      doc_files: {
+        'list-doc-files': 'document_id',
+        'create-weekly-meeting-doc': 'week_date (YYYY-MM-DD, default today), folder_name (default 주간회의)',
+      },
     },
     privacy: {
       calendar_context: 'context=group hides personal events, context=private&user_id=X shows personal',
@@ -2734,4 +2738,82 @@ aiRoutes.get('/action/bulk-tag-person', async (c) => {
   }
 
   return c.json({ success: true, updated_count: updated.length, updated_ids: updated })
+})
+
+// ══════════════════════════════════════════════════════════════
+// Document Files Actions
+// ══════════════════════════════════════════════════════════════
+
+// List doc files
+aiRoutes.get('/action/list-doc-files', async (c) => {
+  const orgId = c.get('apiKeyOrgId')
+  const documentId = c.req.query('document_id')
+
+  if (!documentId) return c.json({ error: 'document_id is required' }, 400)
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM doc_files WHERE document_id = ? AND org_id = ? ORDER BY created_at DESC'
+  ).bind(documentId, orgId).all()
+
+  return c.json({ files: results })
+})
+
+// Create weekly meeting document
+aiRoutes.get('/action/create-weekly-meeting-doc', async (c) => {
+  const orgId = c.get('apiKeyOrgId')
+  const now = new Date(Date.now() + 9 * 60 * 60 * 1000) // KST
+  const todayKST = now.toISOString().slice(0, 10)
+  const weekDate = c.req.query('week_date') || todayKST
+  const folderName = c.req.query('folder_name') || '주간회의'
+
+  // Calculate week number
+  const date = new Date(weekDate + 'T00:00:00+09:00')
+  const year = date.getFullYear()
+  const month = date.getMonth() + 1
+  const weekNum = Math.ceil(date.getDate() / 7)
+
+  const title = `${year}년 ${month}월 ${weekNum}주차 주간회의`
+
+  // Find any department for this org
+  const dept = await c.env.DB.prepare(
+    'SELECT id FROM departments WHERE org_id = ? ORDER BY order_index ASC LIMIT 1'
+  ).bind(orgId).first<{ id: string }>()
+
+  if (!dept) return c.json({ error: 'No department found in organization' }, 404)
+
+  // Find or create the folder
+  let folder = await c.env.DB.prepare(
+    "SELECT id FROM documents WHERE department_id = ? AND is_folder = 1 AND title = ? AND parent_id IS NULL"
+  ).bind(dept.id, folderName).first<{ id: string }>()
+
+  if (!folder) {
+    const folderId = generateId()
+    await c.env.DB.prepare(`
+      INSERT INTO documents (id, department_id, title, content, parent_id, is_folder, visibility, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, '', NULL, 1, 'company', 'ai-bot', datetime('now'), datetime('now'))
+    `).bind(folderId, dept.id, folderName).run()
+    folder = { id: folderId }
+  }
+
+  // Check if document with same title already exists
+  const existing = await c.env.DB.prepare(
+    "SELECT id, title FROM documents WHERE parent_id = ? AND title = ? AND is_folder = 0"
+  ).bind(folder.id, title).first<{ id: string; title: string }>()
+
+  if (existing) {
+    return c.json({ document: existing, message: 'Document already exists', created: false })
+  }
+
+  // Create the document inside the folder
+  const docId = generateId()
+  const content = `# ${title}\n\n## 참석자\n\n## 안건\n\n## 논의 내용\n\n## 결정 사항\n\n## 다음 액션 아이템\n\n`
+
+  await c.env.DB.prepare(`
+    INSERT INTO documents (id, department_id, title, content, parent_id, is_folder, visibility, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 0, 'company', 'ai-bot', datetime('now'), datetime('now'))
+  `).bind(docId, dept.id, title, content, folder.id).run()
+
+  const document = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first()
+
+  return c.json({ document, created: true, folder_id: folder.id })
 })

@@ -8,6 +8,7 @@ import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
 import { FileText, Folder, FolderOpen, FolderPlus, FilePlus, Search, ChevronRight, ChevronDown, Clock, Share2, Building2, Users, UserIcon, Trash2, Link, Copy, Check, X as XIcon } from 'lucide-react'
 import { ImageGallery } from './ImageGallery'
+import { FileAttachments } from './FileAttachments'
 
 export function DocsPage() {
   const { docId: urlDocId } = useParams<{ docId?: string }>()
@@ -301,7 +302,10 @@ export function DocsPage() {
                     <MarkdownPreview content={selectedDoc.content || ''} fontSize={fontSize} />
                   </div>
                   {!selectedDoc.is_folder && (
-                    <ImageGallery documentId={selectedDoc.id} />
+                    <>
+                      <ImageGallery documentId={selectedDoc.id} />
+                      <FileAttachments documentId={selectedDoc.id} />
+                    </>
                   )}
                 </>
               )}

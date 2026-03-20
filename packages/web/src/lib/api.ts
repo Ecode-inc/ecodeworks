@@ -470,6 +470,24 @@ export const purchaseApi = {
   seedCategories: () => request<{ categories: any[] }>('/purchases/categories/seed', { method: 'POST' }),
 }
 
+// Document Files
+export const docFileApi = {
+  list: (documentId: string) =>
+    request<{ files: any[] }>(`/doc-files?document_id=${documentId}`),
+  upload: async (documentId: string, file: File): Promise<{ file: any }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('document_id', documentId)
+    const headers: Record<string, string> = {}
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`
+    const res = await fetch(`${API_BASE}/doc-files/upload`, { method: 'POST', headers, body: formData })
+    if (!res.ok) throw new Error('Upload failed')
+    return res.json()
+  },
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/doc-files/${id}`, { method: 'DELETE' }),
+}
+
 // Telegram Integration
 export const telegramApi = {
   listChats: () => request<{ chats: any[] }>('/telegram/chats'),

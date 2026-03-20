@@ -23,6 +23,7 @@ import { attendanceRoutes } from './routes/attendance'
 import { leaveRoutes } from './routes/leave'
 import { purchasesRoutes } from './routes/purchases'
 import { docImagesRoutes } from './routes/docImages'
+import { docFilesRoutes } from './routes/docFiles'
 import { WebSocketRoom } from './durable/WebSocketRoom'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -148,6 +149,9 @@ app.route('/api/purchases', purchasesRoutes)
 
 // Document Images
 app.route('/api/doc-images', docImagesRoutes)
+
+// Document Files
+app.route('/api/doc-files', docFilesRoutes)
 
 // Positions
 app.route('/api/positions', positionsRoutes)
