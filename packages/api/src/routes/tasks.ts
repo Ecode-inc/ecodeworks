@@ -23,7 +23,9 @@ tasksRoutes.get('/all', async (c) => {
            b.department_id,
            d.name as department_name,
            bc.name as column_name,
-           bc.color as column_color
+           bc.color as column_color,
+           (SELECT COUNT(*) FROM task_document_links WHERE task_id = t.id) as doc_link_count,
+           (SELECT COUNT(*) FROM task_qa_links WHERE task_id = t.id) as qa_link_count
     FROM tasks t
     JOIN boards b ON b.id = t.board_id
     JOIN departments d ON d.id = b.department_id
@@ -67,6 +69,8 @@ tasksRoutes.post('/', async (c) => {
     priority?: string
     labels?: string[]
     due_date?: string
+    document_ids?: string[]
+    qa_link_ids?: string[]
   }>()
 
   if (!body.board_id || !body.column_id || !body.title) {
@@ -97,13 +101,21 @@ tasksRoutes.post('/', async (c) => {
     ...assigneeIds.map(uid =>
       c.env.DB.prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)').bind(id, uid)
     ),
+    ...(body.document_ids || []).filter(Boolean).map(docId =>
+      c.env.DB.prepare('INSERT INTO task_document_links (task_id, document_id) VALUES (?, ?)').bind(id, docId)
+    ),
+    ...(body.qa_link_ids || []).filter(Boolean).map(qaId =>
+      c.env.DB.prepare('INSERT INTO task_qa_links (task_id, qa_link_id) VALUES (?, ?)').bind(id, qaId)
+    ),
   ]
   await c.env.DB.batch(statements)
 
   const task = await c.env.DB.prepare(
     `SELECT t.*,
             GROUP_CONCAT(u.id) as assignee_ids,
-            GROUP_CONCAT(u.name) as assignee_names
+            GROUP_CONCAT(u.name) as assignee_names,
+            (SELECT COUNT(*) FROM task_document_links WHERE task_id = t.id) as doc_link_count,
+            (SELECT COUNT(*) FROM task_qa_links WHERE task_id = t.id) as qa_link_count
      FROM tasks t
      LEFT JOIN task_assignees ta ON ta.task_id = t.id
      LEFT JOIN users u ON u.id = ta.user_id
@@ -174,6 +186,32 @@ tasksRoutes.patch('/:id', async (c) => {
     }
   }
 
+  // Update document links if provided
+  const documentIds = body.document_ids as string[] | undefined
+  if (documentIds !== undefined) {
+    statements.push(
+      c.env.DB.prepare('DELETE FROM task_document_links WHERE task_id = ?').bind(taskId)
+    )
+    for (const docId of documentIds.filter(Boolean)) {
+      statements.push(
+        c.env.DB.prepare('INSERT INTO task_document_links (task_id, document_id) VALUES (?, ?)').bind(taskId, docId)
+      )
+    }
+  }
+
+  // Update QA links if provided
+  const qaLinkIds = body.qa_link_ids as string[] | undefined
+  if (qaLinkIds !== undefined) {
+    statements.push(
+      c.env.DB.prepare('DELETE FROM task_qa_links WHERE task_id = ?').bind(taskId)
+    )
+    for (const qaId of qaLinkIds.filter(Boolean)) {
+      statements.push(
+        c.env.DB.prepare('INSERT INTO task_qa_links (task_id, qa_link_id) VALUES (?, ?)').bind(taskId, qaId)
+      )
+    }
+  }
+
   if (statements.length > 0) {
     await c.env.DB.batch(statements)
   }
@@ -181,13 +219,27 @@ tasksRoutes.patch('/:id', async (c) => {
   const task = await c.env.DB.prepare(
     `SELECT t.*,
             GROUP_CONCAT(u.id) as assignee_ids,
-            GROUP_CONCAT(u.name) as assignee_names
+            GROUP_CONCAT(u.name) as assignee_names,
+            (SELECT COUNT(*) FROM task_document_links WHERE task_id = t.id) as doc_link_count,
+            (SELECT COUNT(*) FROM task_qa_links WHERE task_id = t.id) as qa_link_count
      FROM tasks t
      LEFT JOIN task_assignees ta ON ta.task_id = t.id
      LEFT JOIN users u ON u.id = ta.user_id
      WHERE t.id = ?
      GROUP BY t.id`
   ).bind(taskId).first()
+
+  // Also fetch linked document_ids and qa_link_ids for the response
+  if (task) {
+    const { results: docLinks } = await c.env.DB.prepare(
+      'SELECT document_id FROM task_document_links WHERE task_id = ?'
+    ).bind(taskId).all()
+    const { results: qaLinks } = await c.env.DB.prepare(
+      'SELECT qa_link_id FROM task_qa_links WHERE task_id = ?'
+    ).bind(taskId).all()
+    ;(task as any).document_ids = (docLinks || []).map((r: any) => r.document_id)
+    ;(task as any).qa_link_ids = (qaLinks || []).map((r: any) => r.qa_link_id)
+  }
 
   // Broadcast
   if (task) {

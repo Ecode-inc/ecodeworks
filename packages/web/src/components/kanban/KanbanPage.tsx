@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useOrgStore } from '../../stores/orgStore'
 import { useAuthStore } from '../../stores/authStore'
-import { boardsApi, tasksApi, membersApi } from '../../lib/api'
+import { boardsApi, tasksApi, membersApi, docsApi, qaApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { Plus, GripVertical, User, Trash2, Pencil, X, Check } from 'lucide-react'
+import { Plus, GripVertical, User, Trash2, Pencil, X, Check, Search } from 'lucide-react'
 
 const COLUMN_COLORS = [
   '#6b7280', '#ef4444', '#f97316', '#eab308', '#22c55e',
@@ -239,6 +239,14 @@ export function KanbanPage() {
     low: 'border-l-gray-300',
   }
 
+  const handleTaskSave = () => {
+    if (viewMode === 'unified') {
+      loadAllTasks()
+    } else if (selectedBoard) {
+      loadBoard(selectedBoard.id)
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -284,7 +292,7 @@ export function KanbanPage() {
       </div>
 
       {/* Board header area */}
-      {selectedBoard && (
+      {selectedBoard && viewMode === 'board' && (
         <div className="flex items-center gap-3 mb-4 p-3 bg-white border rounded-lg">
           {editingBoardName ? (
             <div className="flex items-center gap-2">
@@ -432,7 +440,7 @@ export function KanbanPage() {
                     try {
                       if (Array.isArray(task.labels)) return task.labels
                       let parsed = JSON.parse(task.labels || '[]')
-                      // Handle double-encoded: "\"[]\"" → "[]" → []
+                      // Handle double-encoded: "\"[]\"" -> "[]" -> []
                       if (typeof parsed === 'string') parsed = JSON.parse(parsed)
                       return Array.isArray(parsed) ? parsed : []
                     } catch { return [] }
@@ -474,7 +482,7 @@ export function KanbanPage() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-800 truncate">{task.title}</p>
                           {task.description && (
-                            <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{task.description}</p>
+                            <p className="text-xs text-gray-400 mt-0.5 line-clamp-2 whitespace-pre-wrap">{task.description}</p>
                           )}
                           {task.due_date && (
                             <p className="text-xs text-gray-400 mt-1">{task.due_date}</p>
@@ -485,14 +493,22 @@ export function KanbanPage() {
                                 <span key={label} className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{label}</span>
                               ))}
                             </div>
-                            {task.assignee_names && (
-                              <div className="flex items-center gap-1 text-xs text-gray-400 flex-wrap">
-                                <User size={12} />
-                                {task.assignee_names.split(',').map((name: string, i: number) => (
-                                  <span key={i} className="bg-gray-50 px-1 rounded">{name.trim()}</span>
-                                ))}
-                              </div>
-                            )}
+                            <div className="flex items-center gap-1.5">
+                              {Number(task.doc_link_count) > 0 && (
+                                <span className="text-[10px] text-gray-400" title="연결된 문서">{'📄'}{task.doc_link_count}</span>
+                              )}
+                              {Number(task.qa_link_count) > 0 && (
+                                <span className="text-[10px] text-gray-400" title="연결된 QA">{'🐛'}{task.qa_link_count}</span>
+                              )}
+                              {task.assignee_names && (
+                                <div className="flex items-center gap-1 text-xs text-gray-400 flex-wrap">
+                                  <User size={12} />
+                                  {task.assignee_names.split(',').map((name: string, i: number) => (
+                                    <span key={i} className="bg-gray-50 px-1 rounded">{name.trim()}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -597,7 +613,7 @@ export function KanbanPage() {
         task={editingTask}
         boardId={selectedBoard?.id}
         columnId={targetColumnId}
-        onSave={() => selectedBoard && loadBoard(selectedBoard.id)}
+        onSave={handleTaskSave}
       />
     </div>
   )
@@ -615,9 +631,20 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
   const [loading, setLoading] = useState(false)
   const [members, setMembers] = useState<any[]>([])
 
+  // Document linking state
+  const [docSearchQuery, setDocSearchQuery] = useState('')
+  const [docSearchResults, setDocSearchResults] = useState<any[]>([])
+  const [selectedDocs, setSelectedDocs] = useState<any[]>([])
+  const [docSearching, setDocSearching] = useState(false)
+
+  // QA linking state
+  const [qaLinks, setQaLinks] = useState<any[]>([])
+  const [selectedQaLinks, setSelectedQaLinks] = useState<any[]>([])
+
   useEffect(() => {
     if (open) {
       membersApi.list().then(r => setMembers(r.members || [])).catch(() => {})
+      qaApi.listLinks().then(r => setQaLinks(r.links || [])).catch(() => {})
     }
   }, [open])
 
@@ -639,11 +666,39 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
       } catch {
         setLabelsText('')
       }
+      // Load linked documents and QA links if editing
+      if (task.document_ids && Array.isArray(task.document_ids)) {
+        Promise.all(task.document_ids.map((docId: string) =>
+          docsApi.get(docId).then(r => r.document).catch(() => null)
+        )).then(docs => setSelectedDocs(docs.filter(Boolean)))
+      } else {
+        setSelectedDocs([])
+      }
+      if (task.qa_link_ids && Array.isArray(task.qa_link_ids)) {
+        setSelectedQaLinks(task.qa_link_ids.map((id: string) => ({ id })))
+      } else {
+        setSelectedQaLinks([])
+      }
     } else {
       setTitle(''); setDescription(''); setPriority('medium'); setDueDate('')
       setSelectedAssigneeIds([]); setLabelsText('')
+      setSelectedDocs([]); setSelectedQaLinks([])
     }
+    setDocSearchQuery(''); setDocSearchResults([])
   }, [task, open])
+
+  const searchDocs = async (q: string) => {
+    setDocSearchQuery(q)
+    if (q.length < 2) { setDocSearchResults([]); return }
+    setDocSearching(true)
+    try {
+      const r = await docsApi.search(q)
+      setDocSearchResults((r.documents || []).filter(
+        (d: any) => !selectedDocs.some(sd => sd.id === d.id)
+      ))
+    } catch { setDocSearchResults([]) }
+    finally { setDocSearching(false) }
+  }
 
   const handleSubmit = async () => {
     if (!title) return
@@ -661,6 +716,8 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
           due_date: dueDate || null,
           assignee_ids: selectedAssigneeIds,
           labels: JSON.stringify(labels),
+          document_ids: selectedDocs.map(d => d.id),
+          qa_link_ids: selectedQaLinks.map(q => q.id),
         })
       } else {
         await tasksApi.create({
@@ -672,6 +729,8 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
           due_date: dueDate || null,
           assignee_ids: selectedAssigneeIds,
           labels: JSON.stringify(labels),
+          document_ids: selectedDocs.map(d => d.id),
+          qa_link_ids: selectedQaLinks.map(q => q.id),
         })
       }
       onSave(); onClose()
@@ -693,7 +752,7 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
 
   return (
     <Modal open={open} onClose={onClose} title={task ? '태스크 수정' : '태스크 추가'}>
-      <div className="space-y-4">
+      <div className="space-y-4 max-h-[80vh] overflow-y-auto">
         <Input label="제목" value={title} onChange={e => setTitle(e.target.value)} required />
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">설명</label>
@@ -702,7 +761,8 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
             value={description}
             onChange={e => setDescription(e.target.value)}
             className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-            rows={3}
+            rows={8}
+            style={{ minHeight: '200px' }}
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -779,6 +839,98 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
             </div>
           )}
         </div>
+
+        {/* Document linking */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">문서 연결</label>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="문서 제목으로 검색..."
+              value={docSearchQuery}
+              onChange={e => searchDocs(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none pl-8"
+            />
+            <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
+          </div>
+          {docSearching && <p className="text-xs text-gray-400 mt-1">검색 중...</p>}
+          {docSearchResults.length > 0 && (
+            <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto">
+              {docSearchResults.map((doc: any) => (
+                <button
+                  key={doc.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedDocs(prev => [...prev, doc])
+                    setDocSearchResults(prev => prev.filter(d => d.id !== doc.id))
+                    setDocSearchQuery('')
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                >
+                  {doc.title}
+                </button>
+              ))}
+            </div>
+          )}
+          {selectedDocs.length > 0 && (
+            <div className="flex gap-1 flex-wrap mt-1.5">
+              {selectedDocs.map(doc => (
+                <span key={doc.id} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  {'📄'} {doc.title}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDocs(prev => prev.filter(d => d.id !== doc.id))}
+                    className="hover:text-green-900"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* QA linking */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">QA 연결</label>
+          <select
+            value=""
+            onChange={e => {
+              const qaLink = qaLinks.find(q => q.id === e.target.value)
+              if (qaLink && !selectedQaLinks.some(q => q.id === qaLink.id)) {
+                setSelectedQaLinks(prev => [...prev, qaLink])
+              }
+            }}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="">QA 프로젝트를 선택하세요</option>
+            {qaLinks
+              .filter(q => !selectedQaLinks.some(sq => sq.id === q.id))
+              .map(q => (
+                <option key={q.id} value={q.id}>{q.name}</option>
+              ))}
+          </select>
+          {selectedQaLinks.length > 0 && (
+            <div className="flex gap-1 flex-wrap mt-1.5">
+              {selectedQaLinks.map(qa => {
+                const fullQa = qaLinks.find(q => q.id === qa.id)
+                return (
+                  <span key={qa.id} className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    {'🐛'} {fullQa?.name || qa.id}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedQaLinks(prev => prev.filter(q => q.id !== qa.id))}
+                      className="hover:text-purple-900"
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
         <div className="flex justify-between pt-2">
           {task && (
             <Button variant="danger" size="sm" onClick={handleDelete}>
@@ -801,6 +953,18 @@ function UnifiedKanbanView({ tasks, onTaskClick }: {
   tasks: any[]
   onTaskClick: (task: any) => void
 }) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showAllDone, setShowAllDone] = useState(false)
+
+  // Filter tasks by search query
+  const filteredTasks = searchQuery.trim()
+    ? tasks.filter(t => {
+        const q = searchQuery.toLowerCase()
+        return (t.title || '').toLowerCase().includes(q) ||
+               (t.description || '').toLowerCase().includes(q)
+      })
+    : tasks
+
   // Group by column status (To Do / In Progress / Done based on column name patterns)
   const groups = [
     { key: 'todo', label: 'To Do', color: '#6B7280', match: (c: string) => /to.?do|할.?일|대기/i.test(c) },
@@ -811,7 +975,7 @@ function UnifiedKanbanView({ tasks, onTaskClick }: {
 
   const categorized = groups.map(g => ({
     ...g,
-    tasks: tasks.filter(t => {
+    tasks: filteredTasks.filter(t => {
       const colName = t.column_name || ''
       // Find first matching group
       for (const grp of groups) {
@@ -826,72 +990,121 @@ function UnifiedKanbanView({ tasks, onTaskClick }: {
     return <div className="text-center text-gray-400 py-20">태스크가 없습니다</div>
   }
 
-  return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
-      {categorized.map(group => (
-        <div key={group.key} className="flex-shrink-0 w-80 bg-gray-100 rounded-xl p-3">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: group.color }} />
-            <h3 className="text-sm font-semibold text-gray-700">{group.label}</h3>
-            <span className="text-xs text-gray-400 bg-gray-200 px-1.5 rounded-full">{group.tasks.length}</span>
-          </div>
-          <div className="space-y-2 min-h-[50px]">
-            {group.tasks.map(task => {
-              const assignees = task.assignee_names ? task.assignee_names.split(',') : []
-              const labels: string[] = (() => {
-                try {
-                  let p = typeof task.labels === 'string' ? JSON.parse(task.labels || '[]') : task.labels
-                  if (typeof p === 'string') p = JSON.parse(p)
-                  return Array.isArray(p) ? p : []
-                } catch { return [] }
-              })()
+  const DONE_LIMIT = 5
 
-              return (
-                <div
-                  key={task.id}
-                  onClick={() => onTaskClick(task)}
-                  className={`bg-white rounded-lg p-3 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${
-                    task.priority === 'urgent' ? 'border-l-red-500' :
-                    task.priority === 'high' ? 'border-l-orange-500' :
-                    task.priority === 'low' ? 'border-l-gray-300' : 'border-l-blue-500'
-                  }`}
-                >
-                  {/* Board/Dept badge */}
-                  <div className="flex items-center gap-1 mb-1.5">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 truncate max-w-[120px]">
-                      {task.department_name}
-                    </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 truncate max-w-[120px]">
-                      {task.board_name}
-                    </span>
-                  </div>
-                  <p className="text-sm font-medium text-gray-800">{task.title}</p>
-                  {task.description && (
-                    <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{task.description}</p>
-                  )}
-                  <div className="flex items-center justify-between mt-2">
-                    <div className="flex gap-1 flex-wrap">
-                      {labels.slice(0, 2).map((l: string) => (
-                        <span key={l} className="text-[10px] bg-gray-100 text-gray-600 px-1 py-0.5 rounded">{l}</span>
-                      ))}
-                      {task.due_date && (
-                        <span className="text-[10px] text-gray-400">{task.due_date}</span>
-                      )}
-                    </div>
-                    {assignees.length > 0 && (
-                      <div className="flex items-center gap-1 text-[10px] text-gray-400">
-                        <User size={10} />
-                        {assignees.slice(0, 2).join(', ')}
-                        {assignees.length > 2 && ` +${assignees.length - 2}`}
+  return (
+    <div>
+      {/* Search input */}
+      <div className="mb-4 relative max-w-xs">
+        <input
+          type="text"
+          placeholder="태스크 검색..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none pl-8"
+        />
+        <Search size={14} className="absolute left-2.5 top-2 text-gray-400" />
+      </div>
+
+      <div className="flex gap-4 overflow-x-auto pb-4">
+        {categorized.map(group => {
+          const isDone = group.key === 'done'
+          const visibleTasks = isDone && !showAllDone
+            ? group.tasks.slice(0, DONE_LIMIT)
+            : group.tasks
+          const hiddenCount = isDone ? group.tasks.length - DONE_LIMIT : 0
+
+          return (
+            <div key={group.key} className="flex-shrink-0 w-80 bg-gray-100 rounded-xl p-3">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: group.color }} />
+                <h3 className="text-sm font-semibold text-gray-700">{group.label}</h3>
+                <span className="text-xs text-gray-400 bg-gray-200 px-1.5 rounded-full">{group.tasks.length}</span>
+              </div>
+              <div className="space-y-2 min-h-[50px]">
+                {visibleTasks.map(task => {
+                  const assignees = task.assignee_names ? task.assignee_names.split(',') : []
+                  const labels: string[] = (() => {
+                    try {
+                      let p = typeof task.labels === 'string' ? JSON.parse(task.labels || '[]') : task.labels
+                      if (typeof p === 'string') p = JSON.parse(p)
+                      return Array.isArray(p) ? p : []
+                    } catch { return [] }
+                  })()
+
+                  return (
+                    <div
+                      key={task.id}
+                      onClick={() => onTaskClick(task)}
+                      className={`bg-white rounded-lg p-3 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${
+                        task.priority === 'urgent' ? 'border-l-red-500' :
+                        task.priority === 'high' ? 'border-l-orange-500' :
+                        task.priority === 'low' ? 'border-l-gray-300' : 'border-l-blue-500'
+                      }`}
+                    >
+                      {/* Board/Dept badge */}
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 truncate max-w-[120px]">
+                          {task.department_name}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 truncate max-w-[120px]">
+                          {task.board_name}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      ))}
+                      <p className="text-sm font-medium text-gray-800">{task.title}</p>
+                      {task.description && (
+                        <p className="text-xs text-gray-400 mt-0.5 line-clamp-2 whitespace-pre-wrap">{task.description}</p>
+                      )}
+                      <div className="flex items-center justify-between mt-2">
+                        <div className="flex gap-1 flex-wrap">
+                          {labels.slice(0, 2).map((l: string) => (
+                            <span key={l} className="text-[10px] bg-gray-100 text-gray-600 px-1 py-0.5 rounded">{l}</span>
+                          ))}
+                          {task.due_date && (
+                            <span className="text-[10px] text-gray-400">{task.due_date}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {Number(task.doc_link_count) > 0 && (
+                            <span className="text-[10px] text-gray-400" title="연결된 문서">{'📄'}{task.doc_link_count}</span>
+                          )}
+                          {Number(task.qa_link_count) > 0 && (
+                            <span className="text-[10px] text-gray-400" title="연결된 QA">{'🐛'}{task.qa_link_count}</span>
+                          )}
+                          {assignees.length > 0 && (
+                            <div className="flex items-center gap-1 text-[10px] text-gray-400">
+                              <User size={10} />
+                              {assignees.slice(0, 2).join(', ')}
+                              {assignees.length > 2 && ` +${assignees.length - 2}`}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                {/* Show more button for Done column */}
+                {isDone && hiddenCount > 0 && !showAllDone && (
+                  <button
+                    onClick={() => setShowAllDone(true)}
+                    className="w-full text-center text-xs text-gray-500 hover:text-primary-600 py-2 hover:bg-gray-200 rounded-lg transition-colors"
+                  >
+                    더보기 ({hiddenCount}개 더)
+                  </button>
+                )}
+                {isDone && showAllDone && group.tasks.length > DONE_LIMIT && (
+                  <button
+                    onClick={() => setShowAllDone(false)}
+                    className="w-full text-center text-xs text-gray-500 hover:text-primary-600 py-2 hover:bg-gray-200 rounded-lg transition-colors"
+                  >
+                    접기
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

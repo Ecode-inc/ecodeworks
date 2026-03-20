@@ -60,7 +60,9 @@ boardsRoutes.get('/:id', async (c) => {
   const { results: tasks } = await c.env.DB.prepare(
     `SELECT t.*,
             GROUP_CONCAT(u.id) as assignee_ids,
-            GROUP_CONCAT(u.name) as assignee_names
+            GROUP_CONCAT(u.name) as assignee_names,
+            (SELECT COUNT(*) FROM task_document_links WHERE task_id = t.id) as doc_link_count,
+            (SELECT COUNT(*) FROM task_qa_links WHERE task_id = t.id) as qa_link_count
      FROM tasks t
      LEFT JOIN task_assignees ta ON ta.task_id = t.id
      LEFT JOIN users u ON u.id = ta.user_id
