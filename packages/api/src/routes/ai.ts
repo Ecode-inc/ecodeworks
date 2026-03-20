@@ -2783,11 +2783,22 @@ aiRoutes.get('/action/find-doc-images', async (c) => {
     full_url: `https://ecode-internal-api.justin21lee.workers.dev/api/files/${encodeURI(img.file_url)}`,
   }))
 
+  // Generate share link for the first document (so users can view all images in browser)
+  let viewUrl: string | null = null
+  if (docs.length > 0) {
+    const firstDocId = (docs[0] as any).id
+    viewUrl = `https://work.e-code.kr/docs/${firstDocId}`
+  }
+
   return c.json({
     documents: docs,
-    images: withUrls,
-    count: withUrls.length,
+    images: withUrls.slice(0, 5), // limit to 5 preview images
+    total_count: withUrls.length,
+    view_url: viewUrl,
     message: `"${q}" 관련 문서에서 ${withUrls.length}개의 이미지를 찾았습니다`,
+    guide: withUrls.length > 3
+      ? `사진이 ${withUrls.length}장 있습니다. 한장씩 보내지 말고 문서 링크로 안내하세요: ${viewUrl}`
+      : '사진을 개별 전송해도 됩니다.',
   })
 })
 
