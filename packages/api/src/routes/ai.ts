@@ -2880,6 +2880,10 @@ aiRoutes.get('/action/create-weekly-meeting-doc', async (c) => {
 
   if (!dept) return c.json({ error: 'No department found in organization' }, 404)
 
+  // Get real user_id for FK
+  const ceoUser = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+  const creatorId = ceoUser?.id || (await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>())?.id || ''
+
   // Find or create the folder
   let folder = await c.env.DB.prepare(
     "SELECT id FROM documents WHERE department_id = ? AND is_folder = 1 AND title = ? AND parent_id IS NULL"
@@ -2889,8 +2893,8 @@ aiRoutes.get('/action/create-weekly-meeting-doc', async (c) => {
     const folderId = generateId()
     await c.env.DB.prepare(`
       INSERT INTO documents (id, department_id, title, content, parent_id, is_folder, visibility, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, '', NULL, 1, 'company', 'ai-bot', datetime('now'), datetime('now'))
-    `).bind(folderId, dept.id, folderName).run()
+      VALUES (?, ?, ?, '', NULL, 1, 'company', ?, datetime('now'), datetime('now'))
+    `).bind(folderId, dept.id, folderName, creatorId).run()
     folder = { id: folderId }
   }
 
@@ -2909,8 +2913,8 @@ aiRoutes.get('/action/create-weekly-meeting-doc', async (c) => {
 
   await c.env.DB.prepare(`
     INSERT INTO documents (id, department_id, title, content, parent_id, is_folder, visibility, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 0, 'company', 'ai-bot', datetime('now'), datetime('now'))
-  `).bind(docId, dept.id, title, content, folder.id).run()
+    VALUES (?, ?, ?, ?, ?, 0, 'company', ?, datetime('now'), datetime('now'))
+  `).bind(docId, dept.id, title, content, folder.id, creatorId).run()
 
   const document = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first()
 
