@@ -62,6 +62,7 @@ export function LeavePage() {
   const isCeo = user?.is_ceo
 
   const [myRequests, setMyRequests] = useState<any[]>([])
+  const [allRequests, setAllRequests] = useState<any[]>([])
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([])
   const [trashItems, setTrashItems] = useState<any[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -70,10 +71,11 @@ export function LeavePage() {
 
   const loadMyRequests = useCallback(async () => {
     try {
+      // Load ALL visible (for managers) and filter "mine" on client
       const res = await leaveApi.list({}) as any
       const items = res.leave_requests || res.requests || []
-      // CEO/admin/attendance_admin: see all, others: API already filters
-      setMyRequests(items)
+      setMyRequests(items.filter((r: any) => r.user_id === user?.id))
+      setAllRequests(items)
     } catch {
       // ignore
     }
@@ -182,6 +184,46 @@ export function LeavePage() {
           onApprove={handleApprove}
           onRefresh={() => { loadPendingApprovals(); loadMyRequests() }}
         />
+      )}
+
+      {/* All Requests (managers only, excluding own) */}
+      {isManager && allRequests.filter(r => r.user_id !== user?.id).length > 0 && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="px-4 py-3 border-b">
+            <h3 className="font-semibold text-gray-900">전체 결재 내역</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">신청자</th>
+                  <th className="text-left px-4 py-2 font-medium">유형</th>
+                  <th className="text-left px-4 py-2 font-medium">기간</th>
+                  <th className="text-left px-4 py-2 font-medium">사유</th>
+                  <th className="text-left px-4 py-2 font-medium">상태</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {allRequests.filter(r => r.user_id !== user?.id).map((req: any) => (
+                  <tr key={req.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 font-medium text-gray-900">{req.user_name}</td>
+                    <td className="px-4 py-2">{typeLabels[req.type] || req.type}</td>
+                    <td className="px-4 py-2 text-gray-600">
+                      {dayjs(req.start_date).format('MM/DD')}
+                      {req.start_date !== req.end_date && ` - ${dayjs(req.end_date).format('MM/DD')}`}
+                    </td>
+                    <td className="px-4 py-2 text-gray-500 text-xs max-w-[200px] truncate">{req.reason || '-'}</td>
+                    <td className="px-4 py-2">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[req.status] || 'bg-gray-100 text-gray-600'}`}>
+                        {statusLabels[req.status] || req.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* Trash (CEO only) */}
