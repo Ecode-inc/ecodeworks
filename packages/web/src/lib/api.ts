@@ -206,6 +206,7 @@ export const tasksApi = {
     const qs = params?.assignee_id ? `?assignee_id=${params.assignee_id}` : ''
     return request<{ tasks: any[] }>(`/tasks/all${qs}`)
   },
+  get: (id: string) => request<{ task: any }>(`/tasks/${id}`),
   create: (data: any) =>
     request<{ task: any }>('/tasks', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: any) =>
@@ -218,7 +219,7 @@ export const tasksApi = {
 
 // Documents
 export const docsApi = {
-  list: (params: { dept_id?: string; parent_id?: string }) => {
+  list: (params: { dept_id?: string; parent_id?: string; flat?: string }) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString()
     return request<{ documents: any[] }>(`/docs${qs ? `?${qs}` : ''}`)
   },

@@ -666,17 +666,21 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
       } catch {
         setLabelsText('')
       }
-      // Load linked documents and QA links if editing
-      if (task.document_ids && Array.isArray(task.document_ids)) {
-        Promise.all(task.document_ids.map((docId: string) =>
-          docsApi.get(docId).then(r => r.document).catch(() => null)
-        )).then(docs => setSelectedDocs(docs.filter(Boolean)))
+      // Load linked documents and QA from task detail API
+      if (task.id) {
+        tasksApi.get(task.id).then(r => {
+          const t = r.task
+          if (t?.document_ids?.length) {
+            Promise.all(t.document_ids.map((docId: string) =>
+              docsApi.get(docId).then(r2 => r2.document).catch(() => null)
+            )).then(docs => setSelectedDocs(docs.filter(Boolean)))
+          } else { setSelectedDocs([]) }
+          if (t?.qa_link_ids?.length) {
+            setSelectedQaLinks(t.qa_link_ids.map((id: string) => ({ id })))
+          } else { setSelectedQaLinks([]) }
+        }).catch(() => { setSelectedDocs([]); setSelectedQaLinks([]) })
       } else {
         setSelectedDocs([])
-      }
-      if (task.qa_link_ids && Array.isArray(task.qa_link_ids)) {
-        setSelectedQaLinks(task.qa_link_ids.map((id: string) => ({ id })))
-      } else {
         setSelectedQaLinks([])
       }
     } else {
@@ -687,18 +691,31 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
     setDocSearchQuery(''); setDocSearchResults([])
   }, [task, open])
 
+  // Load all docs on open for browsing
+  const [allDocs, setAllDocs] = useState<any[]>([])
+  useEffect(() => {
+    if (open) {
+      docsApi.list({ flat: 'true' } as any).then(r => setAllDocs((r.documents || []).filter((d: any) => !d.is_folder))).catch(() => {})
+    }
+  }, [open])
+
   const searchDocs = async (q: string) => {
     setDocSearchQuery(q)
-    if (q.length < 2) { setDocSearchResults([]); return }
+    if (q.length < 1) { setDocSearchResults([]); return }
     setDocSearching(true)
     try {
       const r = await docsApi.search(q)
       setDocSearchResults((r.documents || []).filter(
-        (d: any) => !selectedDocs.some(sd => sd.id === d.id)
+        (d: any) => !d.is_folder && !selectedDocs.some(sd => sd.id === d.id)
       ))
     } catch { setDocSearchResults([]) }
     finally { setDocSearching(false) }
   }
+
+  // Docs to show: search results if searching, otherwise all docs filtered
+  const visibleDocs = docSearchQuery
+    ? docSearchResults
+    : allDocs.filter(d => !selectedDocs.some(sd => sd.id === d.id)).slice(0, 10)
 
   const handleSubmit = async () => {
     if (!title) return
@@ -854,9 +871,9 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
             <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
           </div>
           {docSearching && <p className="text-xs text-gray-400 mt-1">검색 중...</p>}
-          {docSearchResults.length > 0 && (
+          {visibleDocs.length > 0 && (
             <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto">
-              {docSearchResults.map((doc: any) => (
+              {visibleDocs.map((doc: any) => (
                 <button
                   key={doc.id}
                   type="button"
@@ -913,10 +930,16 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave }: {
           {selectedQaLinks.length > 0 && (
             <div className="flex gap-1 flex-wrap mt-1.5">
               {selectedQaLinks.map(qa => {
-                const fullQa = qaLinks.find(q => q.id === qa.id)
+                const fullQa = qaLinks.find((ql: any) => ql.id === qa.id)
                 return (
                   <span key={qa.id} className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    {'🐛'} {fullQa?.name || qa.id}
+                    {fullQa?.url ? (
+                      <a href={fullQa.url} target="_blank" rel="noopener noreferrer" className="hover:underline" onClick={e => e.stopPropagation()}>
+                        {'🐛'} {fullQa.name}
+                      </a>
+                    ) : (
+                      <>{'🐛'} {fullQa?.name || qa.id}</>
+                    )}
                     <button
                       type="button"
                       onClick={() => setSelectedQaLinks(prev => prev.filter(q => q.id !== qa.id))}

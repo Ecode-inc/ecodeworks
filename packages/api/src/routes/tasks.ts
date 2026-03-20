@@ -130,6 +130,35 @@ tasksRoutes.post('/', async (c) => {
   return c.json({ task }, 201)
 })
 
+// Get task detail with linked docs/QA
+tasksRoutes.get('/:id', async (c) => {
+  const taskId = c.req.param('id')
+  const task = await c.env.DB.prepare(`
+    SELECT t.*,
+           GROUP_CONCAT(DISTINCT u.id) as assignee_ids,
+           GROUP_CONCAT(DISTINCT u.name) as assignee_names
+    FROM tasks t
+    LEFT JOIN task_assignees ta ON ta.task_id = t.id
+    LEFT JOIN users u ON u.id = ta.user_id
+    WHERE t.id = ?
+    GROUP BY t.id
+  `).bind(taskId).first()
+
+  if (!task) return c.json({ error: 'Task not found' }, 404)
+
+  const { results: docLinks } = await c.env.DB.prepare(
+    'SELECT document_id FROM task_document_links WHERE task_id = ?'
+  ).bind(taskId).all()
+  const { results: qaLinks } = await c.env.DB.prepare(
+    'SELECT qa_link_id FROM task_qa_links WHERE task_id = ?'
+  ).bind(taskId).all()
+
+  ;(task as any).document_ids = (docLinks || []).map((r: any) => r.document_id)
+  ;(task as any).qa_link_ids = (qaLinks || []).map((r: any) => r.qa_link_id)
+
+  return c.json({ task })
+})
+
 // Update task
 tasksRoutes.patch('/:id', async (c) => {
   const taskId = c.req.param('id')
