@@ -70,8 +70,10 @@ export function LeavePage() {
 
   const loadMyRequests = useCallback(async () => {
     try {
-      const res = await leaveApi.list({ user_id: user?.id })
-      setMyRequests(res.requests || [])
+      const res = await leaveApi.list({}) as any
+      const items = res.leave_requests || res.requests || []
+      // CEO/admin/attendance_admin: see all, others: API already filters
+      setMyRequests(items)
     } catch {
       // ignore
     }
@@ -80,9 +82,10 @@ export function LeavePage() {
   const loadPendingApprovals = useCallback(async () => {
     if (!isManager) return
     try {
-      const res = await leaveApi.list({ status: 'pending' })
+      const res = await leaveApi.list({ status: 'pending' }) as any
+      const items = res.leave_requests || res.requests || []
       // Filter out own requests
-      setPendingApprovals((res.requests || []).filter((r: any) => r.user_id !== user?.id))
+      setPendingApprovals(items.filter((r: any) => r.user_id !== user?.id))
     } catch {
       // ignore
     }
@@ -91,8 +94,8 @@ export function LeavePage() {
   const loadTrash = useCallback(async () => {
     if (!isCeo) return
     try {
-      const res = await leaveApi.trash()
-      setTrashItems(res.requests || [])
+      const res = await leaveApi.trash() as any
+      setTrashItems(res.leave_requests || res.requests || [])
     } catch {
       // ignore
     }

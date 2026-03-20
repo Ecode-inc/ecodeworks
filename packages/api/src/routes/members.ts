@@ -15,7 +15,7 @@ membersRoutes.get('/', async (c) => {
   const user = c.get('user')
 
   const { results } = await c.env.DB.prepare(`
-    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.position_id, u.created_at,
+    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.is_attendance_admin, u.position_id, u.created_at,
            p.name as position_name, p.level as position_level,
            GROUP_CONCAT(d.id || '::' || d.name || '::' || COALESCE(d.color,'') || '::' || ud.role, '|||') as dept_info
     FROM users u
@@ -51,7 +51,7 @@ membersRoutes.get('/:id', async (c) => {
   const memberId = c.req.param('id')
 
   const member = await c.env.DB.prepare(`
-    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.position_id, u.created_at,
+    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.is_attendance_admin, u.position_id, u.created_at,
            p.name as position_name, p.level as position_level
     FROM users u
     LEFT JOIN positions p ON p.id = u.position_id
@@ -145,10 +145,11 @@ membersRoutes.patch('/:id', async (c) => {
     return c.json({ error: 'Member not found' }, 404)
   }
 
-  const { name, is_admin: newIsAdmin, position_id } = await c.req.json<{
+  const { name, is_admin: newIsAdmin, position_id, is_attendance_admin } = await c.req.json<{
     name?: string
     is_admin?: number
     position_id?: string
+    is_attendance_admin?: number
   }>()
 
   const updates: string[] = []
@@ -169,6 +170,12 @@ membersRoutes.patch('/:id', async (c) => {
     }
     updates.push('is_admin = ?'); values.push(newIsAdmin)
   }
+  if (is_attendance_admin !== undefined) {
+    if (!user.is_ceo && !user.is_admin) {
+      return c.json({ error: 'Only CEO or admin can change attendance admin status' }, 403)
+    }
+    updates.push('is_attendance_admin = ?'); values.push(is_attendance_admin)
+  }
 
   if (updates.length === 0) {
     return c.json({ error: 'No fields to update' }, 400)
@@ -180,7 +187,7 @@ membersRoutes.patch('/:id', async (c) => {
   ).bind(...values).run()
 
   const updated = await c.env.DB.prepare(`
-    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.position_id, u.created_at,
+    SELECT u.id, u.email, u.name, u.avatar_url, u.is_ceo, u.is_admin, u.is_attendance_admin, u.position_id, u.created_at,
            p.name as position_name, p.level as position_level
     FROM users u
     LEFT JOIN positions p ON p.id = u.position_id

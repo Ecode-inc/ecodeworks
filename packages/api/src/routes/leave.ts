@@ -193,14 +193,22 @@ leaveRoutes.get('/', async (c) => {
     query += ' AND lr.is_deleted = 0'
   }
 
-  // Visibility: regular user sees own, dept head sees dept, CEO/admin sees all
-  if (!user.is_ceo && !user.is_admin) {
-    // Check if user is a dept head
-    const userDept = await getUserDepartment(c.env.DB, user.id)
-    if (userDept && userDept.role === 'head') {
-      // Dept head: sees own dept requests
-      query += ' AND (lr.user_id = ? OR lr.department_id = ?)'
-      params.push(user.id, userDept.department_id)
+  // Visibility: regular user sees own, dept head sees dept, CEO/admin/attendance_admin sees all
+  // Check attendance admin flag
+  const userRow = await c.env.DB.prepare('SELECT is_attendance_admin FROM users WHERE id = ?').bind(user.id).first<{ is_attendance_admin: number }>()
+  const isAttendanceAdmin = !!userRow?.is_attendance_admin
+
+  if (!user.is_ceo && !user.is_admin && !isAttendanceAdmin) {
+    // Check if user is a dept head for any department
+    const headDepts = await c.env.DB.prepare(
+      "SELECT department_id FROM user_departments WHERE user_id = ? AND role = 'head'"
+    ).bind(user.id).all()
+    const headDeptIds = (headDepts.results || []).map((r: any) => r.department_id)
+
+    if (headDeptIds.length > 0) {
+      const placeholders = headDeptIds.map(() => '?').join(',')
+      query += ` AND (lr.user_id = ? OR lr.department_id IN (${placeholders}))`
+      params.push(user.id, ...headDeptIds)
     } else {
       // Regular user: sees own only
       query += ' AND lr.user_id = ?'

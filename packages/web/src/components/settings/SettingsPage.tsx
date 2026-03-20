@@ -661,6 +661,22 @@ function MembersTab() {
                   />
                   관리자
                 </label>
+                <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!(m as any).is_attendance_admin}
+                    onChange={async () => {
+                      try {
+                        await membersApi.update(m.id, { is_attendance_admin: (m as any).is_attendance_admin ? 0 : 1 } as any)
+                        addToast('success', `${m.name}의 근태관리자 권한이 ${(m as any).is_attendance_admin ? '해제' : '부여'}되었습니다.`)
+                        load()
+                      } catch (err: any) { addToast('error', '변경 실패', err.message) }
+                    }}
+                    disabled={!!m.is_ceo}
+                    className="rounded border-gray-300"
+                  />
+                  근태관리자
+                </label>
               </div>
 
               {/* Position selector */}
