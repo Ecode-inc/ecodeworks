@@ -733,24 +733,32 @@ function CreateLeaveModal({
 // ── All Requests Section (managers) ──────────────────────────
 
 function AllRequestsSection({ requests, currentUserId }: { requests: any[]; currentUserId?: string }) {
-  const [filterMonth, setFilterMonth] = useState(dayjs().format('YYYY-MM'))
+  const thisYear = dayjs().startOf('year')
+  const [dateFrom, setDateFrom] = useState(thisYear.format('YYYY-MM-DD'))
+  const [dateTo, setDateTo] = useState(thisYear.endOf('year').format('YYYY-MM-DD'))
   const [filterPerson, setFilterPerson] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
+
+  const presets = [
+    { label: '작년', from: thisYear.subtract(1, 'year').format('YYYY-MM-DD'), to: thisYear.subtract(1, 'day').format('YYYY-MM-DD') },
+    { label: '올해', from: thisYear.format('YYYY-MM-DD'), to: thisYear.endOf('year').format('YYYY-MM-DD') },
+    { label: '지난달', from: dayjs().subtract(1, 'month').startOf('month').format('YYYY-MM-DD'), to: dayjs().subtract(1, 'month').endOf('month').format('YYYY-MM-DD') },
+    { label: '이번달', from: dayjs().startOf('month').format('YYYY-MM-DD'), to: dayjs().endOf('month').format('YYYY-MM-DD') },
+    { label: '다음달', from: dayjs().add(1, 'month').startOf('month').format('YYYY-MM-DD'), to: dayjs().add(1, 'month').endOf('month').format('YYYY-MM-DD') },
+  ]
 
   // Get unique people
   const people = Array.from(new Map(requests.map(r => [r.user_id, { id: r.user_id, name: r.user_name }])).values())
 
   // Filter
   const filtered = requests.filter(r => {
-    if (r.user_id === currentUserId) return false // exclude own
+    if (r.user_id === currentUserId) return false
     if (filterPerson && r.user_id !== filterPerson) return false
     if (filterStatus && r.status !== filterStatus) return false
     if (filterType && r.type !== filterType) return false
-    if (filterMonth) {
-      const m = filterMonth
-      if (r.start_date > `${m}-31` || r.end_date < `${m}-01`) return false
-    }
+    if (dateFrom && r.end_date < dateFrom) return false
+    if (dateTo && r.start_date > dateTo) return false
     return true
   })
 
@@ -772,16 +780,32 @@ function AllRequestsSection({ requests, currentUserId }: { requests: any[]; curr
       </div>
 
       {/* Filters */}
-      <div className="px-4 py-3 border-b bg-gray-50 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500">월별</span>
-          <input
-            type="month"
-            value={filterMonth}
-            onChange={e => setFilterMonth(e.target.value)}
-            className="border rounded-lg px-2 py-1 text-sm"
-          />
+      <div className="px-4 py-3 border-b bg-gray-50 space-y-2">
+        {/* Date range + presets */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="border rounded-lg px-2 py-1 text-sm" />
+            <span className="text-xs text-gray-400">~</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border rounded-lg px-2 py-1 text-sm" />
+          </div>
+          <div className="flex gap-1">
+            {presets.map(p => (
+              <button
+                key={p.label}
+                onClick={() => { setDateFrom(p.from); setDateTo(p.to) }}
+                className={`px-2 py-1 text-xs rounded-lg border transition-colors ${
+                  dateFrom === p.from && dateTo === p.to
+                    ? 'bg-primary-100 border-primary-300 text-primary-700 font-medium'
+                    : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
+        {/* Other filters */}
+        <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-gray-500">신청자</span>
           <select
@@ -835,6 +859,7 @@ function AllRequestsSection({ requests, currentUserId }: { requests: any[]; curr
               {statusLabels[s] || s} {cnt}
             </span>
           ))}
+        </div>
         </div>
       </div>
 
