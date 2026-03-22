@@ -1619,6 +1619,66 @@ aiRoutes.get('/action/create-event', async (c) => {
   return c.json({ success: true, event })
 })
 
+aiRoutes.get('/action/update-event', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'calendar:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const id = c.req.query('id')
+  if (!id) return c.json({ error: 'id (event ID) is required' }, 400)
+
+  // Check event exists and belongs to org
+  const existing = await c.env.DB.prepare(
+    'SELECT e.* FROM events e JOIN users u ON e.user_id = u.id WHERE e.id = ? AND u.org_id = ?'
+  ).bind(id, orgId).first()
+  if (!existing) return c.json({ error: 'Event not found' }, 404)
+
+  // Parse optional fields
+  const title = c.req.query('title')
+  const description = c.req.query('description')
+  const startAt = c.req.query('start_at')
+  const endAt = c.req.query('end_at')
+  const allDayParam = c.req.query('all_day')
+  const color = c.req.query('color')
+  const visibility = c.req.query('visibility')
+  const importance = c.req.query('importance')
+  const recurrenceRule = c.req.query('recurrence_rule')
+
+  // Validate enums
+  if (importance && !['normal', 'important'].includes(importance))
+    return c.json({ error: 'importance must be normal or important' }, 400)
+  if (visibility && !['personal', 'department', 'company'].includes(visibility))
+    return c.json({ error: 'visibility must be personal, department, or company' }, 400)
+
+  // Build dynamic UPDATE
+  const updates: string[] = []
+  const values: unknown[] = []
+
+  if (title !== undefined && title !== null) { updates.push('title = ?'); values.push(title) }
+  if (description !== undefined && description !== null) { updates.push('description = ?'); values.push(description) }
+  if (startAt !== undefined && startAt !== null) { updates.push('start_at = ?'); values.push(startAt) }
+  if (endAt !== undefined && endAt !== null) { updates.push('end_at = ?'); values.push(endAt) }
+  if (allDayParam !== undefined && allDayParam !== null) { updates.push('all_day = ?'); values.push(allDayParam === 'true' ? 1 : 0) }
+  if (color !== undefined && color !== null) { updates.push('color = ?'); values.push(color) }
+  if (visibility !== undefined && visibility !== null) { updates.push('visibility = ?'); values.push(visibility) }
+  if (importance !== undefined && importance !== null) { updates.push('importance = ?'); values.push(importance) }
+  if (recurrenceRule !== undefined && recurrenceRule !== null) { updates.push('recurrence_rule = ?'); values.push(recurrenceRule) }
+
+  if (updates.length === 0) return c.json({ error: 'No fields to update' }, 400)
+
+  updates.push("updated_at = datetime('now')")
+  values.push(id)
+
+  await c.env.DB.prepare(
+    `UPDATE events SET ${updates.join(', ')} WHERE id = ?`
+  ).bind(...values).run()
+
+  // Fetch updated event
+  const updated = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first()
+
+  return c.json({ success: true, event: updated })
+})
+
 aiRoutes.get('/action/create-task', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'kanban:write')) return c.json({ error: 'Insufficient scope' }, 403)
