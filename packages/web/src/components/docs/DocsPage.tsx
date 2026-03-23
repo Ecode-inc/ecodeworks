@@ -413,10 +413,10 @@ function MarkdownPreview({ content, fontSize }: { content: string; fontSize: num
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary-600 underline hover:text-primary-800" target="_blank" rel="noopener noreferrer">$1</a>')
     // Auto-link bare URLs (not already inside href="")
     .replace(/(?<!="|'>)(https?:\/\/[^\s<,)]+)/g, '<a href="$1" class="text-primary-600 underline hover:text-primary-800" target="_blank" rel="noopener noreferrer">$1</a>')
-    .replace(/\n\n/g, '<br/><br/>')
+    .replace(/\n\n/g, '<div class="mb-2"></div>')
     .replace(/\n/g, '<br/>')
 
-  return <div style={{ fontSize: `${fontSize}px`, lineHeight: '1.7' }} dangerouslySetInnerHTML={{ __html: html }} />
+  return <div style={{ fontSize: `${fontSize}px`, lineHeight: '1.5' }} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 // ── Share Modal ──────────────────────────────────────────────
