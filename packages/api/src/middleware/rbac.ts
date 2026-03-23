@@ -14,15 +14,23 @@ export function requirePermission(module: Module, requiredPermission: Permission
   return createMiddleware<{ Bindings: Env; Variables: Variables }>(
     async (c, next) => {
       const user = c.get('user')
-      const departmentId = c.req.query('dept_id') || c.req.param('dept_id')
+      let departmentId = c.req.query('dept_id') || c.req.param('dept_id')
 
-      // CEO/admin can access without dept_id (full org access)
+      // No dept_id: CEO/admin bypass, others auto-resolve from membership
       if (!departmentId) {
         if (user.is_ceo || user.is_admin) {
           await next()
           return
         }
-        return c.json({ error: 'dept_id is required' }, 400)
+        // Auto-resolve user's first department
+        const userDept = await c.env.DB.prepare(
+          'SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1'
+        ).bind(user.id).first<{ department_id: string }>()
+        if (userDept) {
+          departmentId = userDept.department_id
+        } else {
+          return c.json({ error: 'dept_id is required' }, 400)
+        }
       }
 
       // CEO has read access to everything
