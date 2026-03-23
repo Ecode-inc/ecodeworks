@@ -67,7 +67,8 @@ aiRoutes.get('/actions', (c) => {
         'list-docs': 'dept_id, parent_id, flat=true',
         'get-doc': 'id',
         'create-doc': 'title, content, department_id, parent_id OR parent_name (폴더이름으로 검색), is_folder, visibility',
-        'update-doc': 'id, title, content, append (add to existing)',
+        'update-doc': 'id, title, content, append (텍스트를 기존에 추가, 또는 append=true&content=텍스트)',
+        'doc-history': 'id (문서ID) - 변경 이력 조회',
         'get-doc-share-link': 'q (title search) or id, expiry (1d/7d/30d/none)',
         'get-folder-guide': 'parent_id',
         'update-folder-guide': 'parent_id, content',
@@ -2287,7 +2288,7 @@ aiRoutes.get('/action/update-doc', async (c) => {
   const docId = c.req.query('id')
   const title = c.req.query('title')
   const content = c.req.query('content')
-  const appendContent = c.req.query('append')  // append mode: add to existing content
+  const appendParam = c.req.query('append')
 
   if (!docId) return c.json({ error: 'id required' }, 400)
 
@@ -2302,10 +2303,20 @@ aiRoutes.get('/action/update-doc', async (c) => {
   const updates: string[] = []
   const values: unknown[] = []
   if (title) { updates.push('title = ?'); values.push(title) }
-  if (appendContent) {
-    // Append: add new content to existing (preserves existing data)
-    const newContent = existing.content ? `${existing.content}\n${appendContent}` : appendContent
-    updates.push('content = ?'); values.push(newContent)
+
+  // Append mode: if append=true, use content param as append text
+  // if append=<actual text>, use that directly (but skip "true"/"1")
+  if (appendParam) {
+    let textToAppend: string | null = null
+    if (appendParam === 'true' || appendParam === '1') {
+      textToAppend = content || null
+    } else {
+      textToAppend = appendParam
+    }
+    if (textToAppend) {
+      const newContent = existing.content ? `${existing.content}\n${textToAppend}` : textToAppend
+      updates.push('content = ?'); values.push(newContent)
+    }
   } else if (content !== undefined && content !== null) {
     updates.push('content = ?'); values.push(content)
   }
@@ -2317,8 +2328,46 @@ aiRoutes.get('/action/update-doc', async (c) => {
 
   await c.env.DB.prepare(`UPDATE documents SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
 
-  const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first()
-  return c.json({ success: true, document: doc })
+  // Save version history if content changed
+  const updatedDoc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first<any>()
+  if (updatedDoc && updatedDoc.content !== existing.content) {
+    const maxVer = await c.env.DB.prepare(
+      'SELECT COALESCE(MAX(version_number), 0) as max_ver FROM document_versions WHERE document_id = ?'
+    ).bind(docId).first<{ max_ver: number }>()
+    const ceoUser = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
+    const versionCreator = ceoUser?.id || ''
+    await c.env.DB.prepare(
+      'INSERT INTO document_versions (id, document_id, content, version_number, created_by) VALUES (?, ?, ?, ?, ?)'
+    ).bind(generateId(), docId, updatedDoc.content, (maxVer?.max_ver ?? 0) + 1, versionCreator).run()
+  }
+
+  return c.json({ success: true, document: updatedDoc })
+})
+
+// 문서 변경 이력 조회
+aiRoutes.get('/action/doc-history', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const docId = c.req.query('id')
+  if (!docId) return c.json({ error: 'id required' }, 400)
+
+  const doc = await c.env.DB.prepare(`
+    SELECT d.id, d.title FROM documents d JOIN departments dept ON dept.id = d.department_id WHERE d.id = ? AND dept.org_id = ?
+  `).bind(docId, orgId).first()
+  if (!doc) return c.json({ error: 'Document not found' }, 404)
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT dv.id, dv.version_number, dv.created_at, u.name as changed_by,
+           SUBSTR(dv.content, 1, 200) as content_preview
+    FROM document_versions dv
+    LEFT JOIN users u ON u.id = dv.created_by
+    WHERE dv.document_id = ?
+    ORDER BY dv.version_number DESC
+    LIMIT 50
+  `).bind(docId).all()
+
+  return c.json({ document: doc, versions: results || [] })
 })
 
 // 폴더 AI 가이드 조회
