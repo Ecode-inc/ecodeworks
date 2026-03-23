@@ -357,6 +357,7 @@ export function KanbanPage() {
           <UnifiedKanbanView
             tasks={allTasks}
             onTaskClick={(task) => { setEditingTask(task); setTargetColumnId(task.column_id); setShowTaskModal(true) }}
+            onRefresh={loadAllTasks}
           />
         </>
       )}
@@ -482,7 +483,7 @@ export function KanbanPage() {
                       }}
                       onClick={() => { setEditingTask(task); setTargetColumnId(task.column_id); setShowTaskModal(true) }}
                       style={{ touchAction: 'none' }}
-                      className={`bg-white rounded-lg p-3 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${priorityColors[task.priority] || ''}`}
+                      className={`bg-white rounded-lg p-3 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${priorityColors[task.priority] || ''} ${/done|완료/i.test(col.name) ? 'opacity-50' : ''}`}
                     >
                       <div className="flex items-start gap-2">
                         <GripVertical size={14} className="text-gray-300 mt-0.5 flex-shrink-0 cursor-grab" />
@@ -1065,12 +1066,14 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave, boards, uni
 
 // ── Unified Kanban View ──────────────────────────────────────
 
-function UnifiedKanbanView({ tasks, onTaskClick }: {
+function UnifiedKanbanView({ tasks, onTaskClick, onRefresh }: {
   tasks: any[]
   onTaskClick: (task: any) => void
+  onRefresh?: () => void
 }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [showAllDone, setShowAllDone] = useState(false)
+  const dragTaskRef = useRef<any>(null)
 
   // Filter tasks by search query
   const filteredTasks = searchQuery.trim()
@@ -1131,7 +1134,41 @@ function UnifiedKanbanView({ tasks, onTaskClick }: {
           const hiddenCount = isDone ? group.tasks.length - DONE_LIMIT : 0
 
           return (
-            <div key={group.key} className="flex-shrink-0 w-80 bg-gray-100 rounded-xl p-3">
+            <div
+              key={group.key}
+              className="flex-shrink-0 w-80 bg-gray-100 rounded-xl p-3"
+              data-unified-group={group.key}
+              onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('ring-2', 'ring-primary-400') }}
+              onDragLeave={e => { e.currentTarget.classList.remove('ring-2', 'ring-primary-400') }}
+              onDrop={async e => {
+                e.preventDefault()
+                e.currentTarget.classList.remove('ring-2', 'ring-primary-400')
+                const task = dragTaskRef.current
+                if (!task) return
+                // Find target column: match the group's pattern against the task's board columns
+                // We need the actual column_id. For simplicity, update column_id based on column_name match
+                const targetColName = group.label
+                const origColName = task.column_name || ''
+                if (targetColName === origColName || group.key === (
+                  /to.?do|할.?일|대기/i.test(origColName) ? 'todo' :
+                  /progress|진행/i.test(origColName) ? 'progress' :
+                  /done|완료/i.test(origColName) ? 'done' : 'other'
+                )) {
+                  dragTaskRef.current = null
+                  return // same group, no move
+                }
+                // Need to find a matching column in the task's board
+                try {
+                  const boardRes = await boardsApi.get(task.board_id)
+                  const targetCol = (boardRes.columns || []).find((c: any) => group.match(c.name))
+                  if (targetCol) {
+                    await tasksApi.update(task.id, { column_id: targetCol.id })
+                    onRefresh?.()
+                  }
+                } catch { /* ignore */ }
+                dragTaskRef.current = null
+              }}
+            >
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: group.color }} />
                 <h3 className="text-sm font-semibold text-gray-700">{group.label}</h3>
@@ -1151,12 +1188,14 @@ function UnifiedKanbanView({ tasks, onTaskClick }: {
                   return (
                     <div
                       key={task.id}
+                      draggable
+                      onDragStart={() => { dragTaskRef.current = task }}
                       onClick={() => onTaskClick(task)}
                       className={`bg-white rounded-lg p-3 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${
                         task.priority === 'urgent' ? 'border-l-red-500' :
                         task.priority === 'high' ? 'border-l-orange-500' :
                         task.priority === 'low' ? 'border-l-gray-300' : 'border-l-blue-500'
-                      }`}
+                      } ${isDone ? 'opacity-50' : ''}`}
                     >
                       {/* Board/Dept badge */}
                       <div className="flex items-center gap-1 mb-1.5">

