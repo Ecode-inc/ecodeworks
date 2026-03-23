@@ -362,6 +362,58 @@ function MyAttendanceSection() {
               </tbody>
             </table>
           </div>
+
+          {/* Monthly summary */}
+          {monthRecords.length > 0 && (() => {
+            const presentCount = monthRecords.filter(r => ['present', 'late', 'remote'].includes(r.status)).length
+            const vacationCount = monthRecords.filter(r => r.status === 'vacation').length
+            const halfDayCount = monthRecords.filter(r => r.status === 'half_day').length
+            const lateCount = monthRecords.filter(r => r.status === 'late').length
+            const remoteCount = monthRecords.filter(r => r.status === 'remote').length
+            const totalMinutes = monthRecords.reduce((sum, r) => {
+              if (!r.clock_in || !r.clock_out) return sum
+              return sum + dayjs(r.clock_out).diff(dayjs(r.clock_in), 'minute')
+            }, 0)
+            const totalH = Math.floor(totalMinutes / 60)
+            const totalM = totalMinutes % 60
+
+            return (
+              <div className="px-4 py-3 bg-gray-50 border-t flex flex-wrap gap-4 text-sm">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-500">출근</span>
+                  <span className="font-semibold text-gray-800">{presentCount}일</span>
+                </div>
+                {lateCount > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-gray-500">지각</span>
+                    <span className="font-semibold text-yellow-600">{lateCount}일</span>
+                  </div>
+                )}
+                {remoteCount > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-gray-500">재택</span>
+                    <span className="font-semibold text-blue-600">{remoteCount}일</span>
+                  </div>
+                )}
+                {vacationCount > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-gray-500">휴가</span>
+                    <span className="font-semibold text-purple-600">{vacationCount}일</span>
+                  </div>
+                )}
+                {halfDayCount > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-gray-500">반차</span>
+                    <span className="font-semibold text-orange-600">{halfDayCount}일</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <span className="text-gray-500">총 근무시간</span>
+                  <span className="font-semibold text-gray-800">{totalH}시간 {totalM}분</span>
+                </div>
+              </div>
+            )
+          })()}
         </div>
       </div>
     </div>
