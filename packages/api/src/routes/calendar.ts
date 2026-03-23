@@ -234,12 +234,15 @@ calendarRoutes.get('/events', async (c) => {
     params.push(deptId)
   }
 
-  if (start) {
-    query += ' AND e.end_at >= ?'
+  // Date filtering: recurring events bypass date filter (expanded later)
+  if (start && end) {
+    query += ' AND ((e.end_at >= ? AND e.start_at <= ?) OR e.recurrence_rule IS NOT NULL)'
+    params.push(start, end)
+  } else if (start) {
+    query += ' AND (e.end_at >= ? OR e.recurrence_rule IS NOT NULL)'
     params.push(start)
-  }
-  if (end) {
-    query += ' AND e.start_at <= ?'
+  } else if (end) {
+    query += ' AND (e.start_at <= ? OR e.recurrence_rule IS NOT NULL)'
     params.push(end)
   }
 
