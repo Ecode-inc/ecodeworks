@@ -48,7 +48,8 @@ aiRoutes.get('/actions', (c) => {
       },
       calendar: {
         'list-events': 'start (ISO), end (ISO), context (group=공유일정만/private=개인포함), user_id (private시) - 일정 조회',
-        'create-event': 'title, start_at (+09:00), end_at, telegram_user_id or user_id, visibility (personal/department/company), importance, department_id, freq, byDay, until',
+        'create-event': 'title, start_at (+09:00), end_at, visibility (personal/department/company), importance, freq, byDay, until',
+        'update-event': 'id (필수), title, description, start_at, end_at, color, visibility, importance - 전달된 필드만 수정',
       },
       kanban: {
         'list-boards': 'dept_id',
@@ -1629,6 +1630,53 @@ aiRoutes.get('/action/list-events', async (c) => {
   const { results } = await c.env.DB.prepare(query).bind(...params).all()
 
   return c.json({ events: results || [] })
+})
+
+// 일정 수정
+aiRoutes.get('/action/update-event', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'calendar:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const eventId = c.req.query('id')
+  if (!eventId) return c.json({ error: 'id required' }, 400)
+
+  // Verify event belongs to org
+  const existing = await c.env.DB.prepare(`
+    SELECT e.* FROM events e JOIN departments d ON d.id = e.department_id WHERE e.id = ? AND d.org_id = ?
+  `).bind(eventId, orgId).first<any>()
+  if (!existing) return c.json({ error: 'Event not found' }, 404)
+
+  const updates: string[] = []
+  const values: unknown[] = []
+
+  const title = c.req.query('title')
+  const description = c.req.query('description')
+  const startAt = c.req.query('start_at')
+  const endAt = c.req.query('end_at')
+  const color = c.req.query('color')
+  const visibility = c.req.query('visibility')
+  const importance = c.req.query('importance')
+  const allDay = c.req.query('all_day')
+
+  if (title) { updates.push('title = ?'); values.push(title) }
+  if (description !== undefined && description !== null) { updates.push('description = ?'); values.push(description) }
+  if (startAt) { updates.push('start_at = ?'); values.push(startAt) }
+  if (endAt) { updates.push('end_at = ?'); values.push(endAt) }
+  if (color) { updates.push('color = ?'); values.push(color) }
+  if (visibility) { updates.push('visibility = ?'); values.push(visibility) }
+  if (importance) { updates.push('importance = ?'); values.push(importance) }
+  if (allDay !== undefined && allDay !== null) { updates.push('all_day = ?'); values.push(allDay === 'true' ? 1 : 0) }
+
+  if (updates.length === 0) return c.json({ error: 'No fields to update' }, 400)
+
+  updates.push("updated_at = datetime('now')")
+  values.push(eventId)
+
+  await c.env.DB.prepare(`UPDATE events SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
+
+  const updated = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(eventId).first()
+  return c.json({ success: true, event: updated })
 })
 
 aiRoutes.get('/action/create-event', async (c) => {
