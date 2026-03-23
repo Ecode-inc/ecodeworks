@@ -62,7 +62,7 @@ aiRoutes.get('/actions', (c) => {
         'search-docs': 'q (search term) - returns folder_path',
         'list-docs': 'dept_id, parent_id, flat=true',
         'get-doc': 'id',
-        'create-doc': 'title, content, department_id, parent_id, is_folder, visibility',
+        'create-doc': 'title, content, department_id, parent_id OR parent_name (폴더이름으로 검색), is_folder, visibility',
         'update-doc': 'id, title, content, append (add to existing)',
         'get-doc-share-link': 'q (title search) or id, expiry (1d/7d/30d/none)',
         'get-folder-guide': 'parent_id',
@@ -2088,14 +2088,30 @@ aiRoutes.get('/action/create-doc', async (c) => {
   const deptId = c.req.query('department_id')
   const title = c.req.query('title')
   const content = c.req.query('content') || ''
-  const parentId = c.req.query('parent_id')
+  let parentId = c.req.query('parent_id')
+  const parentName = c.req.query('parent_name')  // find folder by name
   const isFolder = c.req.query('is_folder') === 'true'
   const visibility = c.req.query('visibility') || 'department'
 
   if (!title) return c.json({ error: 'title required' }, 400)
 
-  // Find dept
+  // Resolve parent folder by name if parent_id not provided
+  if (!parentId && parentName) {
+    const folder = await c.env.DB.prepare(`
+      SELECT d.id, d.department_id FROM documents d
+      JOIN departments dept ON dept.id = d.department_id
+      WHERE d.title LIKE ? AND d.is_folder = 1 AND dept.org_id = ?
+      ORDER BY d.created_at DESC LIMIT 1
+    `).bind(`%${parentName}%`, orgId).first<{ id: string; department_id: string }>()
+    if (folder) parentId = folder.id
+  }
+
+  // Find dept: from parent folder, then fallback
   let effectiveDeptId = deptId
+  if (!effectiveDeptId && parentId) {
+    const parent = await c.env.DB.prepare('SELECT department_id FROM documents WHERE id = ?').bind(parentId).first<{ department_id: string }>()
+    if (parent) effectiveDeptId = parent.department_id
+  }
   if (!effectiveDeptId) {
     const dept = await c.env.DB.prepare('SELECT id FROM departments WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>()
     effectiveDeptId = dept?.id || ''
