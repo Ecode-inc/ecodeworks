@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { useParams } from 'react-router-dom'
+const MDEditor = lazy(() => import('@uiw/react-md-editor'))
 import { useOrgStore } from '../../stores/orgStore'
 import { docsApi, docShareApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
@@ -288,17 +289,20 @@ export function DocsPage() {
               </div>
             </div>
 
-            <div className="flex-1 p-6 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto" data-color-mode="light">
               {editing ? (
-                <textarea
-                  value={editContent}
-                  onChange={e => setEditContent(e.target.value)}
-                  className="w-full h-full font-mono text-sm resize-none focus:outline-none"
-                  placeholder="마크다운으로 작성하세요..."
-                />
+                <Suspense fallback={<div className="p-6 text-gray-400">에디터 로딩 중...</div>}>
+                  <MDEditor
+                    value={editContent}
+                    onChange={(val) => setEditContent(val || '')}
+                    height="100%"
+                    preview="live"
+                    visibleDragbar={false}
+                  />
+                </Suspense>
               ) : (
                 <>
-                  <div className="prose prose-sm max-w-none">
+                  <div className="prose prose-sm max-w-none p-6">
                     <MarkdownPreview content={selectedDoc.content || ''} fontSize={fontSize} />
                   </div>
                   {!selectedDoc.is_folder && (
