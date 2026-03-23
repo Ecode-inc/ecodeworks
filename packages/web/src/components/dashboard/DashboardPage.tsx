@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 
 const modules = [
   { key: 'calendar', icon: Calendar, label: '캘린더', path: '/calendar', color: 'bg-blue-500', desc: '일정 관리' },
-  { key: 'kanban', icon: KanbanSquare, label: '칸반', path: '/kanban', color: 'bg-green-500', desc: '업무 관리' },
+  { key: 'kanban', icon: KanbanSquare, label: '업무보드', path: '/kanban', color: 'bg-green-500', desc: '업무 관리' },
   { key: 'docs', icon: FileText, label: '문서', path: '/docs', color: 'bg-purple-500', desc: '마크다운 위키' },
   { key: 'vault', icon: KeyRound, label: '비밀번호 금고', path: '/vault', color: 'bg-amber-500', desc: '자격증명 관리' },
   { key: 'qa', icon: Bug, label: 'QA', path: '/qa', color: 'bg-red-500', desc: 'QA 대시보드' },

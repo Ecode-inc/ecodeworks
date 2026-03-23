@@ -30,7 +30,7 @@ const navItems = [
   { path: '/attendance', icon: Clock, label: '근태관리' },
   { path: '/leave', icon: CalendarDays, label: '휴가/결재', badgeKey: 'leave' as const },
   { path: '/purchases', icon: ShoppingCart, label: '비품구매' },
-  { path: '/kanban', icon: KanbanSquare, label: '칸반' },
+  { path: '/kanban', icon: KanbanSquare, label: '업무보드' },
   { path: '/docs', icon: FileText, label: '문서' },
   { path: '/vault', icon: KeyRound, label: '비밀번호 금고' },
   { path: '/qa', icon: Bug, label: 'QA' },
