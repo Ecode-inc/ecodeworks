@@ -20,6 +20,7 @@ import { Hono } from 'hono'
 import type { Env } from '../types'
 import { apiKeyMiddleware } from '../middleware/apiKey'
 import { generateId } from '../lib/id'
+import { encrypt, decrypt } from '../lib/crypto'
 
 type Variables = { apiKeyOrgId: string; apiKeyScopes: string[] }
 
@@ -100,12 +101,18 @@ aiRoutes.get('/actions', (c) => {
         'list-doc-files': 'document_id',
         'create-weekly-meeting-doc': 'week_date (YYYY-MM-DD, default today), folder_name (default 주간회의)',
       },
+      vault: {
+        'set-vault-pin': 'pin (4-8자리 숫자), telegram_user_id or user_id or email',
+        'create-credential': 'service_name, username, password, url (선택), telegram_user_id or user_id or email',
+        'view-credential': 'service_name, pin (4-8자리), telegram_user_id or user_id or email',
+      },
     },
     privacy: {
       calendar_context: 'context=group hides personal events, context=private&user_id=X shows personal',
     },
     safety: {
-      blocked: ['DELETE operations', 'vault password exposure', 'user/org structure modification'],
+      blocked: ['DELETE operations', 'user/org structure modification'],
+      vault_pin: 'credential view requires PIN verification',
     },
   })
 })
@@ -3453,4 +3460,151 @@ aiRoutes.get('/action/rename-doc-file', async (c) => {
 
   const updated = await c.env.DB.prepare('SELECT * FROM doc_files WHERE id = ?').bind(fileId).first()
   return c.json({ success: true, file: updated })
+})
+
+// ── Vault PIN & Credential Actions ──────────────────────────────
+
+// Helper: resolve user from telegram_user_id / user_id / email
+async function resolveVaultUser(c: any, orgId: string): Promise<{ userId: string } | { error: string }> {
+  const tgUserId = c.req.query('telegram_user_id')
+  const directUserId = c.req.query('user_id')
+  const email = c.req.query('email')
+
+  let userId = directUserId
+  if (!userId && tgUserId) {
+    const mapping = await c.env.DB.prepare(
+      'SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1'
+    ).bind(orgId, tgUserId).first() as { user_id: string } | null
+    if (!mapping?.user_id) return { error: '매핑된 이코드 사용자를 찾을 수 없습니다' }
+    userId = mapping.user_id
+  }
+  if (!userId && email) {
+    const user = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND email = ?').bind(orgId, email).first() as { id: string } | null
+    if (!user) return { error: `사용자를 찾을 수 없습니다: ${email}` }
+    userId = user.id
+  }
+  if (!userId) return { error: 'telegram_user_id, user_id, or email required' }
+  return { userId }
+}
+
+// Set vault PIN
+aiRoutes.get('/action/set-vault-pin', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'vault:write') && !checkScope(scopes, 'telegram:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const pin = c.req.query('pin')
+  if (!pin || !/^\d{4,8}$/.test(pin)) return c.json({ error: 'PIN must be 4-8 digits' }, 400)
+
+  const resolved = await resolveVaultUser(c, orgId)
+  if ('error' in resolved) return c.json({ error: resolved.error }, 400)
+  const { userId } = resolved
+
+  // SHA-256 hash the PIN
+  const encoder = new TextEncoder()
+  const data = encoder.encode(pin)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = new Uint8Array(hashBuffer)
+  const pinHash = Array.from(hashArray).map(b => b.toString(16).padStart(2, '0')).join('')
+
+  await c.env.DB.prepare('UPDATE users SET vault_pin_hash = ? WHERE id = ? AND org_id = ?').bind(pinHash, userId, orgId).run()
+
+  return c.json({ success: true, message: 'Vault PIN set' })
+})
+
+// Create credential (AI)
+aiRoutes.get('/action/create-credential', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'vault:write') && !checkScope(scopes, 'telegram:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const serviceName = c.req.query('service_name')
+  const username = c.req.query('username')
+  const password = c.req.query('password')
+  const url = c.req.query('url') || ''
+
+  if (!serviceName || !username || !password) return c.json({ error: 'service_name, username, password required' }, 400)
+
+  const resolved = await resolveVaultUser(c, orgId)
+  if ('error' in resolved) return c.json({ error: resolved.error }, 400)
+  const { userId } = resolved
+
+  // Get user's department
+  const dept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(userId).first<{ department_id: string }>()
+  if (!dept) return c.json({ error: 'User has no department' }, 400)
+
+  const id = generateId()
+  const usernameEnc = await encrypt(username, c.env.VAULT_KEY)
+  const passwordEnc = await encrypt(password, c.env.VAULT_KEY)
+
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO credentials (id, department_id, service_name, url, username_enc, password_enc, notes_enc, created_by, visibility)
+       VALUES (?, ?, ?, ?, ?, ?, '', ?, 'department')`
+    ).bind(id, dept.department_id, serviceName, url, usernameEnc, passwordEnc, userId),
+    c.env.DB.prepare(
+      'INSERT INTO credential_access_log (id, credential_id, user_id, action, ip_address) VALUES (?, ?, ?, ?, ?)'
+    ).bind(generateId(), id, userId, 'create', 'ai-api'),
+  ])
+
+  return c.json({ success: true, credential: { id, service_name: serviceName, url, department_id: dept.department_id } })
+})
+
+// View credential (requires PIN verification)
+aiRoutes.get('/action/view-credential', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'vault:read') && !checkScope(scopes, 'telegram:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const serviceName = c.req.query('service_name')
+  const pin = c.req.query('pin')
+
+  if (!serviceName) return c.json({ error: 'service_name required' }, 400)
+  if (!pin) return c.json({ error: 'pin required for credential viewing' }, 400)
+
+  const resolved = await resolveVaultUser(c, orgId)
+  if ('error' in resolved) return c.json({ error: resolved.error }, 400)
+  const { userId } = resolved
+
+  // Verify PIN
+  const dbUser = await c.env.DB.prepare('SELECT vault_pin_hash FROM users WHERE id = ? AND org_id = ?').bind(userId, orgId).first<{ vault_pin_hash: string }>()
+  if (!dbUser?.vault_pin_hash) return c.json({ error: 'Vault PIN not set. Use set-vault-pin first.' }, 400)
+
+  const encoder = new TextEncoder()
+  const data = encoder.encode(pin)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = new Uint8Array(hashBuffer)
+  const pinHash = Array.from(hashArray).map(b => b.toString(16).padStart(2, '0')).join('')
+
+  if (pinHash !== dbUser.vault_pin_hash) return c.json({ error: 'Invalid PIN' }, 403)
+
+  // Find credential by service_name (visible to user)
+  const cred = await c.env.DB.prepare(
+    `SELECT c.* FROM credentials c
+     JOIN departments d ON d.id = c.department_id
+     WHERE d.org_id = ? AND c.service_name LIKE ? LIMIT 1`
+  ).bind(orgId, `%${serviceName}%`).first<any>()
+
+  if (!cred) return c.json({ error: `Credential not found: ${serviceName}` }, 404)
+
+  // Decrypt
+  const decryptedUsername = await decrypt(cred.username_enc, c.env.VAULT_KEY)
+  const decryptedPassword = await decrypt(cred.password_enc, c.env.VAULT_KEY)
+  const notes = cred.notes_enc ? await decrypt(cred.notes_enc, c.env.VAULT_KEY) : ''
+
+  // Audit log
+  await c.env.DB.prepare(
+    'INSERT INTO credential_access_log (id, credential_id, user_id, action, ip_address) VALUES (?, ?, ?, ?, ?)'
+  ).bind(generateId(), cred.id, userId, 'view', 'ai-api').run()
+
+  return c.json({
+    credential: {
+      id: cred.id,
+      service_name: cred.service_name,
+      url: cred.url,
+      username: decryptedUsername,
+      password: decryptedPassword,
+      notes,
+    },
+  })
 })

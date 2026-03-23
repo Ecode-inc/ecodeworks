@@ -260,8 +260,11 @@ export async function fetchSharedDoc(token: string): Promise<{ document: any }> 
 export const vaultApi = {
   list: (deptId: string) =>
     request<{ credentials: any[] }>(`/vault?dept_id=${deptId}`),
-  get: (id: string, deptId: string) =>
-    request<{ credential: any }>(`/vault/${id}?dept_id=${deptId}`),
+  get: (id: string, deptId: string, vaultToken?: string) => {
+    const params = new URLSearchParams({ dept_id: deptId })
+    if (vaultToken) params.set('vault_token', vaultToken)
+    return request<{ credential: any }>(`/vault/${id}?${params.toString()}`)
+  },
   create: (deptId: string, data: { service_name: string; url?: string; username: string; password: string; notes?: string }) =>
     request<{ credential: any }>(`/vault?dept_id=${deptId}`, { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, deptId: string, data: any) =>
@@ -270,6 +273,12 @@ export const vaultApi = {
     request<{ success: boolean }>(`/vault/${id}?dept_id=${deptId}`, { method: 'DELETE' }),
   auditLog: (id: string, deptId: string) =>
     request<{ logs: any[] }>(`/vault/${id}/log?dept_id=${deptId}`),
+  setPin: (pin: string) =>
+    request<{ success: boolean }>('/vault/pin', { method: 'POST', body: JSON.stringify({ pin }) }),
+  verifyPin: (pin: string) =>
+    request<{ vault_token: string; expires_in: number }>('/vault/pin/verify', { method: 'POST', body: JSON.stringify({ pin }) }),
+  pinStatus: () =>
+    request<{ has_pin: boolean; unlocked: boolean }>('/vault/pin/status'),
 }
 
 // QA

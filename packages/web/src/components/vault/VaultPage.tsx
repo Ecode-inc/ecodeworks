@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useOrgStore } from '../../stores/orgStore'
 import { vaultApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { Plus, Eye, EyeOff, Copy, ExternalLink, Shield, Clock } from 'lucide-react'
+import { Plus, Eye, EyeOff, Copy, ExternalLink, Shield, Clock, Lock, Unlock } from 'lucide-react'
 
 export function VaultPage() {
   const { currentDeptId } = useOrgStore()
@@ -16,23 +16,110 @@ export function VaultPage() {
   const [auditLogs, setAuditLogs] = useState<any[]>([])
   const [showAudit, setShowAudit] = useState(false)
 
+  // PIN state
+  const [hasPin, setHasPin] = useState<boolean | null>(null)
+  const [vaultToken, setVaultToken] = useState<string | null>(null)
+  const [showPinSetup, setShowPinSetup] = useState(false)
+  const [showPinVerify, setShowPinVerify] = useState(false)
+  const [pendingCredId, setPendingCredId] = useState<string | null>(null)
+  const [remainingMinutes, setRemainingMinutes] = useState(0)
+  const lockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const tokenExpiryRef = useRef<number>(0)
+
+  // Check PIN status on mount
   useEffect(() => {
+    vaultApi.pinStatus().then(res => {
+      setHasPin(res.has_pin)
+    }).catch(() => {})
+  }, [])
+
+  // Auto-lock timer management
+  const clearTimers = useCallback(() => {
+    if (lockTimerRef.current) { clearTimeout(lockTimerRef.current); lockTimerRef.current = null }
+    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null }
+  }, [])
+
+  const startLockTimer = useCallback((expiresInSec: number) => {
+    clearTimers()
+    tokenExpiryRef.current = Date.now() + expiresInSec * 1000
+
+    lockTimerRef.current = setTimeout(() => {
+      setVaultToken(null)
+      setRemainingMinutes(0)
+      useToastStore.getState().addToast('info', '금고 잠금됨', 'PIN 세션이 만료되었습니다.')
+    }, expiresInSec * 1000)
+
+    countdownRef.current = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((tokenExpiryRef.current - Date.now()) / 60000))
+      setRemainingMinutes(remaining)
+      if (remaining <= 0 && countdownRef.current) {
+        clearInterval(countdownRef.current)
+        countdownRef.current = null
+      }
+    }, 10000)
+
+    setRemainingMinutes(Math.ceil(expiresInSec / 60))
+  }, [clearTimers])
+
+  useEffect(() => {
+    return () => clearTimers()
+  }, [clearTimers])
+
+  // Only load credentials if PIN is not set, or if unlocked
+  const canViewList = hasPin === false || (hasPin && !!vaultToken)
+  useEffect(() => {
+    if (!canViewList) { setCredentials([]); return }
     if (currentDeptId) {
       vaultApi.list(currentDeptId).then(r => setCredentials(r.credentials)).catch(() => {})
     } else {
-      // 전체 부서: load all visible credentials
       vaultApi.list('').then(r => setCredentials(r.credentials)).catch(() => setCredentials([]))
     }
-  }, [currentDeptId])
+  }, [currentDeptId, canViewList])
 
   const viewCredential = async (cred: any) => {
     if (!currentDeptId) return
+
+    // If user has PIN set and not unlocked, show PIN verify dialog
+    if (hasPin && !vaultToken) {
+      setPendingCredId(cred.id)
+      setShowPinVerify(true)
+      return
+    }
+
     try {
-      const res = await vaultApi.get(cred.id, currentDeptId)
+      const res = await vaultApi.get(cred.id, currentDeptId, vaultToken || undefined)
       setViewingCred(res.credential)
       setShowPassword(false)
     } catch (e: any) {
-      useToastStore.getState().addToast('error', '조회 실패', e.message)
+      if (e.message?.includes('PIN')) {
+        setPendingCredId(cred.id)
+        setShowPinVerify(true)
+      } else {
+        useToastStore.getState().addToast('error', '조회 실패', e.message)
+      }
+    }
+  }
+
+  const onPinVerified = async (token: string, expiresIn: number) => {
+    setVaultToken(token)
+    setShowPinVerify(false)
+    startLockTimer(expiresIn)
+
+    // Reload credential list now that we're unlocked
+    const dId = currentDeptId || ''
+    vaultApi.list(dId).then(r => setCredentials(r.credentials)).catch(() => {})
+
+    // If there was a pending credential view, fetch it now
+    if (pendingCredId && currentDeptId) {
+      try {
+        const res = await vaultApi.get(pendingCredId, currentDeptId, token)
+        setViewingCred(res.credential)
+        setShowPassword(false)
+      } catch (e: any) {
+        useToastStore.getState().addToast('error', '조회 실패', e.message)
+      }
+      setPendingCredId(null)
     }
   }
 
@@ -64,6 +151,13 @@ export function VaultPage() {
     }
   }
 
+  const handleLockVault = () => {
+    clearTimers()
+    setVaultToken(null)
+    setRemainingMinutes(0)
+    useToastStore.getState().addToast('info', '금고가 잠겼습니다')
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -71,12 +165,45 @@ export function VaultPage() {
           <Shield size={24} className="text-amber-500" />
           <h1 className="text-2xl font-bold text-gray-900">비밀번호 금고</h1>
         </div>
-        <Button size="sm" onClick={() => { setShowForm(true) }}>
-          <Plus size={14} className="mr-1" /> 추가
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* PIN status indicator */}
+          {hasPin === false && (
+            <Button size="sm" variant="secondary" onClick={() => setShowPinSetup(true)}>
+              <Lock size={14} className="mr-1" /> PIN 설정
+            </Button>
+          )}
+          {hasPin && vaultToken && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-green-600 flex items-center gap-1">
+                <Unlock size={12} /> 잠금 해제됨 ({remainingMinutes}분 남음)
+              </span>
+              <Button size="sm" variant="ghost" onClick={handleLockVault}>
+                <Lock size={14} className="mr-1" /> 잠금
+              </Button>
+            </div>
+          )}
+          {hasPin && !vaultToken && (
+            <span className="text-xs text-gray-400 flex items-center gap-1">
+              <Lock size={12} /> 잠김
+            </span>
+          )}
+          <Button size="sm" onClick={() => { setShowForm(true) }}>
+            <Plus size={14} className="mr-1" /> 추가
+          </Button>
+        </div>
       </div>
 
       {/* Credential List */}
+      {hasPin && !vaultToken ? (
+        <div className="bg-white rounded-xl border p-12 text-center">
+          <Lock size={48} className="mx-auto text-gray-300 mb-4" />
+          <h3 className="text-lg font-semibold text-gray-700 mb-2">금고가 잠겨 있습니다</h3>
+          <p className="text-sm text-gray-500 mb-4">PIN을 입력하여 잠금을 해제하세요</p>
+          <Button onClick={() => { setPendingCredId(null); setShowPinVerify(true) }}>
+            <Unlock size={16} className="mr-1" /> 잠금 해제
+          </Button>
+        </div>
+      ) : (
       <div className="bg-white rounded-xl border divide-y">
         {credentials.map(cred => (
           <div key={cred.id} className="flex items-center justify-between px-5 py-3 hover:bg-gray-50">
@@ -109,6 +236,7 @@ export function VaultPage() {
           <div className="text-center text-gray-400 py-12">저장된 자격증명이 없습니다</div>
         )}
       </div>
+      )}
 
       {/* View Credential Modal */}
       <Modal open={!!viewingCred} onClose={() => setViewingCred(null)} title={viewingCred?.service_name || ''}>
@@ -191,7 +319,134 @@ export function VaultPage() {
           {auditLogs.length === 0 && <p className="text-sm text-gray-400 text-center py-4">로그가 없습니다</p>}
         </div>
       </Modal>
+
+      {/* PIN Setup Modal */}
+      <PinSetupModal
+        open={showPinSetup}
+        onClose={() => setShowPinSetup(false)}
+        onSuccess={() => {
+          setHasPin(true)
+          setShowPinSetup(false)
+          useToastStore.getState().addToast('success', 'PIN 설정 완료')
+        }}
+      />
+
+      {/* PIN Verify Modal */}
+      <PinVerifyModal
+        open={showPinVerify}
+        onClose={() => { setShowPinVerify(false); setPendingCredId(null) }}
+        onVerified={onPinVerified}
+      />
     </div>
+  )
+}
+
+function PinSetupModal({ open, onClose, onSuccess }: {
+  open: boolean; onClose: () => void; onSuccess: () => void
+}) {
+  const [pin, setPin] = useState('')
+  const [confirmPin, setConfirmPin] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async () => {
+    setError('')
+    if (!/^\d{4,8}$/.test(pin)) {
+      setError('PIN은 4~8자리 숫자여야 합니다')
+      return
+    }
+    if (pin !== confirmPin) {
+      setError('PIN이 일치하지 않습니다')
+      return
+    }
+    setLoading(true)
+    try {
+      await vaultApi.setPin(pin)
+      setPin(''); setConfirmPin('')
+      onSuccess()
+    } catch (e: any) {
+      setError(e.message)
+    } finally { setLoading(false) }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="비밀번호 금고 PIN 설정">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">
+          금고 열람 시 사용할 PIN을 설정하세요. 4~8자리 숫자를 입력하세요.
+        </p>
+        <Input
+          label="PIN"
+          type="password"
+          value={pin}
+          onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+          placeholder="4~8자리 숫자"
+          maxLength={8}
+        />
+        <Input
+          label="PIN 확인"
+          type="password"
+          value={confirmPin}
+          onChange={e => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+          placeholder="PIN을 다시 입력하세요"
+          maxLength={8}
+        />
+        {error && <p className="text-sm text-red-500">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>취소</Button>
+          <Button onClick={handleSubmit} loading={loading}>설정</Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function PinVerifyModal({ open, onClose, onVerified }: {
+  open: boolean; onClose: () => void; onVerified: (token: string, expiresIn: number) => void
+}) {
+  const [pin, setPin] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (open) { setPin(''); setError('') }
+  }, [open])
+
+  const handleSubmit = async () => {
+    if (!pin) return
+    setError('')
+    setLoading(true)
+    try {
+      const res = await vaultApi.verifyPin(pin)
+      setPin('')
+      onVerified(res.vault_token, res.expires_in)
+    } catch (e: any) {
+      setError(e.message === 'Invalid PIN' ? 'PIN이 올바르지 않습니다' : e.message)
+    } finally { setLoading(false) }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="금고 잠금 해제">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">
+          자격증명을 열람하려면 PIN을 입력하세요.
+        </p>
+        <Input
+          label="PIN"
+          type="password"
+          value={pin}
+          onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+          placeholder="PIN 입력"
+          maxLength={8}
+          onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
+        />
+        {error && <p className="text-sm text-red-500">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>취소</Button>
+          <Button onClick={handleSubmit} loading={loading}>확인</Button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 

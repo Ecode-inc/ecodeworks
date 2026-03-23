@@ -11,6 +11,83 @@ export const credentialsRoutes = new Hono<{ Bindings: Env; Variables: Variables 
 
 credentialsRoutes.use('/*', authMiddleware)
 
+// ── Vault PIN: Set or change personal vault PIN ──
+credentialsRoutes.post('/pin', async (c) => {
+  const user = c.get('user')
+  const body = await c.req.json<{ pin: string }>()
+
+  if (!body.pin || !/^\d{4,8}$/.test(body.pin)) {
+    return c.json({ error: 'PIN must be 4-8 digits' }, 400)
+  }
+
+  // SHA-256 hash the PIN
+  const encoder = new TextEncoder()
+  const data = encoder.encode(body.pin)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = new Uint8Array(hashBuffer)
+  const pinHash = Array.from(hashArray).map(b => b.toString(16).padStart(2, '0')).join('')
+
+  await c.env.DB.prepare('UPDATE users SET vault_pin_hash = ? WHERE id = ?').bind(pinHash, user.id).run()
+
+  return c.json({ success: true, message: 'PIN set successfully' })
+})
+
+// ── Vault PIN: Verify PIN and get a temporary vault_token ──
+credentialsRoutes.post('/pin/verify', async (c) => {
+  const user = c.get('user')
+  const body = await c.req.json<{ pin: string }>()
+
+  if (!body.pin) return c.json({ error: 'pin required' }, 400)
+
+  const dbUser = await c.env.DB.prepare('SELECT vault_pin_hash FROM users WHERE id = ?').bind(user.id).first<{ vault_pin_hash: string }>()
+  if (!dbUser?.vault_pin_hash) return c.json({ error: 'No PIN set' }, 400)
+
+  // Hash the provided PIN
+  const encoder = new TextEncoder()
+  const data = encoder.encode(body.pin)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = new Uint8Array(hashBuffer)
+  const pinHash = Array.from(hashArray).map(b => b.toString(16).padStart(2, '0')).join('')
+
+  if (pinHash !== dbUser.vault_pin_hash) {
+    return c.json({ error: 'Invalid PIN' }, 403)
+  }
+
+  // Generate a random vault session token
+  const tokenBytes = crypto.getRandomValues(new Uint8Array(32))
+  const vaultToken = Array.from(tokenBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+
+  // Expires in 10 minutes
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+
+  // Clean up old sessions for this user, then insert new one
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM vault_sessions WHERE user_id = ?').bind(user.id),
+    c.env.DB.prepare('INSERT INTO vault_sessions (token, user_id, org_id, expires_at) VALUES (?, ?, ?, ?)').bind(vaultToken, user.id, user.org_id, expiresAt),
+  ])
+
+  return c.json({ vault_token: vaultToken, expires_in: 600 })
+})
+
+// ── Vault PIN: Check PIN status and unlock state ──
+credentialsRoutes.get('/pin/status', async (c) => {
+  const user = c.get('user')
+
+  const dbUser = await c.env.DB.prepare('SELECT vault_pin_hash FROM users WHERE id = ?').bind(user.id).first<{ vault_pin_hash: string }>()
+  const hasPin = !!(dbUser?.vault_pin_hash)
+
+  // Check if there's an active vault session
+  let unlocked = false
+  if (hasPin) {
+    const session = await c.env.DB.prepare(
+      'SELECT token FROM vault_sessions WHERE user_id = ? AND expires_at > ? LIMIT 1'
+    ).bind(user.id, new Date().toISOString()).first()
+    unlocked = !!session
+  }
+
+  return c.json({ has_pin: hasPin, unlocked })
+})
+
 // List credentials (metadata only - no decryption)
 credentialsRoutes.get('/', requirePermission('vault', 'read'), async (c) => {
   const user = c.get('user')
@@ -44,6 +121,22 @@ credentialsRoutes.get('/', requirePermission('vault', 'read'), async (c) => {
 credentialsRoutes.get('/:id', requirePermission('vault', 'read'), async (c) => {
   const user = c.get('user')
   const credId = c.req.param('id')
+
+  // PIN gate: if user has PIN set, require vault_token
+  const dbUser = await c.env.DB.prepare('SELECT vault_pin_hash FROM users WHERE id = ?').bind(user.id).first<{ vault_pin_hash: string }>()
+  if (dbUser?.vault_pin_hash) {
+    const vaultToken = c.req.header('X-Vault-Token') || c.req.query('vault_token')
+    if (!vaultToken) {
+      return c.json({ error: 'Vault PIN verification required', code: 'PIN_REQUIRED' }, 403)
+    }
+
+    const session = await c.env.DB.prepare(
+      'SELECT token FROM vault_sessions WHERE token = ? AND user_id = ? AND expires_at > ?'
+    ).bind(vaultToken, user.id, new Date().toISOString()).first()
+    if (!session) {
+      return c.json({ error: 'Invalid or expired vault token', code: 'PIN_REQUIRED' }, 403)
+    }
+  }
 
   const cred = await c.env.DB.prepare('SELECT * FROM credentials WHERE id = ?').bind(credId).first<any>()
   if (!cred) return c.json({ error: 'Credential not found' }, 404)

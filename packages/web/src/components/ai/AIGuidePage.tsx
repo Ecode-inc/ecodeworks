@@ -101,6 +101,14 @@ const getActions = [
     ],
   },
   {
+    category: '🔐 금고 (Vault)',
+    items: [
+      { path: '/action/set-vault-pin', desc: '금고 PIN 설정', params: 'pin (4-8자리 숫자), telegram_user_id or user_id or email' },
+      { path: '/action/create-credential', desc: '자격증명 생성', params: 'service_name, username, password, url (선택), telegram_user_id or user_id or email' },
+      { path: '/action/view-credential', desc: '자격증명 조회 (PIN 필요)', params: 'service_name, pin (4-8자리), telegram_user_id or user_id or email' },
+    ],
+  },
+  {
     category: '✅ 칸반',
     items: [
       { path: '/action/list-boards', desc: '보드 목록', params: 'dept_id (선택)' },
@@ -343,7 +351,7 @@ export function AIGuidePage({ apiKey }: AIGuidePageProps) {
           <h2 className="text-lg font-semibold text-red-800 mb-3">안전 제한</h2>
           <ul className="space-y-1.5 text-sm text-red-700">
             <li>• <strong>DELETE 차단</strong> — 리소스 삭제 불가</li>
-            <li>• <strong>비밀번호 미노출</strong> — 금고 메타데이터만 접근 가능</li>
+            <li>• <strong>금고 PIN 보호</strong> — 자격증명 조회 시 PIN 인증 필요</li>
             <li>• <strong>사용자/조직 수정 차단</strong> — 구조 변경 불가</li>
           </ul>
         </section>

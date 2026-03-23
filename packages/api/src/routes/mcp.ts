@@ -18,6 +18,7 @@
 import { Hono } from 'hono'
 import type { Env } from '../types'
 import { generateId } from '../lib/id'
+import { encrypt, decrypt } from '../lib/crypto'
 
 type Variables = { apiKeyOrgId: string; apiKeyScopes: string[] }
 
@@ -241,6 +242,52 @@ const TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: 'set_vault_pin',
+    description: '금고 PIN 설정 (4-8자리 숫자)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pin: { type: 'string', description: '4-8자리 숫자 PIN' },
+        telegram_user_id: { type: 'string', description: '텔레그램 사용자 ID' },
+        user_id: { type: 'string', description: '이코드 사용자 ID' },
+        email: { type: 'string', description: '이메일' },
+      },
+      required: ['pin'],
+    },
+  },
+  {
+    name: 'create_credential',
+    description: '금고에 자격증명 생성',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        service_name: { type: 'string', description: '서비스 이름' },
+        username: { type: 'string', description: '사용자명' },
+        password: { type: 'string', description: '비밀번호' },
+        url: { type: 'string', description: 'URL (선택)' },
+        telegram_user_id: { type: 'string', description: '텔레그램 사용자 ID' },
+        user_id: { type: 'string', description: '이코드 사용자 ID' },
+        email: { type: 'string', description: '이메일' },
+      },
+      required: ['service_name', 'username', 'password'],
+    },
+  },
+  {
+    name: 'view_credential',
+    description: '금고 자격증명 조회 (PIN 필요)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        service_name: { type: 'string', description: '서비스 이름' },
+        pin: { type: 'string', description: '금고 PIN' },
+        telegram_user_id: { type: 'string', description: '텔레그램 사용자 ID' },
+        user_id: { type: 'string', description: '이코드 사용자 ID' },
+        email: { type: 'string', description: '이메일' },
+      },
+      required: ['service_name', 'pin'],
+    },
+  },
+  {
     name: 'log_telegram_command',
     description: '텔레그램 명령 로그 기록',
     inputSchema: {
@@ -335,6 +382,7 @@ async function executeTool(
   orgId: string,
   scopes: string[],
   db: D1Database,
+  env?: Env,
 ): Promise<ToolResult> {
   const text = (data: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(data) }],
@@ -652,6 +700,104 @@ async function executeTool(
       return text({ credentials: results })
     }
 
+    case 'set_vault_pin': {
+      if (!checkScope(scopes, 'vault:write') && !checkScope(scopes, 'telegram:write')) throw new Error('Insufficient scope')
+      const pinVal = String(args.pin || '')
+      if (!pinVal || !/^\d{4,8}$/.test(pinVal)) throw new Error('PIN must be 4-8 digits')
+
+      // Resolve user
+      let userId = args.user_id as string | undefined
+      if (!userId && args.telegram_user_id) {
+        const mapping = await db.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, args.telegram_user_id).first<{ user_id: string }>()
+        if (!mapping?.user_id) throw new Error('Telegram user mapping not found')
+        userId = mapping.user_id
+      }
+      if (!userId && args.email) {
+        const user = await db.prepare('SELECT id FROM users WHERE org_id = ? AND email = ?').bind(orgId, args.email).first<{ id: string }>()
+        if (!user) throw new Error(`User not found: ${args.email}`)
+        userId = user.id
+      }
+      if (!userId) throw new Error('telegram_user_id, user_id, or email required')
+
+      const encoder = new TextEncoder()
+      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(pinVal))
+      const pinHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+      await db.prepare('UPDATE users SET vault_pin_hash = ? WHERE id = ? AND org_id = ?').bind(pinHash, userId, orgId).run()
+      return text({ success: true, message: 'Vault PIN set' })
+    }
+
+    case 'create_credential': {
+      if (!checkScope(scopes, 'vault:write') && !checkScope(scopes, 'telegram:write')) throw new Error('Insufficient scope')
+      if (!args.service_name || !args.username || !args.password) throw new Error('service_name, username, password required')
+
+      let userId = args.user_id as string | undefined
+      if (!userId && args.telegram_user_id) {
+        const mapping = await db.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, args.telegram_user_id).first<{ user_id: string }>()
+        if (!mapping?.user_id) throw new Error('Telegram user mapping not found')
+        userId = mapping.user_id
+      }
+      if (!userId && args.email) {
+        const user = await db.prepare('SELECT id FROM users WHERE org_id = ? AND email = ?').bind(orgId, args.email).first<{ id: string }>()
+        if (!user) throw new Error(`User not found: ${args.email}`)
+        userId = user.id
+      }
+      if (!userId) throw new Error('telegram_user_id, user_id, or email required')
+
+      const dept = await db.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(userId).first<{ department_id: string }>()
+      if (!dept) throw new Error('User has no department')
+
+      const credId = generateId()
+      if (!env) throw new Error('Environment not available')
+      const usernameEnc = await encrypt(args.username as string, env.VAULT_KEY)
+      const passwordEnc = await encrypt(args.password as string, env.VAULT_KEY)
+
+      await db.batch([
+        db.prepare(`INSERT INTO credentials (id, department_id, service_name, url, username_enc, password_enc, notes_enc, created_by, visibility) VALUES (?, ?, ?, ?, ?, ?, '', ?, 'department')`).bind(credId, dept.department_id, args.service_name, args.url || '', usernameEnc, passwordEnc, userId),
+        db.prepare('INSERT INTO credential_access_log (id, credential_id, user_id, action, ip_address) VALUES (?, ?, ?, ?, ?)').bind(generateId(), credId, userId, 'create', 'mcp'),
+      ])
+      return text({ success: true, credential: { id: credId, service_name: args.service_name, url: args.url || '' } })
+    }
+
+    case 'view_credential': {
+      if (!checkScope(scopes, 'vault:read') && !checkScope(scopes, 'telegram:read')) throw new Error('Insufficient scope')
+      if (!args.service_name) throw new Error('service_name required')
+      if (!args.pin) throw new Error('pin required')
+
+      let userId = args.user_id as string | undefined
+      if (!userId && args.telegram_user_id) {
+        const mapping = await db.prepare('SELECT user_id FROM telegram_user_mappings WHERE org_id = ? AND telegram_user_id = ? AND is_active = 1').bind(orgId, args.telegram_user_id).first<{ user_id: string }>()
+        if (!mapping?.user_id) throw new Error('Telegram user mapping not found')
+        userId = mapping.user_id
+      }
+      if (!userId && args.email) {
+        const user = await db.prepare('SELECT id FROM users WHERE org_id = ? AND email = ?').bind(orgId, args.email).first<{ id: string }>()
+        if (!user) throw new Error(`User not found: ${args.email}`)
+        userId = user.id
+      }
+      if (!userId) throw new Error('telegram_user_id, user_id, or email required')
+
+      // Verify PIN
+      const dbUser = await db.prepare('SELECT vault_pin_hash FROM users WHERE id = ? AND org_id = ?').bind(userId, orgId).first<{ vault_pin_hash: string }>()
+      if (!dbUser?.vault_pin_hash) throw new Error('Vault PIN not set')
+      const encoder2 = new TextEncoder()
+      const pinStr = String(args.pin)
+      const hashBuffer2 = await crypto.subtle.digest('SHA-256', encoder2.encode(pinStr))
+      const pinHash2 = Array.from(new Uint8Array(hashBuffer2)).map(b => b.toString(16).padStart(2, '0')).join('')
+      if (pinHash2 !== dbUser.vault_pin_hash) throw new Error('Invalid PIN')
+
+      const cred = await db.prepare(`SELECT c.* FROM credentials c JOIN departments d ON d.id = c.department_id WHERE d.org_id = ? AND c.service_name LIKE ? LIMIT 1`).bind(orgId, `%${args.service_name}%`).first<any>()
+      if (!cred) throw new Error(`Credential not found: ${args.service_name}`)
+
+      if (!env) throw new Error('Environment not available')
+      const decUsername = await decrypt(cred.username_enc, env.VAULT_KEY)
+      const decPassword = await decrypt(cred.password_enc, env.VAULT_KEY)
+      const decNotes = cred.notes_enc ? await decrypt(cred.notes_enc, env.VAULT_KEY) : ''
+
+      await db.prepare('INSERT INTO credential_access_log (id, credential_id, user_id, action, ip_address) VALUES (?, ?, ?, ?, ?)').bind(generateId(), cred.id, userId, 'view', 'mcp').run()
+
+      return text({ credential: { id: cred.id, service_name: cred.service_name, url: cred.url, username: decUsername, password: decPassword, notes: decNotes } })
+    }
+
     // ── Telegram ─────────────────────────────────────────
     case 'log_telegram_command': {
       if (!checkScope(scopes, 'telegram:write')) throw new Error('Insufficient scope: telegram:write required')
@@ -898,7 +1044,7 @@ mcpRoutes.post('/', async (c) => {
       }
 
       try {
-        const result = await executeTool(params.name, params.arguments || {}, orgId, scopes, c.env.DB)
+        const result = await executeTool(params.name, params.arguments || {}, orgId, scopes, c.env.DB, c.env)
         return c.json(jsonRpcSuccess(reqId, result))
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Tool execution failed'
