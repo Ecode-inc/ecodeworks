@@ -17,7 +17,7 @@ documentsRoutes.get('/', async (c) => {
   const parentId = c.req.query('parent_id')
   const flat = c.req.query('flat')
 
-  let query = `SELECT d.id, d.department_id, d.parent_id, d.title, d.is_folder, d.order_index, d.created_by, d.created_at, d.updated_at, d.visibility, d.shared FROM documents d WHERE 1=1`
+  let query = `SELECT d.id, d.department_id, d.parent_id, d.title, d.is_folder, d.order_index, d.created_by, d.created_at, d.updated_at, d.visibility, d.shared, u.name as created_by_name FROM documents d LEFT JOIN users u ON u.id = d.created_by WHERE 1=1`
   const params: unknown[] = []
 
   // Visibility filtering (CEO sees everything)
