@@ -107,7 +107,7 @@ function calcWorkHours(clockIn: string | null, clockOut: string | null): string 
 export function AttendancePage() {
   const { user } = useAuthStore()
   const { currentDeptId } = useOrgStore()
-  const isManager = user?.is_ceo || user?.is_admin || user?.is_attendance_admin
+  const isManager = !!user?.is_ceo || !!user?.is_admin || !!user?.is_attendance_admin
 
   return (
     <div className="space-y-8">
