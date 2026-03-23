@@ -25,12 +25,12 @@ interface SidebarProps {
 }
 
 const navItems = [
+  { path: '/kanban', icon: KanbanSquare, label: '업무보드', highlight: true },
   { path: '/', icon: LayoutDashboard, label: '대시보드' },
   { path: '/calendar', icon: Calendar, label: '캘린더' },
   { path: '/attendance', icon: Clock, label: '근태관리' },
   { path: '/leave', icon: CalendarDays, label: '휴가/결재', badgeKey: 'leave' as const },
   { path: '/purchases', icon: ShoppingCart, label: '비품구매' },
-  { path: '/kanban', icon: KanbanSquare, label: '업무보드' },
   { path: '/docs', icon: FileText, label: '문서' },
   { path: '/vault', icon: KeyRound, label: '비밀번호 금고' },
   { path: '/qa', icon: Bug, label: 'QA' },
@@ -150,6 +150,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
           const active = location.pathname === item.path ||
             (item.path !== '/' && location.pathname.startsWith(item.path))
 
+          const isHighlight = 'highlight' in item && item.highlight
           return (
             <button
               key={item.path}
@@ -157,12 +158,14 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
               className={`relative flex items-center w-full px-4 py-2.5 text-sm transition-colors ${
                 active
                   ? themeStyles.activeBg
+                  : isHighlight && !active
+                  ? 'bg-primary-600/10 text-primary-400 font-semibold ' + themeStyles.hoverBg
                   : themeStyles.hoverBg
               }`}
               title={collapsed ? item.label : undefined}
             >
-              <item.icon size={20} />
-              {!collapsed && <span className="ml-3 flex-1 text-left">{item.label}</span>}
+              <item.icon size={isHighlight ? 22 : 20} />
+              {!collapsed && <span className={`ml-3 flex-1 text-left ${isHighlight ? 'font-semibold' : ''}`}>{item.label}</span>}
               {'badgeKey' in item && item.badgeKey === 'leave' && pendingLeaveCount > 0 && (
                 <span className={`${collapsed ? 'absolute top-0.5 right-0.5' : 'ml-auto'} bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1`}>
                   {pendingLeaveCount}

@@ -511,9 +511,10 @@ export function KanbanPage() {
                               {task.assignee_names && (
                                 <div className="flex items-center gap-1 text-xs text-gray-400 flex-wrap">
                                   <User size={12} />
-                                  {task.assignee_names.split(',').map((name: string, i: number) => (
-                                    <span key={i} className="bg-gray-50 px-1 rounded">{name.trim()}</span>
-                                  ))}
+                                  {task.assignee_names.split(',').map((name: string, i: number) => {
+                                    const isMe = name.trim() === user?.name
+                                    return <span key={i} className={`px-1 rounded ${isMe ? 'bg-primary-100 text-primary-700 font-semibold' : 'bg-gray-50'}`}>{name.trim()}</span>
+                                  })}
                                 </div>
                               )}
                             </div>
@@ -1071,6 +1072,7 @@ function UnifiedKanbanView({ tasks, onTaskClick, onRefresh }: {
   onTaskClick: (task: any) => void
   onRefresh?: () => void
 }) {
+  const { user } = useAuthStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [showAllDone, setShowAllDone] = useState(false)
   const dragTaskRef = useRef<any>(null)
@@ -1229,8 +1231,11 @@ function UnifiedKanbanView({ tasks, onTaskClick, onRefresh }: {
                           {assignees.length > 0 && (
                             <div className="flex items-center gap-1 text-[10px] text-gray-400">
                               <User size={10} />
-                              {assignees.slice(0, 2).join(', ')}
-                              {assignees.length > 2 && ` +${assignees.length - 2}`}
+                              {assignees.slice(0, 3).map((name: string, i: number) => {
+                                const isMe = name.trim() === user?.name
+                                return <span key={i} className={isMe ? 'text-primary-600 font-semibold' : ''}>{name.trim()}{i < Math.min(assignees.length, 3) - 1 ? ', ' : ''}</span>
+                              })}
+                              {assignees.length > 3 && ` +${assignees.length - 3}`}
                             </div>
                           )}
                         </div>
