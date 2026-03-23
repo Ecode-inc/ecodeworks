@@ -302,6 +302,67 @@ function MyAttendanceSection() {
             )
           })}
         </div>
+
+        {/* Monthly records table */}
+        <div className="border-t">
+          <div className="px-4 py-2 bg-gray-50 border-b">
+            <h4 className="text-sm font-medium text-gray-700">일자별 출퇴근 기록</h4>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">날짜</th>
+                  <th className="text-left px-4 py-2 font-medium">요일</th>
+                  <th className="text-left px-4 py-2 font-medium">출근</th>
+                  <th className="text-left px-4 py-2 font-medium">퇴근</th>
+                  <th className="text-left px-4 py-2 font-medium">근무시간</th>
+                  <th className="text-left px-4 py-2 font-medium">상태</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {(() => {
+                  const daysOfWeek = ['일', '월', '화', '수', '목', '금', '토']
+                  const daysCount = currentMonth.daysInMonth()
+                  const rows = []
+                  for (let d = 1; d <= daysCount; d++) {
+                    const date = currentMonth.date(d)
+                    const dateStr = date.format('YYYY-MM-DD')
+                    const dow = date.day()
+                    const record = monthRecords.find(r => r.date === dateStr)
+                    const isWeekend = dow === 0 || dow === 6
+                    const isFuture = date.isAfter(dayjs(), 'day')
+
+                    if (isFuture && !record) continue // skip future without records
+
+                    rows.push(
+                      <tr key={dateStr} className={`${isWeekend ? 'bg-gray-50/50' : ''} hover:bg-gray-50`}>
+                        <td className="px-4 py-1.5 text-gray-700">{date.format('MM/DD')}</td>
+                        <td className={`px-4 py-1.5 ${dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-gray-500'}`}>{daysOfWeek[dow]}</td>
+                        <td className="px-4 py-1.5 font-mono text-gray-800">{record ? formatTime(record.clock_in) : <span className="text-gray-300">-</span>}</td>
+                        <td className="px-4 py-1.5 font-mono text-gray-800">{record ? formatTime(record.clock_out) : <span className="text-gray-300">-</span>}</td>
+                        <td className="px-4 py-1.5 text-gray-600">{record ? calcWorkHours(record.clock_in, record.clock_out) : '-'}</td>
+                        <td className="px-4 py-1.5">
+                          {record ? (
+                            <span className={`inline-flex items-center gap-1 text-xs`}>
+                              <span className={`w-2 h-2 rounded-full ${CALENDAR_DOT_COLORS[record.status] || 'bg-gray-400'}`} />
+                              {STATUS_LABELS[record.status] || record.status}
+                            </span>
+                          ) : (
+                            !isWeekend && !isFuture ? <span className="text-xs text-gray-300">미출근</span> : null
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  }
+                  return rows.length > 0 ? rows : (
+                    <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">기록이 없습니다</td></tr>
+                  )
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   )
