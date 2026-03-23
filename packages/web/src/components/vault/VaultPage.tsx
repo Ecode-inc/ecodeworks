@@ -78,8 +78,6 @@ export function VaultPage() {
   }, [currentDeptId, canViewList])
 
   const viewCredential = async (cred: any) => {
-    if (!currentDeptId) return
-
     // If user has PIN set and not unlocked, show PIN verify dialog
     if (hasPin && !vaultToken) {
       setPendingCredId(cred.id)
@@ -88,7 +86,8 @@ export function VaultPage() {
     }
 
     try {
-      const res = await vaultApi.get(cred.id, currentDeptId, vaultToken || undefined)
+      const deptId = currentDeptId || cred.department_id || ''
+      const res = await vaultApi.get(cred.id, deptId, vaultToken || undefined)
       setViewingCred(res.credential)
       setShowPassword(false)
     } catch (e: any) {
@@ -124,9 +123,8 @@ export function VaultPage() {
   }
 
   const viewAuditLog = async (credId: string) => {
-    if (!currentDeptId) return
     try {
-      const res = await vaultApi.auditLog(credId, currentDeptId)
+      const res = await vaultApi.auditLog(credId, currentDeptId || '')
       setAuditLogs(res.logs)
       setShowAudit(true)
     } catch (e: any) {
