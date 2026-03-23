@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 const MDEditor = lazy(() => import('@uiw/react-md-editor'))
 import { useOrgStore } from '../../stores/orgStore'
 import { docsApi, docShareApi } from '../../lib/api'
@@ -13,6 +13,7 @@ import { FileAttachments } from './FileAttachments'
 
 export function DocsPage() {
   const { docId: urlDocId } = useParams<{ docId?: string }>()
+  const navigate = useNavigate()
   const { currentDeptId } = useOrgStore()
   const [treeRefreshKey, setTreeRefreshKey] = useState(0)
   const [selectedDoc, setSelectedDoc] = useState<any>(null)
@@ -54,6 +55,7 @@ export function DocsPage() {
       setSelectedDoc(res.document)
       setEditing(false)
       setShowSidebar(false) // hide sidebar on mobile
+      navigate(`/docs/${doc.id}`, { replace: true })
     } catch (e: any) {
       useToastStore.getState().addToast('error', '문서 열기 실패', e.message)
     }
