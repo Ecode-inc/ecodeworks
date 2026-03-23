@@ -44,12 +44,15 @@ departmentsRoutes.post('/', async (c) => {
     c.env.DB.prepare(
       'INSERT INTO departments (id, org_id, name, slug, color, order_index, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).bind(id, user.org_id, name, slug, color || '#3B82F6', (maxOrder?.max_idx ?? -1) + 1, parent_id || null),
-    // Default permissions
-    ...['calendar', 'kanban', 'docs', 'vault', 'qa'].map(mod =>
+    // Default permissions (write for most, read for vault)
+    ...['calendar', 'kanban', 'docs', 'qa'].map(mod =>
       c.env.DB.prepare(
         'INSERT INTO department_permissions (department_id, module, permission) VALUES (?, ?, ?)'
-      ).bind(id, mod, 'read')
+      ).bind(id, mod, 'write')
     ),
+    c.env.DB.prepare(
+      'INSERT INTO department_permissions (department_id, module, permission) VALUES (?, ?, ?)'
+    ).bind(id, 'vault', 'read'),
   ])
 
   const dept = await c.env.DB.prepare(
