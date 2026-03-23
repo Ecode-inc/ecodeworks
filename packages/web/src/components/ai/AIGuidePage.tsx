@@ -46,6 +46,7 @@ const getActions = [
       { path: '/action/clock-in', desc: '출근 기록 (시간 지정 가능)', params: 'telegram_user_id or user_id, time (예: 10:00), date (예: 2026-03-16), note' },
       { path: '/action/clock-out', desc: '퇴근 기록 (시간 지정 가능)', params: 'telegram_user_id or user_id, time (예: 19:00), date, note' },
       { path: '/action/update-attendance', desc: '근태 시간/상태 수정', params: 'telegram_user_id or user_id, date, clock_in (예: 10:00), clock_out (예: 19:00), status (present/late/remote/vacation), note' },
+      { path: '/action/list-attendance', desc: '일별 전체 근태현황', params: 'date (YYYY-MM-DD, default 오늘) - 출근자/미출근자 전체 반환' },
     ],
   },
   {
@@ -105,7 +106,7 @@ const getActions = [
       { path: '/action/get-board', desc: '보드 상세 (컬럼+태스크)', params: 'id' },
       { path: '/action/create-board', desc: '보드 생성', params: 'name, department_id (선택)' },
       { path: '/action/update-board', desc: '보드 이름 변경', params: 'id, name' },
-      { path: '/action/list-tasks', desc: '태스크 목록', params: 'board_id (선택), assignee_id (선택)' },
+      { path: '/action/list-tasks', desc: '태스크 목록', params: 'board_id (선택), assignee_id (선택), done_days (완료 N일이내만, 예: 1)' },
       { path: '/action/create-task', desc: '태스크 생성', params: 'board_id, column_id, title, description, priority, due_date' },
       { path: '/action/update-task', desc: '태스크 수정', params: 'id, title, description, column_id, priority, assignee_id, due_date' },
       { path: '/action/update-column', desc: '컬럼 이름/색상 변경', params: 'id, name, color' },

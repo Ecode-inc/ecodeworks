@@ -44,6 +44,7 @@ aiRoutes.get('/actions', (c) => {
         'clock-in': 'telegram_user_id or user_id, time (HH:MM), date (YYYY-MM-DD)',
         'clock-out': 'telegram_user_id or user_id, time, date',
         'update-attendance': 'telegram_user_id or user_id, date, clock_in (HH:MM), clock_out (HH:MM), status, note',
+        'list-attendance': 'date (YYYY-MM-DD, default today) - 해당일 전체 근태현황',
       },
       calendar: {
         'create-event': 'title, start_at (+09:00), end_at, telegram_user_id or user_id, visibility (personal/department/company), importance, department_id, freq, byDay, until',
@@ -53,7 +54,7 @@ aiRoutes.get('/actions', (c) => {
         'get-board': 'id',
         'create-board': 'name, department_id',
         'update-board': 'id, name',
-        'list-tasks': 'board_id, assignee_id',
+        'list-tasks': 'board_id, assignee_id, done_days (완료태스크 N일이내만, default 전체)',
         'create-task': 'board_id, column_id, title, description, priority, due_date, assignee_ids (comma-separated)',
         'update-task': 'id, title, description, column_id, priority, assignee_id, due_date',
         'update-column': 'id, name, color',
@@ -1553,6 +1554,41 @@ aiRoutes.get('/action/update-attendance', async (c) => {
   return c.json({ success: true, record: updated })
 })
 
+// 근태 현황 조회 (일별)
+aiRoutes.get('/action/list-attendance', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'telegram:read') && !checkScope(scopes, 'attendance:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const date = c.req.query('date') || todayKST()
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT ar.*, u.name as user_name, u.email as user_email
+    FROM attendance_records ar
+    JOIN users u ON u.id = ar.user_id
+    WHERE ar.org_id = ? AND ar.date = ?
+    ORDER BY ar.clock_in
+  `).bind(orgId, date).all()
+
+  // Also get all members to show who hasn't clocked in
+  const { results: allMembers } = await c.env.DB.prepare(
+    'SELECT id, name, email FROM users WHERE org_id = ?'
+  ).bind(orgId).all()
+
+  const clockedIds = new Set((results || []).map((r: any) => r.user_id))
+  const notClockedIn = (allMembers || []).filter((m: any) => !clockedIds.has(m.id))
+
+  return c.json({
+    date,
+    records: results || [],
+    not_clocked_in: notClockedIn,
+    summary: {
+      total_members: (allMembers || []).length,
+      clocked_in: (results || []).length,
+      not_clocked: notClockedIn.length,
+    }
+  })
+})
+
 aiRoutes.get('/action/create-event', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'calendar:write')) return c.json({ error: 'Insufficient scope' }, 403)
@@ -1839,12 +1875,27 @@ aiRoutes.get('/action/list-tasks', async (c) => {
   const orgId = c.get('apiKeyOrgId')
   const boardId = c.req.query('board_id')
   const assigneeId = c.req.query('assignee_id')
+  const doneDays = c.req.query('done_days') // only show Done tasks updated within N days
 
-  let query = 'SELECT t.*, u.name as assignee_name FROM tasks t JOIN boards b ON b.id = t.board_id JOIN departments d ON d.id = b.department_id LEFT JOIN users u ON u.id = t.assignee_id WHERE d.org_id = ?'
+  let query = `SELECT t.*, u.name as assignee_name, bc.name as column_name, b.name as board_name
+    FROM tasks t
+    JOIN boards b ON b.id = t.board_id
+    JOIN departments d ON d.id = b.department_id
+    JOIN board_columns bc ON bc.id = t.column_id
+    LEFT JOIN users u ON u.id = t.assignee_id
+    WHERE d.org_id = ?`
   const params: unknown[] = [orgId]
   if (boardId) { query += ' AND t.board_id = ?'; params.push(boardId) }
   if (assigneeId) { query += ' AND t.assignee_id = ?'; params.push(assigneeId) }
-  query += ' ORDER BY t.updated_at DESC LIMIT 100'
+
+  // Filter Done tasks by recency
+  if (doneDays) {
+    const cutoff = new Date(Date.now() - parseInt(doneDays) * 86400000).toISOString()
+    query += ` AND (NOT (bc.name LIKE '%done%' OR bc.name LIKE '%완료%') OR t.updated_at >= ?)`
+    params.push(cutoff)
+  }
+
+  query += ' ORDER BY bc.order_index, t.order_index LIMIT 100'
 
   const { results } = await c.env.DB.prepare(query).bind(...params).all()
   return c.json({ tasks: results })
