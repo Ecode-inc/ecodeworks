@@ -21,7 +21,7 @@ export function DocsPage() {
   const [showSidebar, setShowSidebar] = useState(true)
   const [fontSize, setFontSize] = useState(() => {
     const saved = localStorage.getItem('docFontSize')
-    return saved ? parseInt(saved) : 14
+    return saved ? parseInt(saved) : 12
   })
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
