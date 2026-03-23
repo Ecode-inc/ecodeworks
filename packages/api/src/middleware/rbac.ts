@@ -45,7 +45,19 @@ export function requirePermission(module: Module, requiredPermission: Permission
       ).bind(user.id, departmentId).first<{ role: string }>()
 
       if (!membership) {
-        return c.json({ error: 'Not a member of this department' }, 403)
+        // Allow write if user is in ANY department (for company-wide docs)
+        const anyMembership = await c.env.DB.prepare(
+          'SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1'
+        ).bind(user.id).first()
+        if (!anyMembership) {
+          return c.json({ error: 'Not a member of any department' }, 403)
+        }
+        // User has org membership, allow with base permissions
+        if (PERMISSION_LEVELS[requiredPermission] <= PERMISSION_LEVELS.write) {
+          await next()
+          return
+        }
+        return c.json({ error: 'Insufficient permissions' }, 403)
       }
 
       // Department head has admin on all modules

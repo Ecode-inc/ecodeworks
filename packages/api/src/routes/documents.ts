@@ -102,15 +102,6 @@ documentsRoutes.post('/', requirePermission('docs', 'write'), async (c) => {
   const user = c.get('user')
   let deptId = c.req.query('dept_id') || ''
 
-  // Auto-resolve dept if not provided
-  if (!deptId) {
-    const userDept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(user.id).first<{ department_id: string }>()
-    if (userDept) deptId = userDept.department_id
-    else {
-      const orgDept = await c.env.DB.prepare('SELECT id FROM departments WHERE org_id = ? ORDER BY order_index LIMIT 1').bind(user.org_id).first<{ id: string }>()
-      deptId = orgDept?.id || ''
-    }
-  }
   const body = await c.req.json<{
     title: string
     content?: string
@@ -121,6 +112,20 @@ documentsRoutes.post('/', requirePermission('docs', 'write'), async (c) => {
   }>()
 
   if (!body.title) return c.json({ error: 'title required' }, 400)
+
+  // Auto-resolve dept_id: from parent folder, or from user's membership
+  if (!deptId && body.parent_id) {
+    const parent = await c.env.DB.prepare('SELECT department_id FROM documents WHERE id = ?').bind(body.parent_id).first<{ department_id: string }>()
+    if (parent) deptId = parent.department_id
+  }
+  if (!deptId) {
+    const userDept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(user.id).first<{ department_id: string }>()
+    if (userDept) deptId = userDept.department_id
+    else {
+      const orgDept = await c.env.DB.prepare('SELECT id FROM departments WHERE org_id = ? ORDER BY order_index LIMIT 1').bind(user.org_id).first<{ id: string }>()
+      deptId = orgDept?.id || ''
+    }
+  }
 
   const visibility = body.visibility || 'department'
   const shared = body.shared ? 1 : 0
