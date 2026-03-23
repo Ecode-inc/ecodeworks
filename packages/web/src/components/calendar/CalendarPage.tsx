@@ -279,11 +279,13 @@ export function CalendarPage() {
                 <div className={`text-xs mb-1 ${isToday ? 'w-6 h-6 bg-primary-600 text-white rounded-full flex items-center justify-center' : isCurrentMonth ? 'text-gray-700' : 'text-gray-400'}`}>
                   {day.date()}
                 </div>
-                {dayEvents.slice(0, 3).map(evt => (
+                {dayEvents.slice(0, 3).map(evt => {
+                  const isPast = dayjs(evt.end_at).isBefore(dayjs(), 'day')
+                  return (
                   <button
                     key={evt.id}
                     onClick={(e) => handleEventClick(evt, e)}
-                    className={`w-full text-left text-xs px-1 py-0.5 rounded truncate mb-0.5 text-white flex items-center gap-0.5 ${evt.importance === 'important' ? 'font-bold ring-1 ring-red-400' : ''}`}
+                    className={`w-full text-left text-xs px-1 py-0.5 rounded truncate mb-0.5 text-white flex items-center gap-0.5 ${evt.importance === 'important' ? 'font-bold ring-1 ring-red-400' : ''} ${isPast ? 'opacity-40' : ''}`}
                     style={{ backgroundColor: evt.importance === 'important' ? '#EF4444' : (evt.color || '#3B82F6') }}
                   >
                     {evt.importance === 'important' && (
@@ -294,7 +296,8 @@ export function CalendarPage() {
                     ) : null}
                     <span className="truncate">{evt.title}</span>
                   </button>
-                ))}
+                  )
+                })}
                 {dayEvents.length > 3 && (
                   <span className="text-xs text-gray-400">+{dayEvents.length - 3}</span>
                 )}
