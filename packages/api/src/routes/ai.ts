@@ -47,6 +47,7 @@ aiRoutes.get('/actions', (c) => {
         'list-attendance': 'date (YYYY-MM-DD, default today) - 해당일 전체 근태현황',
       },
       calendar: {
+        'list-events': 'start (ISO), end (ISO), context (group=공유일정만/private=개인포함), user_id (private시) - 일정 조회',
         'create-event': 'title, start_at (+09:00), end_at, telegram_user_id or user_id, visibility (personal/department/company), importance, department_id, freq, byDay, until',
       },
       kanban: {
@@ -1589,6 +1590,47 @@ aiRoutes.get('/action/list-attendance', async (c) => {
   })
 })
 
+// 일정 조회 (GET action)
+aiRoutes.get('/action/list-events', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'calendar:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const start = c.req.query('start')
+  const end = c.req.query('end')
+  const context = c.req.query('context') || 'group'  // default: group (hide personal)
+  const userId = c.req.query('user_id')
+
+  let query = `SELECT e.*, u.name as user_name FROM events e
+    JOIN departments d ON d.id = e.department_id
+    LEFT JOIN users u ON u.id = e.user_id
+    WHERE d.org_id = ?`
+  const params: unknown[] = [orgId]
+
+  if (context === 'group') {
+    query += " AND e.visibility != 'personal'"
+  } else if (context === 'private' && userId) {
+    query += " AND (e.visibility != 'personal' OR e.user_id = ?)"
+    params.push(userId)
+  }
+
+  if (start) { query += ' AND e.end_at >= ?'; params.push(start) }
+  if (end) { query += ' AND e.start_at <= ?'; params.push(end) }
+
+  // Include recurring events
+  if (start && end) {
+    query = query.replace(
+      "AND e.end_at >= ? AND e.start_at <= ?",
+      "AND ((e.end_at >= ? AND e.start_at <= ?) OR e.recurrence_rule IS NOT NULL)"
+    )
+  }
+
+  query += ' ORDER BY e.start_at LIMIT 50'
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+
+  return c.json({ events: results || [] })
+})
+
 aiRoutes.get('/action/create-event', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'calendar:write')) return c.json({ error: 'Insufficient scope' }, 403)
@@ -1600,7 +1642,7 @@ aiRoutes.get('/action/create-event', async (c) => {
   const endAt = c.req.query('end_at')
   const allDay = c.req.query('all_day') === 'true'
   const color = c.req.query('color') || '#3B82F6'
-  const visibility = c.req.query('visibility') || 'personal'
+  const visibility = c.req.query('visibility') || 'department'
   const importance = c.req.query('importance') || 'normal'
   // user_id: resolve from telegram_user_id or direct user_id
   const tgUserId = c.req.query('telegram_user_id')
