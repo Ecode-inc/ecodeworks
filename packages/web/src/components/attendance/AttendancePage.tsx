@@ -903,22 +903,6 @@ function IndividualView({ members }: { members: TeamMember[] }) {
 
   const selectedMember = members.find(m => m.id === selectedMemberId)
 
-  // Calendar rendering
-  const daysInMonth = () => {
-    const startOfMonth = currentMonth.startOf('month')
-    const startDay = startOfMonth.day()
-    const days: dayjs.Dayjs[] = []
-    for (let i = -startDay; i < 42 - startDay; i++) {
-      days.push(startOfMonth.add(i, 'day'))
-    }
-    return days
-  }
-
-  const getRecordForDay = (day: dayjs.Dayjs): AttendanceRecord | undefined => {
-    const dayStr = day.format('YYYY-MM-DD')
-    return records.find(r => r.date === dayStr)
-  }
-
   // Summary stats
   const summary = useMemo(() => {
     const counts: Record<string, number> = {
@@ -979,35 +963,88 @@ function IndividualView({ members }: { members: TeamMember[] }) {
             ))}
           </div>
 
-          {/* Calendar */}
-          <div className="grid grid-cols-7 border-b">
-            {['일', '월', '화', '수', '목', '금', '토'].map(d => (
-              <div key={d} className="px-2 py-2 text-center text-xs font-medium text-gray-500">{d}</div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7">
-            {daysInMonth().map((day, i) => {
-              const isToday = day.isSame(dayjs(), 'day')
-              const isCurrentMonth = day.month() === currentMonth.month()
-              const record = getRecordForDay(day)
+          {/* Daily records table */}
+          <div className="border-t">
+            <div className="px-4 py-2 bg-gray-50 border-b">
+              <h4 className="text-sm font-medium text-gray-700">일자별 출퇴근 기록</h4>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600">
+                  <tr>
+                    <th className="text-left px-4 py-2 font-medium">날짜</th>
+                    <th className="text-left px-4 py-2 font-medium">요일</th>
+                    <th className="text-left px-4 py-2 font-medium">출근</th>
+                    <th className="text-left px-4 py-2 font-medium">퇴근</th>
+                    <th className="text-left px-4 py-2 font-medium">근무시간</th>
+                    <th className="text-left px-4 py-2 font-medium">상태</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {(() => {
+                    const daysOfWeek = ['일', '월', '화', '수', '목', '금', '토']
+                    const daysCount = currentMonth.daysInMonth()
+                    const tableRows = []
+                    for (let d = 1; d <= daysCount; d++) {
+                      const date = currentMonth.date(d)
+                      const dateStr = date.format('YYYY-MM-DD')
+                      const dow = date.day()
+                      const record = records.find(r => r.date === dateStr)
+                      const isWeekend = dow === 0 || dow === 6
+                      const isFuture = date.isAfter(dayjs(), 'day')
+                      if (isFuture && !record) continue
+                      tableRows.push(
+                        <tr key={dateStr} className={`${isWeekend ? 'bg-gray-50/50' : ''} hover:bg-gray-50`}>
+                          <td className="px-4 py-1.5 text-gray-700">{date.format('MM/DD')}</td>
+                          <td className={`px-4 py-1.5 ${dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-gray-500'}`}>{daysOfWeek[dow]}</td>
+                          <td className="px-4 py-1.5 font-mono text-gray-800">{record ? formatTime(record.clock_in) : <span className="text-gray-300">-</span>}</td>
+                          <td className="px-4 py-1.5 font-mono text-gray-800">{record ? formatTime(record.clock_out) : <span className="text-gray-300">-</span>}</td>
+                          <td className="px-4 py-1.5 text-gray-600">{record ? calcWorkHours(record.clock_in, record.clock_out) : '-'}</td>
+                          <td className="px-4 py-1.5">
+                            {record ? (
+                              <span className="inline-flex items-center gap-1 text-xs">
+                                <span className={`w-2 h-2 rounded-full ${CALENDAR_DOT_COLORS[record.status] || 'bg-gray-400'}`} />
+                                {STATUS_LABELS[record.status] || record.status}
+                              </span>
+                            ) : (
+                              !isWeekend && !isFuture ? <span className="text-xs text-gray-300">미출근</span> : null
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    }
+                    return tableRows.length > 0 ? tableRows : (
+                      <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">기록이 없습니다</td></tr>
+                    )
+                  })()}
+                </tbody>
+              </table>
+            </div>
 
+            {/* Monthly summary */}
+            {records.length > 0 && (() => {
+              const presentCount = records.filter(r => ['present', 'late', 'remote'].includes(r.status)).length
+              const lateCount = records.filter(r => r.status === 'late').length
+              const remoteCount = records.filter(r => r.status === 'remote').length
+              const vacationCount = records.filter(r => r.status === 'vacation').length
+              const halfDayCount = records.filter(r => r.status === 'half_day').length
+              const totalMinutes = records.reduce((sum, r) => {
+                if (!r.clock_in || !r.clock_out) return sum
+                return sum + dayjs(r.clock_out).diff(dayjs(r.clock_in), 'minute')
+              }, 0)
+              const totalH = Math.floor(totalMinutes / 60)
+              const totalM = totalMinutes % 60
               return (
-                <div
-                  key={i}
-                  className={`min-h-[60px] border-b border-r p-1 ${!isCurrentMonth ? 'bg-gray-50' : ''}`}
-                >
-                  <div className={`text-xs mb-1 ${isToday ? 'w-5 h-5 bg-primary-600 text-white rounded-full flex items-center justify-center text-[10px]' : isCurrentMonth ? 'text-gray-700' : 'text-gray-400'}`}>
-                    {day.date()}
-                  </div>
-                  {record && (
-                    <div className="flex flex-col items-center gap-0.5">
-                      <span className={`w-2.5 h-2.5 rounded-full ${CALENDAR_DOT_COLORS[record.status] || 'bg-gray-400'}`} />
-                      <span className="text-[9px] text-gray-400">{formatTime(record.clock_in)}</span>
-                    </div>
-                  )}
+                <div className="px-4 py-3 bg-gray-50 border-t flex flex-wrap gap-4 text-sm">
+                  <div className="flex items-center gap-1.5"><span className="text-gray-500">출근</span><span className="font-semibold text-gray-800">{presentCount}일</span></div>
+                  {lateCount > 0 && <div className="flex items-center gap-1.5"><span className="text-gray-500">지각</span><span className="font-semibold text-yellow-600">{lateCount}일</span></div>}
+                  {remoteCount > 0 && <div className="flex items-center gap-1.5"><span className="text-gray-500">재택</span><span className="font-semibold text-blue-600">{remoteCount}일</span></div>}
+                  {vacationCount > 0 && <div className="flex items-center gap-1.5"><span className="text-gray-500">휴가</span><span className="font-semibold text-purple-600">{vacationCount}일</span></div>}
+                  {halfDayCount > 0 && <div className="flex items-center gap-1.5"><span className="text-gray-500">반차</span><span className="font-semibold text-orange-600">{halfDayCount}일</span></div>}
+                  <div className="flex items-center gap-1.5 ml-auto"><span className="text-gray-500">총 근무시간</span><span className="font-semibold text-gray-800">{totalH}시간 {totalM}분</span></div>
                 </div>
               )
-            })}
+            })()}
           </div>
         </>
       )}
