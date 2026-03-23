@@ -144,7 +144,7 @@ export const membersApi = {
     request<{ success: boolean }>(`/members/${id}/departments`, { method: 'POST', body: JSON.stringify({ departmentId, role }) }),
   removeDepartment: (id: string, deptId: string) =>
     request<{ success: boolean }>(`/members/${id}/departments/${deptId}`, { method: 'DELETE' }),
-  update: (id: string, data: { is_admin?: boolean; position_id?: string }) =>
+  update: (id: string, data: { is_admin?: boolean; position_id?: string; is_attendance_admin?: number; hire_date?: string }) =>
     request<{ member: any }>(`/members/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 }
 
@@ -431,6 +431,14 @@ export const leaveApi = {
   reject: (id: string, comment?: string) => request<{ request: any }>(`/leave/${id}/reject`, { method: 'POST', body: JSON.stringify({ comment }) }),
   pendingCount: () => request<{ count: number }>('/leave/pending-count'),
   trash: () => request<{ requests: any[] }>('/leave/trash'),
+  balance: (params: { user_id?: string; year?: number }) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => [k, String(v)])).toString()
+    return request<{ user_id: string; year: number; hire_date: string; accrued: number; adjustments: number; used: number; remaining: number; details: Record<string, number> }>(`/leave/balance${qs ? '?' + qs : ''}`)
+  },
+  balances: (year: number) =>
+    request<{ balances: { user_id: string; user_name: string; hire_date: string; accrued: number; adjustments: number; used: number; remaining: number }[]; year: number }>(`/leave/balances?year=${year}`),
+  adjust: (data: { user_id: string; year: number; type: string; days: number; reason: string }) =>
+    request<{ adjustment: any }>('/leave/balance/adjust', { method: 'POST', body: JSON.stringify(data) }),
   upload: async (file: File): Promise<{ url: string }> => {
     const formData = new FormData()
     formData.append('file', file)

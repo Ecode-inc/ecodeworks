@@ -10,6 +10,256 @@ export const leaveRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 leaveRoutes.use('/*', authMiddleware)
 
 // ──────────────────────────────────────────────────────────────
+// GET /balance - get leave balance for a user
+// ──────────────────────────────────────────────────────────────
+leaveRoutes.get('/balance', async (c) => {
+  const user = c.get('user')
+  const userId = c.req.query('user_id') || user.id
+  const year = parseInt(c.req.query('year') || String(new Date().getFullYear()))
+
+  // Get user's hire_date
+  const userRow = await c.env.DB.prepare(
+    'SELECT hire_date FROM users WHERE id = ? AND org_id = ?'
+  ).bind(userId, user.org_id).first<{ hire_date: string }>()
+
+  if (!userRow) {
+    return c.json({ error: '사용자를 찾을 수 없습니다' }, 404)
+  }
+
+  const hireDate = userRow.hire_date || `${year}-01-01`
+
+  // Check if there's an 'annual' type adjustment (overrides accrual)
+  const annualOverride = await c.env.DB.prepare(
+    "SELECT SUM(days) as total FROM leave_balance_adjustments WHERE user_id = ? AND org_id = ? AND year = ? AND type = 'annual'"
+  ).bind(userId, user.org_id, year).first<{ total: number | null }>()
+
+  let accrued: number
+  if (annualOverride?.total !== null && annualOverride?.total !== undefined) {
+    accrued = annualOverride.total
+  } else {
+    // Calculate accrued months: months from max(hire_date, year-01-01) to min(today, year-12-31)
+    const yearStart = new Date(`${year}-01-01T00:00:00Z`)
+    const yearEnd = new Date(`${year}-12-31T23:59:59Z`)
+    const hireDateObj = new Date(`${hireDate}T00:00:00Z`)
+    const today = new Date()
+
+    const startDate = hireDateObj > yearStart ? hireDateObj : yearStart
+    const endDate = today < yearEnd ? today : yearEnd
+
+    if (startDate > endDate) {
+      accrued = 0
+    } else {
+      const months = (endDate.getFullYear() - startDate.getFullYear()) * 12
+        + (endDate.getMonth() - startDate.getMonth())
+        + (endDate.getDate() >= startDate.getDate() ? 1 : 0)
+      accrued = Math.min(Math.max(months, 0), 12)
+    }
+  }
+
+  // Get adjustments (bonus + deduction + carryover, excluding annual)
+  const adjRow = await c.env.DB.prepare(
+    "SELECT SUM(days) as total FROM leave_balance_adjustments WHERE user_id = ? AND org_id = ? AND year = ? AND type != 'annual'"
+  ).bind(userId, user.org_id, year).first<{ total: number | null }>()
+  const adjustments = adjRow?.total || 0
+
+  // Calculate used days: approved leave requests in year (excluding remote)
+  const yearStartStr = `${year}-01-01`
+  const yearEndStr = `${year}-12-31`
+
+  // Get approved leave requests that fall within this year (excluding remote)
+  const { results: leaveResults } = await c.env.DB.prepare(`
+    SELECT type, start_date, end_date FROM leave_requests
+    WHERE user_id = ? AND org_id = ? AND status = 'approved' AND is_deleted = 0
+      AND type != 'remote'
+      AND start_date <= ? AND end_date >= ?
+  `).bind(userId, user.org_id, yearEndStr, yearStartStr).all<{ type: string; start_date: string; end_date: string }>()
+
+  let used = 0
+  const detailsMap: Record<string, number> = {}
+
+  for (const lr of leaveResults || []) {
+    if (lr.type === 'half_day_am' || lr.type === 'half_day_pm') {
+      used += 0.5
+      detailsMap[lr.type] = (detailsMap[lr.type] || 0) + 0.5
+    } else {
+      // Count days within the year range
+      const s = new Date(Math.max(new Date(lr.start_date).getTime(), new Date(yearStartStr).getTime()))
+      const e = new Date(Math.min(new Date(lr.end_date).getTime(), new Date(yearEndStr).getTime()))
+      const days = Math.floor((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1
+      used += days
+      detailsMap[lr.type] = (detailsMap[lr.type] || 0) + days
+    }
+  }
+
+  const remaining = accrued + adjustments - used
+
+  return c.json({
+    user_id: userId,
+    year,
+    hire_date: hireDate,
+    accrued,
+    adjustments,
+    used,
+    remaining,
+    details: detailsMap,
+  })
+})
+
+// ──────────────────────────────────────────────────────────────
+// GET /balances - get leave balances for all users (managers only)
+// ──────────────────────────────────────────────────────────────
+leaveRoutes.get('/balances', async (c) => {
+  const user = c.get('user')
+  const year = parseInt(c.req.query('year') || String(new Date().getFullYear()))
+
+  // Check permissions: CEO, admin, or attendance_admin
+  const userCheck = await c.env.DB.prepare('SELECT is_attendance_admin FROM users WHERE id = ?').bind(user.id).first<{ is_attendance_admin: number }>()
+  const isAttendanceAdmin = !!userCheck?.is_attendance_admin
+  const isDeptHead = await c.env.DB.prepare("SELECT department_id FROM user_departments WHERE user_id = ? AND role = 'head' LIMIT 1").bind(user.id).first()
+
+  if (!user.is_ceo && !user.is_admin && !isAttendanceAdmin && !isDeptHead) {
+    return c.json({ error: '권한이 없습니다' }, 403)
+  }
+
+  // Get all users in org
+  const { results: users } = await c.env.DB.prepare(
+    'SELECT id, name, hire_date FROM users WHERE org_id = ?'
+  ).bind(user.org_id).all<{ id: string; name: string; hire_date: string }>()
+
+  // Get all adjustments for the year
+  const { results: allAdj } = await c.env.DB.prepare(
+    'SELECT user_id, type, SUM(days) as total FROM leave_balance_adjustments WHERE org_id = ? AND year = ? GROUP BY user_id, type'
+  ).bind(user.org_id, year).all<{ user_id: string; type: string; total: number }>()
+
+  // Build adjustment map: { userId: { annual: X, other: Y } }
+  const adjMap: Record<string, { annual: number; other: number }> = {}
+  for (const adj of allAdj || []) {
+    if (!adjMap[adj.user_id]) adjMap[adj.user_id] = { annual: 0, other: 0 }
+    if (adj.type === 'annual') {
+      adjMap[adj.user_id].annual += adj.total
+    } else {
+      adjMap[adj.user_id].other += adj.total
+    }
+  }
+
+  // Get all approved leave requests for the year (excluding remote)
+  const yearStartStr = `${year}-01-01`
+  const yearEndStr = `${year}-12-31`
+  const { results: allLeave } = await c.env.DB.prepare(`
+    SELECT user_id, type, start_date, end_date FROM leave_requests
+    WHERE org_id = ? AND status = 'approved' AND is_deleted = 0
+      AND type != 'remote'
+      AND start_date <= ? AND end_date >= ?
+  `).bind(user.org_id, yearEndStr, yearStartStr).all<{ user_id: string; type: string; start_date: string; end_date: string }>()
+
+  // Build used map
+  const usedMap: Record<string, number> = {}
+  for (const lr of allLeave || []) {
+    if (!usedMap[lr.user_id]) usedMap[lr.user_id] = 0
+    if (lr.type === 'half_day_am' || lr.type === 'half_day_pm') {
+      usedMap[lr.user_id] += 0.5
+    } else {
+      const s = new Date(Math.max(new Date(lr.start_date).getTime(), new Date(yearStartStr).getTime()))
+      const e = new Date(Math.min(new Date(lr.end_date).getTime(), new Date(yearEndStr).getTime()))
+      const days = Math.floor((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1
+      usedMap[lr.user_id] += days
+    }
+  }
+
+  const today = new Date()
+  const yearStart = new Date(`${year}-01-01T00:00:00Z`)
+  const yearEnd = new Date(`${year}-12-31T23:59:59Z`)
+
+  const balances = (users || []).map(u => {
+    const hireDate = u.hire_date || `${year}-01-01`
+    const adj = adjMap[u.id] || { annual: 0, other: 0 }
+
+    let accrued: number
+    if (adj.annual !== 0) {
+      accrued = adj.annual
+    } else {
+      const hireDateObj = new Date(`${hireDate}T00:00:00Z`)
+      const startDate = hireDateObj > yearStart ? hireDateObj : yearStart
+      const endDate = today < yearEnd ? today : yearEnd
+      if (startDate > endDate) {
+        accrued = 0
+      } else {
+        const months = (endDate.getFullYear() - startDate.getFullYear()) * 12
+          + (endDate.getMonth() - startDate.getMonth())
+          + (endDate.getDate() >= startDate.getDate() ? 1 : 0)
+        accrued = Math.min(Math.max(months, 0), 12)
+      }
+    }
+
+    const adjustments = adj.other
+    const used = usedMap[u.id] || 0
+    const remaining = accrued + adjustments - used
+
+    return {
+      user_id: u.id,
+      user_name: u.name,
+      hire_date: hireDate,
+      accrued,
+      adjustments,
+      used,
+      remaining,
+    }
+  })
+
+  return c.json({ balances, year })
+})
+
+// ──────────────────────────────────────────────────────────────
+// POST /balance/adjust - adjust leave balance
+// ──────────────────────────────────────────────────────────────
+leaveRoutes.post('/balance/adjust', async (c) => {
+  const user = c.get('user')
+
+  // Check permissions: CEO, admin, or attendance_admin
+  const userCheck = await c.env.DB.prepare('SELECT is_attendance_admin FROM users WHERE id = ?').bind(user.id).first<{ is_attendance_admin: number }>()
+  const isAttendanceAdmin = !!userCheck?.is_attendance_admin
+
+  if (!user.is_ceo && !user.is_admin && !isAttendanceAdmin) {
+    return c.json({ error: 'CEO, 관리자 또는 근태관리자만 조정할 수 있습니다' }, 403)
+  }
+
+  const body = await c.req.json<{
+    user_id: string
+    year: number
+    type: string
+    days: number
+    reason?: string
+  }>()
+
+  const { user_id, year: adjYear, type, days, reason } = body
+  if (!user_id || !adjYear || !type || days === undefined) {
+    return c.json({ error: 'user_id, year, type, days는 필수입니다' }, 400)
+  }
+
+  const validTypes = ['annual', 'bonus', 'deduction', 'carryover']
+  if (!validTypes.includes(type)) {
+    return c.json({ error: '유효하지 않은 조정 유형입니다' }, 400)
+  }
+
+  // Verify user belongs to same org
+  const targetUser = await c.env.DB.prepare(
+    'SELECT id FROM users WHERE id = ? AND org_id = ?'
+  ).bind(user_id, user.org_id).first()
+
+  if (!targetUser) {
+    return c.json({ error: '사용자를 찾을 수 없습니다' }, 404)
+  }
+
+  const id = generateId()
+  await c.env.DB.prepare(`
+    INSERT INTO leave_balance_adjustments (id, org_id, user_id, year, type, days, reason, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, user.org_id, user_id, adjYear, type, days, reason || '', user.id).run()
+
+  return c.json({ adjustment: { id, user_id, year: adjYear, type, days, reason: reason || '' } }, 201)
+})
+
+// ──────────────────────────────────────────────────────────────
 // Helper: check if user is dept head for a given department
 // ──────────────────────────────────────────────────────────────
 async function isDeptHead(db: D1Database, userId: string, deptId: string): Promise<boolean> {

@@ -528,6 +528,7 @@ interface MemberRow {
   position_id: string
   position_name: string | null
   position_level: number | null
+  hire_date?: string
   departments: { id: string; name: string; color: string; role: string }[]
 }
 
@@ -694,6 +695,23 @@ function MembersTab() {
                   </select>
                 </div>
               )}
+
+              {/* Hire date */}
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-gray-500">입사일:</span>
+                <input
+                  type="date"
+                  value={m.hire_date || ''}
+                  onChange={async (e) => {
+                    try {
+                      await membersApi.update(m.id, { hire_date: e.target.value } as any)
+                      addToast('success', '입사일이 변경되었습니다.')
+                      load()
+                    } catch (err: any) { addToast('error', '변경 실패', err.message) }
+                  }}
+                  className="text-xs border rounded px-2 py-1 text-gray-600"
+                />
+              </div>
 
               {/* Department badges */}
               <div className="flex flex-wrap items-center gap-1.5 mt-2">

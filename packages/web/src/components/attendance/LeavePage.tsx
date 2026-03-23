@@ -68,6 +68,30 @@ export function LeavePage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showTrash, setShowTrash] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [myBalance, setMyBalance] = useState<{ accrued: number; adjustments: number; used: number; remaining: number } | null>(null)
+  const [allBalances, setAllBalances] = useState<any[]>([])
+  const [balanceYear, setBalanceYear] = useState(new Date().getFullYear())
+  const [showAdjustModal, setShowAdjustModal] = useState(false)
+  const [adjustTarget, setAdjustTarget] = useState<{ user_id: string; user_name: string } | null>(null)
+
+  const loadBalance = useCallback(async () => {
+    try {
+      const res = await leaveApi.balance({ year: balanceYear })
+      setMyBalance(res)
+    } catch {
+      // ignore
+    }
+  }, [balanceYear])
+
+  const loadAllBalances = useCallback(async () => {
+    if (!isManager) return
+    try {
+      const res = await leaveApi.balances(balanceYear)
+      setAllBalances(res.balances || [])
+    } catch {
+      // ignore
+    }
+  }, [isManager, balanceYear])
 
   const loadMyRequests = useCallback(async () => {
     try {
@@ -106,7 +130,9 @@ export function LeavePage() {
   useEffect(() => {
     loadMyRequests()
     loadPendingApprovals()
-  }, [loadMyRequests, loadPendingApprovals])
+    loadBalance()
+    loadAllBalances()
+  }, [loadMyRequests, loadPendingApprovals, loadBalance, loadAllBalances])
 
   useEffect(() => {
     if (showTrash) loadTrash()
@@ -169,6 +195,70 @@ export function LeavePage() {
         </Button>
       </div>
 
+      {/* Balance Summary */}
+      {myBalance && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="px-4 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">{balanceYear}년 휴가 현황</h3>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setBalanceYear(y => y - 1)}
+                  className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
+                >
+                  &lt;
+                </button>
+                <span className="text-sm font-medium text-gray-700 px-2">{balanceYear}</span>
+                <button
+                  onClick={() => setBalanceYear(y => y + 1)}
+                  className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
+                >
+                  &gt;
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-6 text-sm">
+              <div>
+                <span className="text-gray-500">발생</span>
+                <span className="ml-1.5 font-semibold text-gray-900">{myBalance.accrued}일</span>
+              </div>
+              {myBalance.adjustments !== 0 && (
+                <div>
+                  <span className="text-gray-500">조정</span>
+                  <span className={`ml-1.5 font-semibold ${myBalance.adjustments > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    {myBalance.adjustments > 0 ? '+' : ''}{myBalance.adjustments}일
+                  </span>
+                </div>
+              )}
+              <div>
+                <span className="text-gray-500">사용</span>
+                <span className="ml-1.5 font-semibold text-orange-600">{myBalance.used}일</span>
+              </div>
+              <div>
+                <span className="text-gray-500">잔여</span>
+                <span className={`ml-1.5 font-semibold ${myBalance.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {myBalance.remaining}일
+                </span>
+              </div>
+            </div>
+            {/* Progress bar */}
+            {(myBalance.accrued + myBalance.adjustments) > 0 && (
+              <div className="mt-3">
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div
+                    className="bg-primary-600 h-2.5 rounded-full transition-all"
+                    style={{ width: `${Math.min(100, Math.max(0, (myBalance.used / (myBalance.accrued + myBalance.adjustments)) * 100))}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  {Math.round((myBalance.used / Math.max(1, myBalance.accrued + myBalance.adjustments)) * 100)}% 사용
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* My Leave Requests */}
       <MyRequestsTable
         requests={myRequests}
@@ -188,6 +278,83 @@ export function LeavePage() {
 
       {/* All Requests (managers only) */}
       {isManager && <AllRequestsSection requests={allRequests} currentUserId={user?.id} />}
+
+      {/* All Balances Table (managers only) */}
+      {isManager && allBalances.length > 0 && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">전체 휴가 현황 ({balanceYear}년)</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">이름</th>
+                  <th className="text-left px-4 py-2 font-medium">입사일</th>
+                  <th className="text-right px-4 py-2 font-medium">발생</th>
+                  <th className="text-right px-4 py-2 font-medium">조정</th>
+                  <th className="text-right px-4 py-2 font-medium">사용</th>
+                  <th className="text-right px-4 py-2 font-medium">잔여</th>
+                  {(user?.is_ceo || user?.is_admin) && (
+                    <th className="text-left px-4 py-2 font-medium">작업</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {allBalances.map((b: any) => (
+                  <tr key={b.user_id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 font-medium text-gray-900">{b.user_name}</td>
+                    <td className="px-4 py-2 text-gray-500 text-xs">{b.hire_date ? dayjs(b.hire_date).format('YYYY-MM') : '-'}</td>
+                    <td className="px-4 py-2 text-right text-gray-700">{b.accrued}</td>
+                    <td className="px-4 py-2 text-right">
+                      <span className={b.adjustments > 0 ? 'text-blue-600' : b.adjustments < 0 ? 'text-red-600' : 'text-gray-400'}>
+                        {b.adjustments > 0 ? '+' : ''}{b.adjustments}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-right text-orange-600">{b.used}</td>
+                    <td className="px-4 py-2 text-right">
+                      <span className={`font-semibold ${b.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {b.remaining}
+                      </span>
+                    </td>
+                    {(user?.is_ceo || user?.is_admin) && (
+                      <td className="px-4 py-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            setAdjustTarget({ user_id: b.user_id, user_name: b.user_name })
+                            setShowAdjustModal(true)
+                          }}
+                        >
+                          조정
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Adjust Modal */}
+      {showAdjustModal && adjustTarget && (
+        <AdjustBalanceModal
+          open={showAdjustModal}
+          onClose={() => { setShowAdjustModal(false); setAdjustTarget(null) }}
+          onAdjusted={() => {
+            setShowAdjustModal(false)
+            setAdjustTarget(null)
+            loadBalance()
+            loadAllBalances()
+          }}
+          userId={adjustTarget.user_id}
+          userName={adjustTarget.user_name}
+          year={balanceYear}
+        />
+      )}
 
       {/* Trash (CEO only) */}
       {isCeo && (
@@ -723,6 +890,109 @@ function CreateLeaveModal({
           </Button>
           <Button onClick={handleSubmit} loading={loading}>
             신청
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────
+// Adjust Balance Modal
+// ──────────────────────────────────────────────────────────────
+function AdjustBalanceModal({
+  open,
+  onClose,
+  onAdjusted,
+  userId,
+  userName,
+  year,
+}: {
+  open: boolean
+  onClose: () => void
+  onAdjusted: () => void
+  userId: string
+  userName: string
+  year: number
+}) {
+  const [adjType, setAdjType] = useState('bonus')
+  const [days, setDays] = useState('')
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const adjTypeLabels: Record<string, string> = {
+    annual: '연차 기본 설정',
+    bonus: '추가 부여',
+    deduction: '차감',
+    carryover: '이월',
+  }
+
+  const handleSubmit = async () => {
+    const daysNum = parseFloat(days)
+    if (isNaN(daysNum) || daysNum === 0) {
+      useToastStore.getState().addToast('error', '일수를 입력해주세요')
+      return
+    }
+    setSaving(true)
+    try {
+      await leaveApi.adjust({
+        user_id: userId,
+        year,
+        type: adjType,
+        days: daysNum,
+        reason,
+      })
+      useToastStore.getState().addToast('success', '휴가가 조정되었습니다')
+      onAdjusted()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : '조정 실패'
+      useToastStore.getState().addToast('error', '조정 실패', msg)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={`${userName} - ${year}년 휴가 조정`}>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">조정 유형</label>
+          <select
+            value={adjType}
+            onChange={e => setAdjType(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            {Object.entries(adjTypeLabels).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">일수 (음수 가능, 0.5 단위)</label>
+          <input
+            type="number"
+            step="0.5"
+            value={days}
+            onChange={e => setDays(e.target.value)}
+            placeholder="예: 2, -1, 0.5"
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">사유</label>
+          <textarea
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="조정 사유를 입력하세요"
+            className="w-full border rounded-lg px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose}>
+            취소
+          </Button>
+          <Button onClick={handleSubmit} loading={saving}>
+            조정
           </Button>
         </div>
       </div>
