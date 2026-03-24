@@ -5,7 +5,7 @@ import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { Plus, Eye, EyeOff, Copy, ExternalLink, Shield, Clock, Lock, Unlock } from 'lucide-react'
+import { Plus, Eye, EyeOff, Copy, Shield, Clock, Lock, Unlock } from 'lucide-react'
 
 export function VaultPage() {
   const { currentDeptId } = useOrgStore()
@@ -15,6 +15,14 @@ export function VaultPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [auditLogs, setAuditLogs] = useState<any[]>([])
   const [showAudit, setShowAudit] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filteredCredentials = searchQuery.trim()
+    ? credentials.filter(c =>
+        (c.service_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (c.url || '').toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : credentials
 
   // PIN state
   const [hasPin, setHasPin] = useState<boolean | null>(null)
@@ -193,46 +201,58 @@ export function VaultPage() {
 
       {/* Credential List */}
       {hasPin && !vaultToken ? (
-        <div className="bg-white rounded-xl border p-12 text-center">
-          <Lock size={48} className="mx-auto text-gray-300 mb-4" />
-          <h3 className="text-lg font-semibold text-gray-700 mb-2">금고가 잠겨 있습니다</h3>
-          <p className="text-sm text-gray-500 mb-4">PIN을 입력하여 잠금을 해제하세요</p>
-          <Button onClick={() => { setPendingCredId(null); setShowPinVerify(true) }}>
-            <Unlock size={16} className="mr-1" /> 잠금 해제
+        <div className="bg-white rounded-xl border p-8 text-center">
+          <Lock size={36} className="mx-auto text-gray-300 mb-3" />
+          <h3 className="text-base font-semibold text-gray-700 mb-1">금고가 잠겨 있습니다</h3>
+          <p className="text-xs text-gray-500 mb-3">PIN을 입력하여 잠금을 해제하세요</p>
+          <Button size="sm" onClick={() => { setPendingCredId(null); setShowPinVerify(true) }}>
+            <Unlock size={14} className="mr-1" /> 잠금 해제
           </Button>
         </div>
       ) : (
-      <div className="bg-white rounded-xl border divide-y">
-        {credentials.map(cred => (
-          <div key={cred.id} className="flex items-center justify-between px-5 py-3 hover:bg-gray-50">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-sm font-bold text-gray-500">
-                {cred.service_name.charAt(0).toUpperCase()}
+      <div className="bg-white rounded-xl border">
+        {/* Search */}
+        <div className="px-3 py-2 border-b">
+          <input
+            type="text"
+            placeholder="서비스명 또는 URL 검색..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+          />
+        </div>
+        <div className="divide-y">
+          {filteredCredentials.map(cred => (
+            <div key={cred.id} className="flex items-center justify-between px-3 py-2 hover:bg-gray-50">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="w-7 h-7 rounded bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-400 flex-shrink-0">
+                  {cred.service_name.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{cred.service_name}</p>
+                  {cred.url && (
+                    <p className="text-[10px] text-gray-400 truncate">{cred.url}</p>
+                  )}
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-gray-900">{cred.service_name}</p>
-                {cred.url && (
-                  <p className="text-xs text-gray-400 flex items-center gap-1">
-                    <ExternalLink size={10} /> {cred.url}
-                  </p>
-                )}
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                <button onClick={() => viewCredential(cred)}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="보기">
+                  <Eye size={14} />
+                </button>
+                <button onClick={() => viewAuditLog(cred.id)}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="감사 로그">
+                  <Clock size={14} />
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-1">
-              <button onClick={() => viewCredential(cred)}
-                className="p-2 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="보기">
-                <Eye size={16} />
-              </button>
-              <button onClick={() => viewAuditLog(cred.id)}
-                className="p-2 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="감사 로그">
-                <Clock size={16} />
-              </button>
+          ))}
+          {filteredCredentials.length === 0 && (
+            <div className="text-center text-gray-400 py-8 text-sm">
+              {searchQuery ? '검색 결과가 없습니다' : '저장된 자격증명이 없습니다'}
             </div>
-          </div>
-        ))}
-        {credentials.length === 0 && (
-          <div className="text-center text-gray-400 py-12">저장된 자격증명이 없습니다</div>
-        )}
+          )}
+        </div>
       </div>
       )}
 
