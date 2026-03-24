@@ -171,7 +171,17 @@ credentialsRoutes.get('/:id', requirePermission('vault', 'read'), async (c) => {
 // Create credential
 credentialsRoutes.post('/', requirePermission('vault', 'write'), async (c) => {
   const user = c.get('user')
-  const deptId = c.req.query('dept_id')!
+  let deptId = c.req.query('dept_id') || ''
+
+  // Auto-resolve dept if not provided
+  if (!deptId) {
+    const userDept = await c.env.DB.prepare('SELECT department_id FROM user_departments WHERE user_id = ? LIMIT 1').bind(user.id).first<{ department_id: string }>()
+    if (userDept) deptId = userDept.department_id
+    else {
+      const orgDept = await c.env.DB.prepare('SELECT id FROM departments WHERE org_id = ? ORDER BY order_index LIMIT 1').bind(user.org_id).first<{ id: string }>()
+      deptId = orgDept?.id || ''
+    }
+  }
   const body = await c.req.json<{
     service_name: string
     url?: string
