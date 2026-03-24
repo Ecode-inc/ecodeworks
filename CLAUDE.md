@@ -128,3 +128,20 @@ Wrangler 토큰 위치: `C:\Users\ionar\AppData\Roaming\xdg.config\.wrangler\con
 - **DB**: `telegram_chats`, `telegram_user_mappings`, `telegram_command_log`
 - **API**: `/api/telegram/*` (JWT 인증), `/api/v1/telegram/*` (API 키 인증)
 - **기능**: 채팅방 등록, 텔레그램↔이코드 사용자 매핑, 명령 히스토리
+
+### 법인계좌 (오픈뱅킹)
+
+- **DB**: `banking_connections`, `banking_oauth_states`
+- **API**: `/api/banking/*` (JWT 인증, CEO/관리자 전용)
+- **금융결제원**: 테스트 환경 (`testapi.openbanking.or.kr`), 프로덕션 심사 신청 중
+- **적용 API**: 잔액조회, 잔액조회(법인), 거래내역조회, 거래내역조회(법인)
+- **보안**: 접근토큰·갱신토큰 AES-256-GCM 암호화 저장, 만료 시 자동 갱신
+- **OAuth state**: 32자 hex 랜덤 생성 → `banking_oauth_states` 테이블에 user/org 매핑 저장
+
+### 메일 시스템 (예정)
+
+- **상태**: 보류 — 설계 완료, 구현 미착수
+- **구조**: 수신 Cloudflare Email Routing + Workers → D1/R2, 발신 AWS SES
+- **멀티테넌트**: 고객사별 커스텀 도메인 지원 (AWS SES API로 도메인 자동 등록/검증)
+- **첨부파일**: 수신 시 MIME 파싱 → R2 저장, 발신 시 SendRawEmail MIME 멀티파트
+- **제한**: SES 메일당 최대 40MB, 초과 시 R2 다운로드 링크 삽입

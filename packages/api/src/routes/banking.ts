@@ -104,15 +104,25 @@ bankingRoutes.post('/connect', authMiddleware, async (c) => {
     return c.json({ error: '오픈뱅킹이 설정되지 않았습니다' }, 503)
   }
 
-  const state = `${user.id}|${user.org_id}`
-  const authUrl =
-    `${OPENBANKING_BASE}/oauth/2.0/authorize?` +
-    `response_type=code` +
-    `&client_id=${c.env.OPENBANKING_CLIENT_ID}` +
-    `&redirect_uri=${encodeURIComponent(c.env.OPENBANKING_CALLBACK_URL)}` +
-    `&scope=login inquiry` +
-    `&state=${encodeURIComponent(state)}` +
-    `&auth_type=0`
+  // 금융결제원 requires state to be exactly 32 characters
+  const stateBytes = crypto.getRandomValues(new Uint8Array(16))
+  const state = Array.from(stateBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+
+  // Store state → user mapping in DB (cleanup old states)
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM banking_oauth_states WHERE created_at < datetime("now", "-1 hour")'),
+    c.env.DB.prepare('INSERT INTO banking_oauth_states (state, user_id, org_id) VALUES (?, ?, ?)').bind(state, user.id, user.org_id),
+  ])
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: c.env.OPENBANKING_CLIENT_ID,
+    redirect_uri: c.env.OPENBANKING_CALLBACK_URL,
+    scope: 'login inquiry',
+    state,
+    auth_type: '0',
+  })
+  const authUrl = `${OPENBANKING_BASE}/oauth/2.0/authorize?${params.toString()}`
 
   return c.json({ authUrl })
 })
@@ -126,10 +136,19 @@ bankingRoutes.get('/callback', async (c) => {
     return c.redirect('https://work.e-code.kr/banking?error=missing_params')
   }
 
-  const [userId, orgId] = state.split('|')
-  if (!userId || !orgId) {
+  // Look up state → user mapping from DB
+  const stateRow = await c.env.DB.prepare(
+    'SELECT user_id, org_id FROM banking_oauth_states WHERE state = ?'
+  ).bind(state).first<{ user_id: string; org_id: string }>()
+
+  if (!stateRow) {
     return c.redirect('https://work.e-code.kr/banking?error=invalid_state')
   }
+
+  const { user_id: userId, org_id: orgId } = stateRow
+
+  // Clean up used state
+  await c.env.DB.prepare('DELETE FROM banking_oauth_states WHERE state = ?').bind(state).run()
 
   // Exchange code for token
   const tokenRes = await fetch(`${OPENBANKING_BASE}/oauth/2.0/token`, {
