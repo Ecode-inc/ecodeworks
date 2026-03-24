@@ -515,6 +515,16 @@ export const docFileApi = {
     request<{ success: boolean }>(`/doc-files/${id}`, { method: 'DELETE' }),
 }
 
+// Banking (Open Banking)
+export const bankingApi = {
+  connect: () => request<{ authUrl: string }>('/banking/connect', { method: 'POST' }),
+  accounts: () => request<{ accounts: any[] }>('/banking/accounts'),
+  balance: (id: string) => request<any>(`/banking/balance?connection_id=${id}`),
+  transactions: (id: string, from: string, to: string) =>
+    request<any>(`/banking/transactions?connection_id=${id}&from_date=${from}&to_date=${to}`),
+  disconnect: (id: string) => request<{ success: boolean }>(`/banking/accounts/${id}`, { method: 'DELETE' }),
+}
+
 // Telegram Integration
 export const telegramApi = {
   listChats: () => request<{ chats: any[] }>('/telegram/chats'),

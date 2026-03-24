@@ -10,6 +10,7 @@ import {
   KeyRound,
   Bug,
   ShoppingCart,
+  Landmark,
   Settings,
   Bot,
   ChevronLeft,
@@ -65,7 +66,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
   }, [user, location.pathname])
 
   const allItems = showSettings
-    ? [...navItems, { path: '/ai', icon: Bot, label: 'AI' }, { path: '/settings', icon: Settings, label: '설정' }]
+    ? [...navItems, { path: '/banking', icon: Landmark, label: '법인계좌' }, { path: '/ai', icon: Bot, label: 'AI' }, { path: '/settings', icon: Settings, label: '설정' }]
     : navItems
 
   const theme = organization?.sidebar_theme || 'dark'

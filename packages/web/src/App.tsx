@@ -22,6 +22,7 @@ import { ToastContainer } from './components/ui/Toast'
 import { SuperAdminPage } from './components/super/SuperAdminPage'
 import { SharedDocPage } from './components/docs/SharedDocPage'
 import { PurchasesPage } from './components/purchases/PurchasesPage'
+import { BankingPage } from './components/banking/BankingPage'
 
 export default function App() {
   const { user, initialized, restore, departments } = useAuthStore()
@@ -125,6 +126,7 @@ export default function App() {
         <Route path="/vault" element={<VaultPage />} />
         <Route path="/qa" element={<QAPage />} />
         <Route path="/ai" element={<AIPage />} />
+        <Route path="/banking" element={<BankingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Routes>
       <ToastContainer />

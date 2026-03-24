@@ -8,6 +8,9 @@ export interface Env {
   GOOGLE_CLIENT_ID: string
   GOOGLE_CLIENT_SECRET: string
   GOOGLE_REDIRECT_URI: string
+  OPENBANKING_CLIENT_ID: string
+  OPENBANKING_CLIENT_SECRET: string
+  OPENBANKING_CALLBACK_URL: string
 }
 
 // Database entities

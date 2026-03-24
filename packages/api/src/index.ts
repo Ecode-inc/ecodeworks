@@ -24,6 +24,7 @@ import { leaveRoutes } from './routes/leave'
 import { purchasesRoutes } from './routes/purchases'
 import { docImagesRoutes } from './routes/docImages'
 import { docFilesRoutes } from './routes/docFiles'
+import { bankingRoutes } from './routes/banking'
 import { WebSocketRoom } from './durable/WebSocketRoom'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -158,6 +159,9 @@ app.route('/api/positions', positionsRoutes)
 
 // Join Requests
 app.route('/api/join-requests', joinRequestsRoutes)
+
+// Banking (Open Banking)
+app.route('/api/banking', bankingRoutes)
 
 // File serving from R2
 app.get('/api/files/*', async (c) => {
