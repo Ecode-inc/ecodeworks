@@ -442,7 +442,7 @@ export function KanbanPage() {
                 </div>
               </div>
 
-              <div className="space-y-2 min-h-[50px]">
+              <div className="space-y-1.5 min-h-[40px]">
                 {getColumnTasks(col.id).map(task => {
                   const labels: string[] = (() => {
                     try {
@@ -483,19 +483,19 @@ export function KanbanPage() {
                       }}
                       onClick={() => { setEditingTask(task); setTargetColumnId(task.column_id); setShowTaskModal(true) }}
                       style={{ touchAction: 'none' }}
-                      className={`bg-white rounded-lg p-3 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${priorityColors[task.priority] || ''} ${/done|완료/i.test(col.name) ? 'opacity-50' : ''}`}
+                      className={`bg-white rounded p-2 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${priorityColors[task.priority] || ''} ${/done|완료/i.test(col.name) ? 'opacity-50' : ''}`}
                     >
-                      <div className="flex items-start gap-2">
-                        <GripVertical size={14} className="text-gray-300 mt-0.5 flex-shrink-0 cursor-grab" />
+                      <div className="flex items-start gap-1.5">
+                        <GripVertical size={12} className="text-gray-300 mt-0.5 flex-shrink-0 cursor-grab" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-800 truncate">{task.title}</p>
+                          <p className="text-xs font-medium text-gray-800 truncate">{task.title}</p>
                           {task.description && (
-                            <p className="text-xs text-gray-400 mt-0.5 line-clamp-2 whitespace-pre-wrap">{task.description}</p>
+                            <p className="text-[10px] text-gray-400 line-clamp-1 whitespace-pre-wrap">{task.description}</p>
                           )}
                           {task.due_date && (
-                            <p className="text-xs text-gray-400 mt-1">{task.due_date}</p>
+                            <p className="text-[10px] text-gray-400">{task.due_date}</p>
                           )}
-                          <div className="flex items-center justify-between mt-2">
+                          <div className="flex items-center justify-between mt-1">
                             <div className="flex gap-1 flex-wrap">
                               {labels.map((label: string) => (
                                 <span key={label} className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{label}</span>
@@ -1138,7 +1138,7 @@ function UnifiedKanbanView({ tasks, onTaskClick, onRefresh }: {
           return (
             <div
               key={group.key}
-              className="flex-shrink-0 w-80 bg-gray-100 rounded-xl p-3"
+              className="flex-shrink-0 w-72 bg-gray-100 rounded-xl p-2"
               data-unified-group={group.key}
               onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('ring-2', 'ring-primary-400') }}
               onDragLeave={e => { e.currentTarget.classList.remove('ring-2', 'ring-primary-400') }}
@@ -1176,7 +1176,7 @@ function UnifiedKanbanView({ tasks, onTaskClick, onRefresh }: {
                 <h3 className="text-sm font-semibold text-gray-700">{group.label}</h3>
                 <span className="text-xs text-gray-400 bg-gray-200 px-1.5 rounded-full">{group.tasks.length}</span>
               </div>
-              <div className="space-y-2 min-h-[50px]">
+              <div className="space-y-1.5 min-h-[40px]">
                 {visibleTasks.map(task => {
                   const assignees = task.assignee_names ? task.assignee_names.split(',') : []
                   const labels: string[] = (() => {
@@ -1193,26 +1193,26 @@ function UnifiedKanbanView({ tasks, onTaskClick, onRefresh }: {
                       draggable
                       onDragStart={() => { dragTaskRef.current = task }}
                       onClick={() => onTaskClick(task)}
-                      className={`bg-white rounded-lg p-3 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${
+                      className={`bg-white rounded p-2 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${
                         task.priority === 'urgent' ? 'border-l-red-500' :
                         task.priority === 'high' ? 'border-l-orange-500' :
                         task.priority === 'low' ? 'border-l-gray-300' : 'border-l-blue-500'
                       } ${isDone ? 'opacity-50' : ''}`}
                     >
                       {/* Board/Dept badge */}
-                      <div className="flex items-center gap-1 mb-1.5">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 truncate max-w-[120px]">
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <span className="text-[9px] px-1 py-0 rounded bg-gray-100 text-gray-400 truncate max-w-[100px]">
                           {task.department_name}
                         </span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 truncate max-w-[120px]">
+                        <span className="text-[9px] px-1 py-0 rounded bg-blue-50 text-blue-500 truncate max-w-[100px]">
                           {task.board_name}
                         </span>
                       </div>
-                      <p className="text-sm font-medium text-gray-800">{task.title}</p>
+                      <p className="text-xs font-medium text-gray-800">{task.title}</p>
                       {task.description && (
-                        <p className="text-xs text-gray-400 mt-0.5 line-clamp-2 whitespace-pre-wrap">{task.description}</p>
+                        <p className="text-[10px] text-gray-400 line-clamp-1 whitespace-pre-wrap">{task.description}</p>
                       )}
-                      <div className="flex items-center justify-between mt-2">
+                      <div className="flex items-center justify-between mt-1">
                         <div className="flex gap-1 flex-wrap">
                           {labels.slice(0, 2).map((l: string) => (
                             <span key={l} className="text-[10px] bg-gray-100 text-gray-600 px-1 py-0.5 rounded">{l}</span>
