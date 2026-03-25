@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { Env, AuthUser } from '../types'
 import { authMiddleware } from '../middleware/auth'
 import { generateId } from '../lib/id'
+import { createNotification } from '../lib/notify'
 
 type Variables = { user: AuthUser }
 
@@ -59,6 +60,7 @@ tasksRoutes.get('/all', async (c) => {
 
 // Create task
 tasksRoutes.post('/', async (c) => {
+  const user = c.get('user')
   const body = await c.req.json<{
     board_id: string
     column_id: string
@@ -127,6 +129,15 @@ tasksRoutes.post('/', async (c) => {
   const board = await c.env.DB.prepare('SELECT department_id FROM boards WHERE id = ?').bind(body.board_id).first<any>()
   if (board) broadcastToDept(c.env, board.department_id, 'task:created', task)
 
+  // Notify assignees about new task
+  try {
+    for (const uid of assigneeIds) {
+      if (uid !== user.id) {
+        await createNotification(c.env.DB, user.org_id, uid, 'task_assigned', `새 작업 배정: ${body.title}`, `${user.name}님이 작업을 배정했습니다`, '/kanban')
+      }
+    }
+  } catch { /* ignore notification errors */ }
+
   return c.json({ task }, 201)
 })
 
@@ -185,8 +196,12 @@ tasksRoutes.get('/:id', async (c) => {
 
 // Update task
 tasksRoutes.patch('/:id', async (c) => {
+  const user = c.get('user')
   const taskId = c.req.param('id')
   const body = await c.req.json<Record<string, unknown>>()
+
+  // Get current task state for change detection
+  const currentTask = await c.env.DB.prepare('SELECT title, column_id FROM tasks WHERE id = ?').bind(taskId).first<{ title: string; column_id: string }>()
 
   const allowed = ['title', 'description', 'assignee_id', 'priority', 'due_date', 'column_id']
   const updates: string[] = []
@@ -299,6 +314,30 @@ tasksRoutes.patch('/:id', async (c) => {
     const board = await c.env.DB.prepare('SELECT department_id FROM boards WHERE id = ?').bind((task as any).board_id).first<any>()
     if (board) broadcastToDept(c.env, board.department_id, 'task:updated', task)
   }
+
+  // Notify assignees on column (status) change
+  try {
+    const taskTitle = currentTask?.title || (task as any)?.title || ''
+    if (body.column_id && currentTask && body.column_id !== currentTask.column_id) {
+      const col = await c.env.DB.prepare('SELECT name FROM board_columns WHERE id = ?').bind(body.column_id as string).first<{ name: string }>()
+      const colName = col?.name || ''
+      const { results: assignees } = await c.env.DB.prepare('SELECT user_id FROM task_assignees WHERE task_id = ?').bind(taskId).all()
+      for (const a of assignees) {
+        if ((a as any).user_id !== user.id) {
+          await createNotification(c.env.DB, user.org_id, (a as any).user_id, 'task_status', `작업 상태 변경: ${taskTitle}`, `${user.name}님이 상태를 "${colName}"(으)로 변경했습니다`, '/kanban')
+        }
+      }
+    }
+    // Notify newly assigned users
+    if (assigneeIds !== undefined) {
+      const filtered = assigneeIds.filter(Boolean)
+      for (const uid of filtered) {
+        if (uid !== user.id) {
+          await createNotification(c.env.DB, user.org_id, uid, 'task_assigned', `작업 배정: ${taskTitle}`, `${user.name}님이 작업을 배정했습니다`, '/kanban')
+        }
+      }
+    }
+  } catch { /* ignore notification errors */ }
 
   return c.json({ task })
 })

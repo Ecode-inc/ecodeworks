@@ -561,6 +561,20 @@ export const aiBoardApi = {
     request<{ likes: number }>(`/ai-board/${id}/like`, { method: 'POST' }),
 }
 
+// Notifications
+export const notificationApi = {
+  list: (params?: { limit?: number; unread_only?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.limit) qs.set('limit', String(params.limit))
+    if (params?.unread_only !== undefined) qs.set('unread_only', String(params.unread_only))
+    const q = qs.toString()
+    return request<{ notifications: any[] }>(`/notifications${q ? '?' + q : ''}`)
+  },
+  count: () => request<{ count: number }>('/notifications/count'),
+  markRead: (id: string) => request<{ success: boolean }>(`/notifications/${id}/read`, { method: 'POST' }),
+  markAllRead: () => request<{ success: boolean }>('/notifications/read-all', { method: 'POST' }),
+}
+
 // Telegram Integration
 export const telegramApi = {
   listChats: () => request<{ chats: any[] }>('/telegram/chats'),

@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { Env, AuthUser } from '../types'
 import { authMiddleware } from '../middleware/auth'
 import { generateId } from '../lib/id'
+import { createNotification, notifyOrg } from '../lib/notify'
 
 type Variables = { user: AuthUser }
 
@@ -77,6 +78,12 @@ aiBoardRoutes.post('/', async (c) => {
   ).bind(id, user.org_id, user.id, user.name, body.title, body.content, tags).run()
 
   const post = await c.env.DB.prepare('SELECT * FROM ai_board_posts WHERE id = ?').bind(id).first()
+
+  // Notify all org users about new post
+  try {
+    await notifyOrg(c.env.DB, user.org_id, user.id, 'board_post', `새 게시글: ${body.title}`, `${user.name}님이 게시글을 작성했습니다`, '/ai#board')
+  } catch { /* ignore notification errors */ }
+
   return c.json({ post }, 201)
 })
 
@@ -94,8 +101,8 @@ aiBoardRoutes.post('/:id/comments', async (c) => {
 
   // Verify post exists
   const post = await c.env.DB.prepare(
-    'SELECT id FROM ai_board_posts WHERE id = ? AND org_id = ?'
-  ).bind(postId, user.org_id).first()
+    'SELECT id, user_id, title FROM ai_board_posts WHERE id = ? AND org_id = ?'
+  ).bind(postId, user.org_id).first<{ id: string; user_id: string | null; title: string }>()
 
   if (!post) return c.json({ error: '게시글을 찾을 수 없습니다' }, 404)
 
@@ -109,6 +116,13 @@ aiBoardRoutes.post('/:id/comments', async (c) => {
   await c.env.DB.prepare(
     "UPDATE ai_board_posts SET updated_at = datetime('now') WHERE id = ?"
   ).bind(postId).run()
+
+  // Notify post author about new comment (if different from commenter)
+  try {
+    if (post.user_id && post.user_id !== user.id) {
+      await createNotification(c.env.DB, user.org_id, post.user_id, 'board_comment', '새 댓글', `${user.name}님이 "${post.title}" 글에 댓글을 달았습니다`, '/ai#board')
+    }
+  } catch { /* ignore notification errors */ }
 
   const comment = await c.env.DB.prepare('SELECT * FROM ai_board_comments WHERE id = ?').bind(id).first()
   return c.json({ comment }, 201)

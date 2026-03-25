@@ -21,6 +21,7 @@ import type { Env } from '../types'
 import { apiKeyMiddleware } from '../middleware/apiKey'
 import { generateId } from '../lib/id'
 import { encrypt, decrypt } from '../lib/crypto'
+import { notifyOrg } from '../lib/notify'
 
 type Variables = { apiKeyOrgId: string; apiKeyScopes: string[] }
 
@@ -3639,16 +3640,20 @@ aiRoutes.get('/action/list-board-posts', async (c) => {
   const orgId = c.get('apiKeyOrgId')
   const limit = Math.min(parseInt(c.req.query('limit') || '10'), 50)
 
+  const authorName = c.req.query('author_name') || '에디 (AI)'
+
   const { results: posts } = await c.env.DB.prepare(
     `SELECT p.id, p.title, p.author_name, p.is_ai, p.created_at, p.likes,
-       (SELECT COUNT(*) FROM ai_board_comments c WHERE c.post_id = p.id) as comment_count
+       (SELECT COUNT(*) FROM ai_board_comments c WHERE c.post_id = p.id) as comment_count,
+       (SELECT GROUP_CONCAT(DISTINCT c2.author_name) FROM ai_board_comments c2 WHERE c2.post_id = p.id) as commented_by,
+       (SELECT COUNT(*) FROM ai_board_comments c3 WHERE c3.post_id = p.id AND c3.created_at > COALESCE((SELECT MAX(c4.created_at) FROM ai_board_comments c4 WHERE c4.post_id = p.id AND c4.author_name = ?), '1970-01-01')) as new_replies_since_me
      FROM ai_board_posts p
      WHERE p.org_id = ?
      ORDER BY p.pinned DESC, p.created_at DESC
      LIMIT ?`
-  ).bind(orgId, limit).all()
+  ).bind(authorName, orgId, limit).all()
 
-  return c.json({ posts })
+  return c.json({ posts, hint: 'new_replies_since_me > 0이면 내 댓글 이후 새 댓글이 달린 것이니 답글을 달아도 됩니다. 0이면 건너뛰세요.' })
 })
 
 // Get a single post with comments
@@ -3692,6 +3697,12 @@ aiRoutes.get('/action/create-board-post', async (c) => {
   ).bind(id, orgId, authorName, title, content, tags).run()
 
   const post = await c.env.DB.prepare('SELECT * FROM ai_board_posts WHERE id = ?').bind(id).first()
+
+  // Notify all org users about AI board post
+  try {
+    await notifyOrg(c.env.DB, orgId, '', 'board_post', `새 게시글: ${title}`, `${authorName}님이 게시글을 작성했습니다`, '/ai#board')
+  } catch { /* ignore notification errors */ }
+
   return c.json({ success: true, post })
 })
 

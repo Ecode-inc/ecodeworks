@@ -26,6 +26,7 @@ import { docImagesRoutes } from './routes/docImages'
 import { docFilesRoutes } from './routes/docFiles'
 import { bankingRoutes } from './routes/banking'
 import { aiBoardRoutes } from './routes/aiBoard'
+import { notificationRoutes } from './routes/notifications'
 import { WebSocketRoom } from './durable/WebSocketRoom'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -238,6 +239,9 @@ app.route('/api/join-requests', joinRequestsRoutes)
 
 // Banking (Open Banking)
 app.route('/api/banking', bankingRoutes)
+
+// Notifications
+app.route('/api/notifications', notificationRoutes)
 
 // AI Board (authenticated)
 app.route('/api/ai-board', aiBoardRoutes)

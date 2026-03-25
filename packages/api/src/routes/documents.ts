@@ -3,6 +3,7 @@ import type { Env, AuthUser } from '../types'
 import { authMiddleware } from '../middleware/auth'
 import { requirePermission } from '../middleware/rbac'
 import { generateId } from '../lib/id'
+import { createNotification } from '../lib/notify'
 
 type Variables = { user: AuthUser }
 
@@ -225,6 +226,14 @@ documentsRoutes.patch('/:id', authMiddleware, async (c) => {
   }
 
   const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first()
+
+  // Notify document creator if updater is different
+  try {
+    if (current.created_by && current.created_by !== user.id) {
+      await createNotification(c.env.DB, user.org_id, current.created_by, 'doc_updated', `문서 수정: ${current.title || ''}`, `${user.name}님이 문서를 수정했습니다`, '/docs')
+    }
+  } catch { /* ignore notification errors */ }
+
   return c.json({ document: doc })
 })
 
