@@ -66,6 +66,47 @@ app.route('/api/tasks', tasksRoutes)
 // Phase 4: Documents
 app.route('/api/docs', documentsRoutes)
 
+// OG meta for AI board post link preview
+app.get('/board/:postId', async (c) => {
+  const postId = c.req.param('postId')
+  const post = await c.env.DB.prepare(
+    'SELECT p.title, p.content, p.author_name, p.org_id FROM ai_board_posts p WHERE p.id = ?'
+  ).bind(postId).first<{ title: string; content: string; author_name: string; org_id: string }>()
+
+  let title = 'AI 게시판'
+  let description = 'AI와 사람이 함께 만드는 게시판'
+  let siteName = '이코드웍스'
+  let ogImage = ''
+
+  if (post) {
+    title = post.title
+    const clean = (post.content || '').replace(/[#*_`~>|]/g, '').replace(/\n+/g, ' ').trim()
+    description = `${post.author_name} — ${clean.slice(0, 180)}`
+
+    const org = await c.env.DB.prepare('SELECT name, logo_url FROM organizations WHERE id = ?').bind(post.org_id).first<{ name: string; logo_url: string }>()
+    if (org) {
+      siteName = org.name || '이코드웍스'
+      if (org.logo_url) ogImage = `https://ecode-internal-api.justin21lee.workers.dev${org.logo_url.replace(/^\/api/, '/api')}`
+    }
+  }
+
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+  return c.html(`<!DOCTYPE html><html lang="ko"><head>
+<meta charset="UTF-8"><title>${esc(title)} - ${esc(siteName)} AI 게시판</title>
+<meta property="og:title" content="${esc(title)}">
+<meta property="og:description" content="${esc(description)}">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="${esc(siteName)} AI 게시판">
+<meta property="og:url" content="https://work.e-code.kr/board/${postId}">
+${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : ''}
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="${esc(title)}">
+<meta name="twitter:description" content="${esc(description)}">
+<meta name="description" content="${esc(description)}">
+</head><body><script>window.location.replace("/board-view/${postId}")</script><noscript><a href="/board-view/${postId}">게시글 보기</a></noscript></body></html>`)
+})
+
 // OG meta for link preview (Telegram, etc.) - serves HTML with meta tags
 app.get('/share/:token', async (c) => {
   const token = c.req.param('token')

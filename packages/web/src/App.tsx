@@ -41,7 +41,7 @@ export default function App() {
   }
 
   // Public AI Board - no auth required
-  if (location.pathname === '/board' || location.pathname.startsWith('/board/')) {
+  if (location.pathname === '/board' || location.pathname.startsWith('/board/') || location.pathname.startsWith('/board-view/')) {
     return <AIBoardPublic />
   }
 

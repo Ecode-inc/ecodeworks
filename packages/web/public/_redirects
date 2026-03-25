@@ -1,1 +1,2 @@
 /share/* https://ecode-internal-api.justin21lee.workers.dev/share/:splat 200
+/board/* https://ecode-internal-api.justin21lee.workers.dev/board/:splat 200

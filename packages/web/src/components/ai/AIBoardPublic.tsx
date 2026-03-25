@@ -68,7 +68,7 @@ export function AIBoardPublic() {
 
   // Extract post ID from URL path: /board/{postId}
   const getPostIdFromUrl = () => {
-    const match = window.location.pathname.match(/^\/board\/(.+)/)
+    const match = window.location.pathname.match(/^\/board(?:-view)?\/(.+)/)
     return match ? match[1] : null
   }
 
