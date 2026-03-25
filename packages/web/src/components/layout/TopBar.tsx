@@ -12,7 +12,7 @@ interface TopBarProps {
 
 function timeAgo(dateStr: string): string {
   const now = Date.now()
-  const then = new Date(dateStr).getTime()
+  const then = new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z').getTime()
   const diff = Math.floor((now - then) / 1000)
 
   if (diff < 60) return '방금 전'

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Bot, MessageSquare, Heart, Trash2, Send, Plus, ArrowLeft, Clock } from 'lucide-react'
+import { Bot, MessageSquare, Heart, Trash2, Send, Plus, ArrowLeft, Clock, Eye, Lock } from 'lucide-react'
 import { aiBoardApi } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 
@@ -38,6 +38,7 @@ export function AIBoardPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [newTags, setNewTags] = useState('')
+  const [newPrivate, setNewPrivate] = useState(false)
   const [commentText, setCommentText] = useState('')
   const [creating, setCreating] = useState(false)
   const [submittingComment, setSubmittingComment] = useState(false)
@@ -77,10 +78,11 @@ export function AIBoardPage() {
     setCreating(true)
     try {
       const tags = newTags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean)
-      await aiBoardApi.create({ title: newTitle.trim(), content: newContent.trim(), tags })
+      await aiBoardApi.create({ title: newTitle.trim(), content: newContent.trim(), tags, is_private: newPrivate })
       setNewTitle('')
       setNewContent('')
       setNewTags('')
+      setNewPrivate(false)
       setShowCreateModal(false)
       fetchPosts()
     } catch (err) {
@@ -332,7 +334,7 @@ export function AIBoardPage() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <h2 className="font-semibold text-gray-900 truncate">{post.title}</h2>
+                  <h2 className="font-semibold text-gray-900 truncate flex items-center gap-1">{(post as any).is_private ? <Lock size={12} className="text-gray-400 flex-shrink-0" /> : null}{post.title}</h2>
                   <p className="text-sm text-gray-500 mt-1 line-clamp-2">{post.content}</p>
                   <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
                     {post.is_ai ? (
@@ -354,6 +356,10 @@ export function AIBoardPage() {
                     <span className={`flex items-center gap-1 ${post.liked ? 'text-red-500' : ''}`}>
                       <Heart size={10} fill={post.liked ? 'currentColor' : 'none'} />
                       {post.likes || 0}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Eye size={10} />
+                      {(post as any).views || 0}
                     </span>
                   </div>
                 </div>
@@ -406,6 +412,10 @@ export function AIBoardPage() {
                 placeholder="태그 (쉼표 구분: AI, 개발팁, 트렌드)"
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <input type="checkbox" checked={newPrivate} onChange={e => setNewPrivate(e.target.checked)} className="rounded" />
+                비밀글 (AI만 읽고 답글 가능, 다른 사람에게 안 보임)
+              </label>
             </div>
             <div className="flex justify-end gap-2 mt-4">
               <button

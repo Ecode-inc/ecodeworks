@@ -3641,19 +3641,30 @@ aiRoutes.get('/action/list-board-posts', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '10'), 50)
 
   const authorName = c.req.query('author_name') || '에디 (AI)'
+  const myOnly = c.req.query('my_only') === '1'
+
+  let whereClause = 'p.org_id = ?'
+  const params: unknown[] = [authorName]
+  if (myOnly) {
+    whereClause += ' AND p.author_name = ?'
+    params.push(orgId, authorName)
+  } else {
+    params.push(orgId)
+  }
 
   const { results: posts } = await c.env.DB.prepare(
-    `SELECT p.id, p.title, p.author_name, p.is_ai, p.created_at, p.likes,
+    `SELECT p.id, p.title, p.content, p.author_name, p.is_ai, p.created_at, p.likes, p.views,
        (SELECT COUNT(*) FROM ai_board_comments c WHERE c.post_id = p.id) as comment_count,
        (SELECT GROUP_CONCAT(DISTINCT c2.author_name) FROM ai_board_comments c2 WHERE c2.post_id = p.id) as commented_by,
-       (SELECT COUNT(*) FROM ai_board_comments c3 WHERE c3.post_id = p.id AND c3.created_at > COALESCE((SELECT MAX(c4.created_at) FROM ai_board_comments c4 WHERE c4.post_id = p.id AND c4.author_name = ?), '1970-01-01')) as new_replies_since_me
+       (SELECT COUNT(*) FROM ai_board_comments c3 WHERE c3.post_id = p.id AND c3.is_ai = 0 AND c3.created_at > COALESCE((SELECT MAX(c4.created_at) FROM ai_board_comments c4 WHERE c4.post_id = p.id AND c4.author_name = ?), '1970-01-01')) as new_human_replies,
+       (SELECT author_name FROM ai_board_comments c5 WHERE c5.post_id = p.id ORDER BY c5.created_at DESC LIMIT 1) as last_commenter
      FROM ai_board_posts p
-     WHERE p.org_id = ?
+     WHERE ${whereClause}
      ORDER BY p.pinned DESC, p.created_at DESC
      LIMIT ?`
-  ).bind(authorName, orgId, limit).all()
+  ).bind(...params, limit).all()
 
-  return c.json({ posts, hint: 'new_replies_since_me > 0이면 내 댓글 이후 새 댓글이 달린 것이니 답글을 달아도 됩니다. 0이면 건너뛰세요.' })
+  return c.json({ posts, hint: 'new_human_replies>0이면 사람 새 댓글에 답글 가능. last_commenter가 내 이름이면 연속댓글이므로 건너뛰기. my_only=1로 내 글만 조회 가능.' })
 })
 
 // Get a single post with comments
@@ -3724,6 +3735,15 @@ aiRoutes.get('/action/reply-board-post', async (c) => {
   ).bind(postId, orgId).first()
 
   if (!post) return c.json({ error: 'Post not found' }, 404)
+
+  // Prevent same author from commenting consecutively (e.g. 올빼미→올빼미)
+  const lastComment = await c.env.DB.prepare(
+    'SELECT author_name FROM ai_board_comments WHERE post_id = ? ORDER BY created_at DESC LIMIT 1'
+  ).bind(postId).first<{ author_name: string }>()
+
+  if (lastComment && lastComment.author_name === authorName) {
+    return c.json({ error: 'duplicate_consecutive', message: '마지막 댓글이 이미 같은 작성자입니다. 다른 사람이 댓글을 달 때까지 기다리세요.' }, 409)
+  }
 
   const id = generateId()
   await c.env.DB.prepare(

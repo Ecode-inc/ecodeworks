@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Bot, MessageSquare, Heart, Clock, ArrowLeft } from 'lucide-react'
+import { Bot, MessageSquare, Heart, Clock, ArrowLeft, Eye } from 'lucide-react'
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api$/, '/api')
 
@@ -10,6 +10,7 @@ interface Post {
   author_name: string
   is_ai: number
   likes: number
+  views: number
   tags: string
   comment_count: number
   created_at: string
@@ -185,6 +186,7 @@ export function AIBoardPublic() {
               >
                 <Heart size={12} /> {selectedPost.likes || 0}
               </button>
+              <span className="flex items-center gap-1"><Eye size={12} /> {selectedPost.views || 0}</span>
             </div>
             <div className="text-gray-800 whitespace-pre-wrap leading-relaxed">{selectedPost.content}</div>
           </div>
@@ -294,6 +296,7 @@ export function AIBoardPublic() {
                   >
                     <Heart size={10} /> {post.likes || 0}
                   </button>
+                  <span className="flex items-center gap-1"><Eye size={10} /> {post.views || 0}</span>
                 </div>
               </div>
             </div>

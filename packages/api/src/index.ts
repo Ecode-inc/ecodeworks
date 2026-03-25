@@ -74,21 +74,18 @@ app.get('/board/:postId', async (c) => {
     'SELECT p.title, p.content, p.author_name, p.org_id FROM ai_board_posts p WHERE p.id = ?'
   ).bind(postId).first<{ title: string; content: string; author_name: string; org_id: string }>()
 
+  const OG_LOGO = 'https://work.e-code.kr/og-logo.png'
   let title = 'AI 게시판'
   let description = 'AI와 사람이 함께 만드는 게시판'
   let siteName = '이코드웍스'
-  let ogImage = ''
 
   if (post) {
     title = post.title
     const clean = (post.content || '').replace(/[#*_`~>|]/g, '').replace(/\n+/g, ' ').trim()
     description = `${post.author_name} — ${clean.slice(0, 180)}`
 
-    const org = await c.env.DB.prepare('SELECT name, logo_url FROM organizations WHERE id = ?').bind(post.org_id).first<{ name: string; logo_url: string }>()
-    if (org) {
-      siteName = org.name || '이코드웍스'
-      if (org.logo_url) ogImage = `https://ecode-internal-api.justin21lee.workers.dev${org.logo_url.replace(/^\/api/, '/api')}`
-    }
+    const org = await c.env.DB.prepare('SELECT name FROM organizations WHERE id = ?').bind(post.org_id).first<{ name: string }>()
+    if (org) siteName = org.name || '이코드웍스'
   }
 
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -100,10 +97,13 @@ app.get('/board/:postId', async (c) => {
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="${esc(siteName)} AI 게시판">
 <meta property="og:url" content="https://work.e-code.kr/board/${postId}">
-${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : ''}
+<meta property="og:image" content="${OG_LOGO}">
+<meta property="og:image:width" content="400">
+<meta property="og:image:height" content="400">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(description)}">
+<meta name="twitter:image" content="${OG_LOGO}">
 <meta name="description" content="${esc(description)}">
 </head><body><script>window.location.replace("/board-view/${postId}")</script><noscript><a href="/board-view/${postId}">게시글 보기</a></noscript></body></html>`)
 })
@@ -115,37 +115,30 @@ app.get('/share/:token', async (c) => {
     'SELECT s.*, d.department_id FROM doc_share_links s LEFT JOIN documents d ON d.id = s.document_id WHERE s.token = ? AND s.is_active = 1'
   ).bind(token).first<{ document_id: string; expires_at: string | null; department_id: string }>()
 
+  const OG_LOGO = 'https://work.e-code.kr/og-logo.png'
   let title = '이코드웍스 - 공유 문서'
   let description = '공유된 문서를 확인하세요'
-  let ogImage = ''
   let siteName = '이코드웍스'
 
   if (share && (!share.expires_at || new Date(share.expires_at) >= new Date())) {
     const doc = await c.env.DB.prepare('SELECT title, content FROM documents WHERE id = ?').bind(share.document_id).first<{ title: string; content: string }>()
     if (doc) {
       title = doc.title
-      // Strip markdown syntax and extract meaningful text
       const cleanContent = (doc.content || '')
-        .replace(/!\[.*?\]\(.*?\)/g, '') // remove images
-        .replace(/\[([^\]]*)\]\(.*?\)/g, '$1') // links → text
-        .replace(/#{1,6}\s*/g, '') // headings
-        .replace(/[*_`~>|]/g, '') // formatting chars
-        .replace(/\n+/g, ' ') // newlines → space
+        .replace(/!\[.*?\]\(.*?\)/g, '')
+        .replace(/\[([^\]]*)\]\(.*?\)/g, '$1')
+        .replace(/#{1,6}\s*/g, '')
+        .replace(/[*_`~>|]/g, '')
+        .replace(/\n+/g, ' ')
         .trim()
       description = cleanContent.slice(0, 200) || '공유된 문서를 확인하세요'
     }
 
-    // Get org logo for OG image
     if (share.department_id) {
       const dept = await c.env.DB.prepare('SELECT org_id FROM departments WHERE id = ?').bind(share.department_id).first<{ org_id: string }>()
       if (dept) {
-        const org = await c.env.DB.prepare('SELECT name, logo_url FROM organizations WHERE id = ?').bind(dept.org_id).first<{ name: string; logo_url: string }>()
-        if (org) {
-          siteName = org.name || '이코드웍스'
-          if (org.logo_url) {
-            ogImage = `https://ecode-internal-api.justin21lee.workers.dev${org.logo_url.replace(/^\/api/, '/api')}`
-          }
-        }
+        const org = await c.env.DB.prepare('SELECT name FROM organizations WHERE id = ?').bind(dept.org_id).first<{ name: string }>()
+        if (org) siteName = org.name || '이코드웍스'
       }
     }
   }
@@ -162,10 +155,13 @@ app.get('/share/:token', async (c) => {
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="${safeSiteName}">
 <meta property="og:url" content="https://work.e-code.kr/share/${token}">
-${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">\n<meta property="og:image:width" content="200">\n<meta property="og:image:height" content="200">` : ''}
+<meta property="og:image" content="${OG_LOGO}">
+<meta property="og:image:width" content="400">
+<meta property="og:image:height" content="400">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="${safeTitle}">
 <meta name="twitter:description" content="${safeDesc}">
+<meta name="twitter:image" content="${OG_LOGO}">
 ${ogImage ? `<meta name="twitter:image" content="${esc(ogImage)}">` : ''}
 <meta name="description" content="${safeDesc}">
 </head><body><script>window.location.replace("https://work.e-code.kr/view/${token}")</script><noscript><a href="https://work.e-code.kr/view/${token}">문서 보기</a></noscript></body></html>`)
@@ -252,7 +248,7 @@ app.get('/api/ai-board-public', async (c) => {
   const offset = parseInt(c.req.query('offset') || '0')
   const tag = c.req.query('tag') || ''
 
-  let query = `SELECT p.id, p.title, p.content, p.author_name, p.is_ai, p.likes, p.tags, p.created_at,
+  let query = `SELECT p.id, p.title, p.content, p.author_name, p.is_ai, p.likes, p.views, p.tags, p.created_at,
        (SELECT COUNT(*) FROM ai_board_comments c WHERE c.post_id = p.id) as comment_count
      FROM ai_board_posts p`
   const params: unknown[] = []
@@ -292,9 +288,10 @@ app.get('/api/ai-board-public', async (c) => {
 app.get('/api/ai-board-public/:id', async (c) => {
   const id = c.req.param('id')
   const post = await c.env.DB.prepare(
-    `SELECT id, title, content, author_name, is_ai, likes, tags, created_at FROM ai_board_posts WHERE id = ?`
+    `SELECT id, title, content, author_name, is_ai, likes, views, tags, created_at FROM ai_board_posts WHERE id = ?`
   ).bind(id).first()
   if (!post) return c.json({ error: 'Not found' }, 404)
+  await c.env.DB.prepare('UPDATE ai_board_posts SET views = views + 1 WHERE id = ?').bind(id).run()
   const { results: comments } = await c.env.DB.prepare(
     'SELECT id, author_name, is_ai, content, created_at FROM ai_board_comments WHERE post_id = ? ORDER BY created_at ASC'
   ).bind(id).all()

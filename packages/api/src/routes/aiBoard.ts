@@ -23,10 +23,10 @@ aiBoardRoutes.get('/', async (c) => {
        (SELECT COUNT(*) FROM ai_board_comments c WHERE c.post_id = p.id) as comment_count,
        (SELECT COUNT(*) FROM ai_board_likes l WHERE l.post_id = p.id AND l.user_id = ?) as liked
      FROM ai_board_posts p
-     WHERE p.org_id = ?
+     WHERE p.org_id = ? AND (p.is_private = 0 OR p.user_id = ? OR p.is_ai = 1)
      ORDER BY p.pinned DESC, p.created_at DESC
      LIMIT ? OFFSET ?`
-  ).bind(user.id, user.org_id, limit, offset).all()
+  ).bind(user.id, user.org_id, user.id, limit, offset).all()
 
   const total = await c.env.DB.prepare(
     'SELECT COUNT(*) as cnt FROM ai_board_posts WHERE org_id = ?'
@@ -52,6 +52,9 @@ aiBoardRoutes.get('/:id', async (c) => {
 
   if (!post) return c.json({ error: '게시글을 찾을 수 없습니다' }, 404)
 
+  // Increment view count
+  await c.env.DB.prepare('UPDATE ai_board_posts SET views = views + 1 WHERE id = ?').bind(id).run()
+
   const { results: comments } = await c.env.DB.prepare(
     'SELECT * FROM ai_board_comments WHERE post_id = ? AND org_id = ? ORDER BY created_at ASC'
   ).bind(id, user.org_id).all()
@@ -64,18 +67,19 @@ aiBoardRoutes.get('/:id', async (c) => {
 // ──────────────────────────────────────────────────────────────
 aiBoardRoutes.post('/', async (c) => {
   const user = c.get('user')
-  const body = await c.req.json<{ title: string; content: string; tags?: string[] }>()
+  const body = await c.req.json<{ title: string; content: string; tags?: string[]; is_private?: boolean }>()
 
   if (!body.title || !body.content) {
     return c.json({ error: 'title과 content는 필수입니다' }, 400)
   }
 
   const tags = JSON.stringify(body.tags || [])
+  const isPrivate = body.is_private ? 1 : 0
   const id = generateId()
   await c.env.DB.prepare(
-    `INSERT INTO ai_board_posts (id, org_id, user_id, author_name, is_ai, title, content, tags)
-     VALUES (?, ?, ?, ?, 0, ?, ?, ?)`
-  ).bind(id, user.org_id, user.id, user.name, body.title, body.content, tags).run()
+    `INSERT INTO ai_board_posts (id, org_id, user_id, author_name, is_ai, title, content, tags, is_private)
+     VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`
+  ).bind(id, user.org_id, user.id, user.name, body.title, body.content, tags, isPrivate).run()
 
   const post = await c.env.DB.prepare('SELECT * FROM ai_board_posts WHERE id = ?').bind(id).first()
 

@@ -549,7 +549,7 @@ export const aiBoardApi = {
     return request<{ posts: any[] }>(`/ai-board${q ? '?' + q : ''}`)
   },
   get: (id: string) => request<{ post: any; comments: any[] }>(`/ai-board/${id}`),
-  create: (data: { title: string; content: string; tags?: string[] }) =>
+  create: (data: { title: string; content: string; tags?: string[]; is_private?: boolean }) =>
     request<{ post: any }>('/ai-board', { method: 'POST', body: JSON.stringify(data) }),
   comment: (postId: string, content: string) =>
     request<{ comment: any }>(`/ai-board/${postId}/comments`, { method: 'POST', body: JSON.stringify({ content }) }),

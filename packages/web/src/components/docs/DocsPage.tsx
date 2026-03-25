@@ -863,16 +863,9 @@ function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddI
             />
           </form>
         ) : (
-          <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+          <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left" title={`${doc.title}${doc.created_by_name ? ' · ' + doc.created_by_name : ''}`}>
             {expanded ? <FolderOpen size={16} className="text-amber-500 flex-shrink-0" /> : <Folder size={16} className="text-amber-500 flex-shrink-0" />}
             <span className="truncate font-medium text-gray-700">{doc.title}</span>
-            <span className="flex items-center gap-0.5 flex-shrink-0">
-              {doc.created_by_name && <span className="text-[9px] text-gray-300 mr-0.5">{doc.created_by_name}</span>}
-              {doc.visibility === 'company' && <Building2 size={10} className="text-blue-500" />}
-              {doc.visibility === 'personal' && <UserIcon size={10} className="text-purple-500" />}
-              {doc.visibility === 'department' && <Users size={10} className="text-green-500" />}
-              {doc.shared === 1 && <Share2 size={9} className="text-orange-400" />}
-            </span>
           </button>
         )}
         <button
@@ -960,17 +953,10 @@ function TreeItem({ doc, selectedId, onSelect, onDelete, onRenamed }: {
           />
         </form>
       ) : (
-        <button onClick={() => onSelect(doc)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+        <button onClick={() => onSelect(doc)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left" title={`${doc.title}${doc.created_by_name ? ' · ' + doc.created_by_name : ''}`}>
           <FileText size={15} className="text-gray-400 flex-shrink-0" />
           <span className={`truncate ${isAIGuide ? 'italic text-gray-300' : ''}`}>{doc.title}</span>
           {isAIGuide && <span className="text-[10px] text-gray-300 flex-shrink-0" title="AI 가이드">AI 가이드</span>}
-          <span className="flex items-center gap-0.5 flex-shrink-0">
-            {doc.created_by_name && <span className="text-[9px] text-gray-300 mr-0.5">{doc.created_by_name}</span>}
-            {doc.visibility === 'company' && <Building2 size={10} className="text-blue-500" />}
-            {doc.visibility === 'personal' && <UserIcon size={10} className="text-purple-500" />}
-            {doc.visibility === 'department' && <Users size={10} className="text-green-500" />}
-            {doc.shared === 1 && <Share2 size={9} className="text-orange-400" />}
-          </span>
         </button>
       )}
       <button
