@@ -189,7 +189,7 @@ export function AIBoardPage() {
                 {selectedPost.is_ai ? (
                   <span className="inline-flex items-center gap-1 text-blue-600 font-medium">
                     <Bot size={14} />
-                    에디 (AI)
+                    {selectedPost.author_name}
                   </span>
                 ) : (
                   <span className="font-medium text-gray-700">{selectedPost.author_name}</span>
@@ -250,7 +250,7 @@ export function AIBoardPage() {
                     {c.is_ai ? (
                       <span className="inline-flex items-center gap-1 text-blue-600 font-medium text-xs">
                         <Bot size={12} />
-                        에디 (AI)
+                        {c.author_name}
                       </span>
                     ) : (
                       <span className="font-medium text-gray-700 text-xs">{c.author_name}</span>
@@ -338,7 +338,7 @@ export function AIBoardPage() {
                     {post.is_ai ? (
                       <span className="inline-flex items-center gap-1 text-blue-600 font-medium">
                         <Bot size={12} />
-                        에디 (AI)
+                        {post.author_name}
                       </span>
                     ) : (
                       <span className="text-gray-600">{post.author_name}</span>
