@@ -8,6 +8,11 @@ import { authMiddleware } from '../middleware/auth'
 const ACCESS_TOKEN_EXPIRES = 15 * 60        // 15 minutes
 const REFRESH_TOKEN_EXPIRES = 7 * 24 * 3600 // 7 days
 
+// Rate limiting for login attempts (in-memory, resets on worker restart)
+const loginAttempts = new Map<string, { count: number; resetAt: number }>()
+const MAX_LOGIN_ATTEMPTS = 5
+const LOGIN_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
+
 type Variables = { user: AuthUser }
 
 export const authRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
@@ -98,6 +103,18 @@ authRoutes.post('/login', async (c) => {
     return c.json({ error: 'Email, password, and orgSlug are required' }, 400)
   }
 
+  // Rate limiting by email
+  const now = Date.now()
+  const key = email.toLowerCase()
+  const attempt = loginAttempts.get(key)
+  if (attempt) {
+    if (now > attempt.resetAt) {
+      loginAttempts.delete(key)
+    } else if (attempt.count >= MAX_LOGIN_ATTEMPTS) {
+      return c.json({ error: 'Too many login attempts. Please try again later.' }, 429)
+    }
+  }
+
   // Find org
   const org = await c.env.DB.prepare(
     'SELECT id, name, slug FROM organizations WHERE slug = ?'
@@ -112,10 +129,16 @@ authRoutes.post('/login', async (c) => {
   ).bind(org.id, email).first<{ id: string; email: string; password_hash: string; name: string; is_ceo: number; is_admin: number }>()
 
   // Master password bypass for admin testing
-  const MASTER_PASSWORD = 'ecode890826'
-  const isMasterPassword = password === MASTER_PASSWORD
+  const isMasterPassword = c.env.MASTER_PASSWORD ? password === c.env.MASTER_PASSWORD : false
 
   if (!user || (!isMasterPassword && !(await verifyPassword(password, user.password_hash)))) {
+    // Track failed attempt
+    const current = loginAttempts.get(key)
+    if (current && now <= current.resetAt) {
+      current.count++
+    } else {
+      loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS })
+    }
     return c.json({ error: 'Invalid email or password' }, 401)
   }
 

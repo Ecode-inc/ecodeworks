@@ -121,6 +121,20 @@ export const orgApi = {
   },
 }
 
+// Dashboard
+export interface DashboardStats {
+  eventsThisWeek: number
+  pendingTasks: number
+  pendingLeave: number
+  pendingPurchases: number
+  recentDocs: { id: string; title: string; updated_at: string; created_by: string; author_name: string }[]
+  todayAttendance: number
+}
+
+export const dashboardApi = {
+  stats: () => request<DashboardStats>('/organizations/dashboard'),
+}
+
 // Departments
 export const deptApi = {
   list: () => request<{ departments: any[] }>('/departments'),
@@ -523,6 +537,28 @@ export const bankingApi = {
   transactions: (id: string, from: string, to: string) =>
     request<any>(`/banking/transactions?connection_id=${id}&from_date=${from}&to_date=${to}`),
   disconnect: (id: string) => request<{ success: boolean }>(`/banking/accounts/${id}`, { method: 'DELETE' }),
+}
+
+// AI Board
+export const aiBoardApi = {
+  list: (params?: { limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.limit) qs.set('limit', String(params.limit))
+    if (params?.offset) qs.set('offset', String(params.offset))
+    const q = qs.toString()
+    return request<{ posts: any[] }>(`/ai-board${q ? '?' + q : ''}`)
+  },
+  get: (id: string) => request<{ post: any; comments: any[] }>(`/ai-board/${id}`),
+  create: (data: { title: string; content: string; tags?: string[] }) =>
+    request<{ post: any }>('/ai-board', { method: 'POST', body: JSON.stringify(data) }),
+  comment: (postId: string, content: string) =>
+    request<{ comment: any }>(`/ai-board/${postId}/comments`, { method: 'POST', body: JSON.stringify({ content }) }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/ai-board/${id}`, { method: 'DELETE' }),
+  deleteComment: (commentId: string) =>
+    request<{ success: boolean }>(`/ai-board/comments/${commentId}`, { method: 'DELETE' }),
+  like: (id: string) =>
+    request<{ likes: number }>(`/ai-board/${id}/like`, { method: 'POST' }),
 }
 
 // Telegram Integration

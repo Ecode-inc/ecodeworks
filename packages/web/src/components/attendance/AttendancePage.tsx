@@ -566,7 +566,38 @@ function DailyView({ members, selectedDeptId }: { members: TeamMember[]; selecte
           {rows.filter(r => r.record).length}/{rows.length}명 출근
         </span>
       </div>
-      <div className="overflow-x-auto">
+      {/* Mobile card view */}
+      <div className="md:hidden divide-y">
+        {rows.length === 0 ? (
+          <div className="px-4 py-8 text-center text-gray-400">멤버가 없습니다</div>
+        ) : rows.map(({ member, record, deptName }) => (
+          <div key={member.id} className="px-4 py-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-medium text-gray-900 text-sm">{member.name}</span>
+              {record ? (
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[record.status] || 'bg-gray-100 text-gray-600'}`}>
+                  {STATUS_LABELS[record.status] || record.status}
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400">미출근</span>
+              )}
+            </div>
+            <div className="text-xs text-gray-500 space-x-3">
+              <span>{deptName}</span>
+              {member.position_name && <span>{member.position_name}</span>}
+            </div>
+            {record && (
+              <div className="text-xs text-gray-500 mt-1 space-x-3">
+                <span>출근 {formatTime(record.clock_in)}</span>
+                <span>퇴근 {formatTime(record.clock_out)}</span>
+                <span>{calcWorkHours(record.clock_in, record.clock_out)}</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {/* Desktop table view */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600">
             <tr>

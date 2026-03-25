@@ -133,7 +133,20 @@ boardsRoutes.patch('/:id', authMiddleware, async (c) => {
 
 // Delete board
 boardsRoutes.delete('/:id', authMiddleware, async (c) => {
+  const user = c.get('user')
   const boardId = c.req.param('id')
+
+  const board = await c.env.DB.prepare('SELECT created_by, department_id FROM boards WHERE id = ?').bind(boardId).first<{ created_by: string; department_id: string }>()
+  if (!board) return c.json({ error: 'Board not found' }, 404)
+
+  // Permission check: only creator, dept head, CEO, or admin can delete
+  if (!user.is_ceo && !user.is_admin && board.created_by !== user.id) {
+    const headCheck = await c.env.DB.prepare(
+      "SELECT 1 FROM user_departments WHERE user_id = ? AND department_id = ? AND role = 'head'"
+    ).bind(user.id, board.department_id).first()
+    if (!headCheck) return c.json({ error: 'Only the creator, department head, or admin can delete' }, 403)
+  }
+
   await c.env.DB.prepare('DELETE FROM boards WHERE id = ?').bind(boardId).run()
   return c.json({ success: true })
 })
@@ -177,7 +190,24 @@ boardsRoutes.patch('/columns/:id', authMiddleware, async (c) => {
 
 // Delete column
 boardsRoutes.delete('/columns/:id', authMiddleware, async (c) => {
+  const user = c.get('user')
   const colId = c.req.param('id')
+
+  // Look up the column's board to check permissions
+  const col = await c.env.DB.prepare('SELECT board_id FROM board_columns WHERE id = ?').bind(colId).first<{ board_id: string }>()
+  if (!col) return c.json({ error: 'Column not found' }, 404)
+
+  const board = await c.env.DB.prepare('SELECT created_by, department_id FROM boards WHERE id = ?').bind(col.board_id).first<{ created_by: string; department_id: string }>()
+  if (!board) return c.json({ error: 'Board not found' }, 404)
+
+  // Permission check: only board creator, dept head, CEO, or admin can delete columns
+  if (!user.is_ceo && !user.is_admin && board.created_by !== user.id) {
+    const headCheck = await c.env.DB.prepare(
+      "SELECT 1 FROM user_departments WHERE user_id = ? AND department_id = ? AND role = 'head'"
+    ).bind(user.id, board.department_id).first()
+    if (!headCheck) return c.json({ error: 'Only the board creator, department head, or admin can delete columns' }, 403)
+  }
+
   await c.env.DB.prepare('DELETE FROM board_columns WHERE id = ?').bind(colId).run()
   return c.json({ success: true })
 })

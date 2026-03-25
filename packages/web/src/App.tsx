@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from './stores/authStore'
 import { useOrgStore } from './stores/orgStore'
 import { useWSStore } from './stores/wsStore'
@@ -23,6 +23,7 @@ import { SuperAdminPage } from './components/super/SuperAdminPage'
 import { SharedDocPage } from './components/docs/SharedDocPage'
 import { PurchasesPage } from './components/purchases/PurchasesPage'
 import { BankingPage } from './components/banking/BankingPage'
+import { AIBoardPublic } from './components/ai/AIBoardPublic'
 
 export default function App() {
   const { user, initialized, restore, departments } = useAuthStore()
@@ -39,9 +40,15 @@ export default function App() {
     return <AIGuidePage apiKey={apiKey} />
   }
 
+  // Public AI Board - no auth required
+  if (location.pathname === '/board' || location.pathname.startsWith('/board/')) {
+    return <AIBoardPublic />
+  }
+
   // Public shared document page - no auth required
-  if (location.pathname.startsWith('/share/')) {
-    const token = location.pathname.replace('/share/', '')
+  const shareMatch = location.pathname.match(/^\/(share|view)\/(.+)/)
+  if (shareMatch) {
+    const token = shareMatch[2]
     return (
       <>
         <SharedDocPage token={token} />
@@ -126,10 +133,27 @@ export default function App() {
         <Route path="/vault" element={<VaultPage />} />
         <Route path="/qa" element={<QAPage />} />
         <Route path="/ai" element={<AIPage />} />
+
         <Route path="/banking" element={<BankingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
       <ToastContainer />
     </AppShell>
+  )
+}
+
+function NotFoundPage() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+      <h1 className="text-6xl font-bold text-gray-300 mb-4">404</h1>
+      <p className="text-lg text-gray-600 mb-6">페이지를 찾을 수 없습니다</p>
+      <Link
+        to="/"
+        className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+      >
+        대시보드로 돌아가기
+      </Link>
+    </div>
   )
 }

@@ -4,6 +4,7 @@ interface WSStore {
   socket: WebSocket | null
   connected: boolean
   onlineUsers: { id: string; name?: string }[]
+  reconnectDelay: number
   connect: (deptId: string, token: string) => void
   disconnect: () => void
 }
@@ -12,6 +13,7 @@ export const useWSStore = create<WSStore>((set, get) => ({
   socket: null,
   connected: false,
   onlineUsers: [],
+  reconnectDelay: 2000,
 
   connect: (deptId, token) => {
     const { socket } = get()
@@ -32,18 +34,21 @@ export const useWSStore = create<WSStore>((set, get) => ({
     const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
-      set({ connected: true })
+      set({ connected: true, reconnectDelay: 2000 })
     }
 
     ws.onclose = () => {
+      const currentDelay = get().reconnectDelay
       set({ connected: false, socket: null, onlineUsers: [] })
 
-      // Auto-reconnect after 5s
+      // Auto-reconnect with exponential backoff: 2s, 4s, 8s, 16s, ... max 60s
+      const nextDelay = Math.min(currentDelay * 2, 60000)
       setTimeout(() => {
         if (!get().socket) {
+          set({ reconnectDelay: nextDelay })
           get().connect(deptId, token)
         }
-      }, 5000)
+      }, currentDelay)
     }
 
     ws.onerror = (e) => {

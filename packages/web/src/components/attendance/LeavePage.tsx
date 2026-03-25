@@ -443,7 +443,42 @@ function MyRequestsTable({
       <div className="px-4 py-3 border-b">
         <h3 className="font-semibold text-gray-900">내 휴가/결재 내역</h3>
       </div>
-      <div className="overflow-x-auto">
+      {/* Mobile card view */}
+      <div className="md:hidden divide-y">
+        {requests.length === 0 ? (
+          <div className="px-4 py-8 text-center text-gray-400">신청 내역이 없습니다</div>
+        ) : requests.map((req: any) => (
+          <div key={req.id} className="px-4 py-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-medium text-gray-900 text-sm">{typeLabels[req.type] || req.type}</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[req.status] || 'bg-gray-100 text-gray-600'}`}>
+                {statusLabels[req.status] || req.status}
+              </span>
+            </div>
+            <div className="text-xs text-gray-500">
+              {dayjs(req.start_date).format('MM/DD')}
+              {req.start_date !== req.end_date && ` - ${dayjs(req.end_date).format('MM/DD')}`}
+            </div>
+            {req.reason && <div className="text-xs text-gray-400 mt-1 truncate">{req.reason}</div>}
+            <div className="flex items-center gap-2 mt-2">
+              <ApprovalChain approvals={req.approvals} />
+              {req.attachment_url && (
+                <a href={req.attachment_url} target="_blank" rel="noopener noreferrer" className="text-primary-600 flex items-center gap-1 text-xs">
+                  <Paperclip size={12} /> 파일
+                </a>
+              )}
+              {req.status === 'pending' && (
+                <Button size="sm" variant="secondary" onClick={() => onCancel(req.id)}>취소</Button>
+              )}
+              {req.user_id === userId && (
+                <Button size="sm" variant="ghost" onClick={() => onDelete(req.id)}><Trash2 size={14} /></Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Desktop table view */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600">
             <tr>
@@ -587,7 +622,37 @@ function PendingApprovalsSection({
       <div className="px-4 py-3 border-b">
         <h3 className="font-semibold text-gray-900">결재 대기</h3>
       </div>
-      <div className="overflow-x-auto">
+      {/* Mobile card view */}
+      <div className="md:hidden divide-y">
+        {requests.map((req: any) => (
+          <div key={req.id} className="px-4 py-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-medium text-gray-900 text-sm">{req.user_name || '-'}</span>
+              <span className="text-xs text-gray-500">{typeLabels[req.type] || req.type}</span>
+            </div>
+            <div className="text-xs text-gray-500">
+              {dayjs(req.start_date).format('MM/DD')}
+              {req.start_date !== req.end_date && ` - ${dayjs(req.end_date).format('MM/DD')}`}
+            </div>
+            {req.reason && <div className="text-xs text-gray-400 mt-1 truncate">{req.reason}</div>}
+            <div className="flex items-center gap-2 mt-2">
+              {req.attachment_url && (
+                <a href={req.attachment_url} target="_blank" rel="noopener noreferrer" className="text-primary-600 flex items-center gap-1 text-xs">
+                  <Paperclip size={12} /> 파일
+                </a>
+              )}
+              <Button size="sm" onClick={() => onApprove(req.id)}>
+                <Check size={14} className="mr-1" /> 승인
+              </Button>
+              <Button size="sm" variant="danger" onClick={() => setRejectId(req.id)}>
+                <X size={14} className="mr-1" /> 반려
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Desktop table view */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600">
             <tr>
@@ -697,7 +762,7 @@ function CreateLeaveModal({
 
   useEffect(() => {
     if (proxyMode && orgMembers.length === 0) {
-      membersApi.list().then(res => setOrgMembers(res.members || [])).catch(() => {})
+      membersApi.list().then(res => setOrgMembers(res.members || [])).catch((e) => { console.error(e) })
     }
   }, [proxyMode, orgMembers.length])
 

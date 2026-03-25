@@ -13,6 +13,7 @@ import {
   Landmark,
   Settings,
   Bot,
+
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react'
@@ -61,7 +62,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
     if (user) {
       leaveApi.pendingCount()
         .then(res => setPendingLeaveCount(res.count))
-        .catch(() => {})
+        .catch((e) => { console.error(e) })
     }
   }, [user, location.pathname])
 

@@ -30,6 +30,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@uiw/react-markdown-preview':
+        specifier: ^5.1.5
+        version: 5.1.5(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@uiw/react-md-editor':
         specifier: ^4.0.11
         version: 4.0.11(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -48,6 +51,9 @@ importers:
       react-router-dom:
         specifier: ^6.23.0
         version: 6.30.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
       zustand:
         specifier: ^4.5.2
         version: 4.5.7(@types/react@18.3.28)(react@18.3.1)

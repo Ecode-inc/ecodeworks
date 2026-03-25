@@ -5,12 +5,13 @@ import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { Plus, Eye, EyeOff, Copy, Shield, Clock, Lock, Unlock } from 'lucide-react'
+import { Plus, Eye, EyeOff, Copy, Shield, Clock, Lock, Unlock, Pencil } from 'lucide-react'
 
 export function VaultPage() {
   const { currentDeptId } = useOrgStore()
   const [credentials, setCredentials] = useState<any[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [editingCred, setEditingCred] = useState<any>(null)
   const [viewingCred, setViewingCred] = useState<any>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [auditLogs, setAuditLogs] = useState<any[]>([])
@@ -39,7 +40,7 @@ export function VaultPage() {
   useEffect(() => {
     vaultApi.pinStatus().then(res => {
       setHasPin(res.has_pin)
-    }).catch(() => {})
+    }).catch((e) => { console.error(e) })
   }, [])
 
   // Auto-lock timer management
@@ -79,9 +80,9 @@ export function VaultPage() {
   useEffect(() => {
     if (!canViewList) { setCredentials([]); return }
     if (currentDeptId) {
-      vaultApi.list(currentDeptId).then(r => setCredentials(r.credentials)).catch(() => {})
+      vaultApi.list(currentDeptId).then(r => setCredentials(r.credentials)).catch((e) => { console.error(e) })
     } else {
-      vaultApi.list('').then(r => setCredentials(r.credentials)).catch(() => setCredentials([]))
+      vaultApi.list('').then(r => setCredentials(r.credentials)).catch((e) => { console.error(e); setCredentials([]) })
     }
   }, [currentDeptId, canViewList])
 
@@ -115,7 +116,7 @@ export function VaultPage() {
 
     // Reload credential list now that we're unlocked
     const dId = currentDeptId || ''
-    vaultApi.list(dId).then(r => setCredentials(r.credentials)).catch(() => {})
+    vaultApi.list(dId).then(r => setCredentials(r.credentials)).catch((e) => { console.error(e) })
 
     // If there was a pending credential view, fetch it now
     if (pendingCredId && currentDeptId) {
@@ -240,6 +241,23 @@ export function VaultPage() {
                   className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="보기">
                   <Eye size={14} />
                 </button>
+                <button onClick={async () => {
+                  try {
+                    const deptId = currentDeptId || cred.department_id || ''
+                    const res = await vaultApi.get(cred.id, deptId, vaultToken || undefined)
+                    setEditingCred(res.credential)
+                  } catch (e: any) {
+                    if (e.message?.includes('PIN')) {
+                      setPendingCredId(cred.id)
+                      setShowPinVerify(true)
+                    } else {
+                      useToastStore.getState().addToast('error', '조회 실패', e.message)
+                    }
+                  }
+                }}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="수정">
+                  <Pencil size={14} />
+                </button>
                 <button onClick={() => viewAuditLog(cred.id)}
                   className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="감사 로그">
                   <Clock size={14} />
@@ -296,20 +314,35 @@ export function VaultPage() {
             )}
             <div className="flex justify-between pt-2">
               <Button variant="danger" size="sm" onClick={() => { deleteCred(viewingCred.id); }}>삭제</Button>
-              <Button variant="secondary" onClick={() => setViewingCred(null)}>닫기</Button>
+              <div className="flex gap-2">
+                <Button variant="secondary" size="sm" onClick={() => { setEditingCred(viewingCred); setViewingCred(null) }}>수정</Button>
+                <Button variant="secondary" onClick={() => setViewingCred(null)}>닫기</Button>
+              </div>
             </div>
           </div>
         )}
       </Modal>
 
-      {/* Create/Edit Form Modal */}
+      {/* Create Form Modal */}
       <CredentialForm
         open={showForm}
         onClose={() => setShowForm(false)}
         deptId={currentDeptId || ''}
         onSave={() => {
-          vaultApi.list(currentDeptId || '').then(r => setCredentials(r.credentials))
+          vaultApi.list(currentDeptId || '').then(r => setCredentials(r.credentials)).catch((e) => { console.error(e) })
           setShowForm(false)
+        }}
+      />
+
+      {/* Edit Form Modal */}
+      <CredentialEditForm
+        open={!!editingCred}
+        onClose={() => setEditingCred(null)}
+        deptId={currentDeptId || ''}
+        credential={editingCred}
+        onSave={() => {
+          vaultApi.list(currentDeptId || '').then(r => setCredentials(r.credentials)).catch((e) => { console.error(e) })
+          setEditingCred(null)
         }}
       />
 
@@ -492,6 +525,61 @@ function CredentialForm({ open, onClose, deptId, onSave }: {
 
   return (
     <Modal open={open} onClose={onClose} title="자격증명 추가">
+      <div className="space-y-4">
+        <Input label="서비스 이름" value={serviceName} onChange={e => setServiceName(e.target.value)} required />
+        <Input label="URL" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://" />
+        <Input label="사용자명" value={username} onChange={e => setUsername(e.target.value)} required />
+        <Input label="비밀번호" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
+        <textarea
+          placeholder="메모 (선택)"
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          className="w-full border rounded-lg px-3 py-2 text-sm"
+          rows={2}
+        />
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>취소</Button>
+          <Button onClick={handleSubmit} loading={loading}>저장</Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function CredentialEditForm({ open, onClose, deptId, credential, onSave }: {
+  open: boolean; onClose: () => void; deptId: string; credential: any; onSave: () => void
+}) {
+  const [serviceName, setServiceName] = useState('')
+  const [url, setUrl] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [notes, setNotes] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (credential) {
+      setServiceName(credential.service_name || '')
+      setUrl(credential.url || '')
+      setUsername(credential.username || '')
+      setPassword(credential.password || '')
+      setNotes(credential.notes || '')
+    }
+  }, [credential])
+
+  const handleSubmit = async () => {
+    if (!serviceName || !username || !password) return
+    setLoading(true)
+    try {
+      await vaultApi.update(credential.id, deptId, { service_name: serviceName, url, username, password, notes })
+      useToastStore.getState().addToast('success', '수정 완료')
+      onSave()
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '수정 실패', e.message)
+    } finally { setLoading(false) }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="자격증명 수정">
       <div className="space-y-4">
         <Input label="서비스 이름" value={serviceName} onChange={e => setServiceName(e.target.value)} required />
         <Input label="URL" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://" />

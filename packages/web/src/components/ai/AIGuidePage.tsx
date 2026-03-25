@@ -69,6 +69,18 @@ const getActions = [
       { path: '/action/get-doc-share-link', desc: '문서 공유링크 조회/생성', params: 'id (문서ID) 또는 q (제목 검색), expiry (1d/7d/30d/none)' },
       { path: '/action/get-folder-guide', desc: '폴더 AI 가이드 조회', params: 'parent_id (폴더ID)' },
       { path: '/action/update-folder-guide', desc: '폴더 AI 가이드 생성/갱신', params: 'parent_id (폴더ID), content' },
+      { path: '/action/attach-file-url', desc: '문서에 URL로 파일 첨부 (다운로드→R2 저장)', params: 'document_id, url (파일 URL), name (파일명, 선택)' },
+      { path: '/action/list-doc-files', desc: '문서 첨부파일 목록', params: 'document_id' },
+      { path: '/action/rename-doc-file', desc: '첨부파일 이름 변경', params: 'id (파일 ID), name (새 파일명)' },
+      { path: '/action/create-weekly-meeting-doc', desc: '주간회의 문서 자동 생성', params: 'week_date (YYYY-MM-DD, default 오늘), folder_name (default 주간회의)' },
+    ],
+  },
+  {
+    category: '📋 AI 게시판',
+    items: [
+      { path: '/action/list-board-posts', desc: 'AI 게시판 글 목록', params: 'limit (default 10)' },
+      { path: '/action/create-board-post', desc: 'AI 게시판에 글 작성', params: 'title (제목), content (내용)' },
+      { path: '/action/reply-board-post', desc: 'AI 게시판 글에 댓글', params: 'post_id, content (댓글 내용)' },
     ],
   },
   {
@@ -82,7 +94,7 @@ const getActions = [
   {
     category: '\uD83D\uDED2 비품구매',
     items: [
-      { path: '/action/create-purchase', desc: '비품구매 등록 (단건)', params: 'item_name, unit_price, quantity, item_url, requester_name or requester_email or telegram_user_id, category, note, date (YYYY-MM-DD), status (requested/ordered/delivered)' },
+      { path: '/action/create-purchase', desc: '비품구매 등록 (단건)', params: 'item_name, unit_price, quantity, item_url, requester_name or requester_email or telegram_user_id, category, note, date (YYYY-MM-DD), status (requested/approved/ordered/delivered/returned/cancelled)' },
       { path: '/action/create-purchases', desc: '비품구매 등록 (다건)', params: 'items (JSON), requester_name or requester_email, date, status, note' },
       { path: '/action/list-purchases', desc: '비품구매 목록', params: 'month (YYYY-MM), status, telegram_user_id or requester_id' },
       { path: '/action/purchase-stats', desc: '비품구매 통계', params: 'month (YYYY-MM), dept_id' },
@@ -117,8 +129,8 @@ const getActions = [
       { path: '/action/create-board', desc: '보드 생성', params: 'name, department_id (선택)' },
       { path: '/action/update-board', desc: '보드 이름 변경', params: 'id, name' },
       { path: '/action/list-tasks', desc: '태스크 목록', params: 'board_id (선택), assignee_id (선택), done_days (완료 N일이내만, 예: 1)' },
-      { path: '/action/create-task', desc: '태스크 생성', params: 'board_id, column_id, title, description, priority, due_date' },
-      { path: '/action/update-task', desc: '태스크 수정', params: 'id, title, description, column_id, priority, assignee_id, due_date' },
+      { path: '/action/create-task', desc: '태스크 생성', params: 'board_id, column_id, title, description, priority, due_date, assignee_ids (쉼표 구분, 다중 담당자)' },
+      { path: '/action/update-task', desc: '태스크 수정', params: 'id, title, description, column_id, priority, assignee_id, assignee_ids (쉼표 구분, 다중 담당자), due_date' },
       { path: '/action/update-column', desc: '컬럼 이름/색상 변경', params: 'id, name, color' },
     ],
   },
@@ -173,7 +185,7 @@ const mcpTools = [
   'list_boards', 'get_board',
   'search_documents', 'get_document', 'create_document', 'update_document',
   'list_members', 'list_departments',
-  'list_vault_credentials',
+  'list_vault_credentials', 'set_vault_pin', 'create_credential', 'view_credential',
   'log_telegram_command', 'resolve_telegram_user',
   'map_telegram_user', 'unmap_telegram_user', 'list_telegram_mappings',
   'get_folder_guide', 'update_folder_guide',

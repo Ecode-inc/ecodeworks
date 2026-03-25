@@ -16,7 +16,9 @@ import {
   ChevronDown,
 } from 'lucide-react'
 
-type Tab = 'keys' | 'telegram' | 'history'
+import { AIBoardPage } from './AIBoardPage'
+
+type Tab = 'keys' | 'telegram' | 'history' | 'board'
 
 const ALL_SCOPES = [
   'calendar:read',
@@ -684,10 +686,18 @@ const tabs: { key: Tab; label: string }[] = [
   { key: 'keys', label: 'API 키 관리' },
   { key: 'telegram', label: '텔레그램 연동' },
   { key: 'history', label: '명령 히스토리' },
+  { key: 'board', label: 'AI 게시판' },
 ]
 
 export function AIPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('keys')
+  const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : ''
+  const validTabs = tabs.map(t => t.key)
+  const [activeTab, setActiveTab] = useState<Tab>(validTabs.includes(hash as Tab) ? hash as Tab : 'keys')
+
+  const changeTab = (tab: Tab) => {
+    setActiveTab(tab)
+    window.location.hash = tab
+  }
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -698,7 +708,7 @@ export function AIPage() {
         {tabs.map((t) => (
           <button
             key={t.key}
-            onClick={() => setActiveTab(t.key)}
+            onClick={() => changeTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === t.key
                 ? 'border-primary-600 text-primary-600'
@@ -713,6 +723,7 @@ export function AIPage() {
       {activeTab === 'keys' && <APIKeysTab />}
       {activeTab === 'telegram' && <TelegramTab />}
       {activeTab === 'history' && <HistoryTab />}
+      {activeTab === 'board' && <AIBoardPage />}
     </div>
   )
 }

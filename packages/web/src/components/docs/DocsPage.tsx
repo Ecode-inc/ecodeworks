@@ -1,13 +1,16 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 const MDEditor = lazy(() => import('@uiw/react-md-editor'))
+import remarkGfm from 'remark-gfm'
+import '@uiw/react-markdown-preview/markdown.css'
+const MDPreview = lazy(() => import('@uiw/react-markdown-preview').then(m => ({ default: m.default })))
 import { useOrgStore } from '../../stores/orgStore'
 import { docsApi, docShareApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { FileText, Folder, FolderOpen, FolderPlus, FilePlus, Search, ChevronRight, ChevronDown, Clock, Share2, Building2, Users, UserIcon, Trash2, Link, Copy, Check, X as XIcon } from 'lucide-react'
+import { FileText, Folder, FolderOpen, FolderPlus, FilePlus, Search, ChevronRight, ChevronDown, Clock, Share2, Building2, Users, UserIcon, Trash2, Link, Copy, Check, X as XIcon, Pencil, Shield } from 'lucide-react'
 import { ImageGallery } from './ImageGallery'
 import { FileAttachments } from './FileAttachments'
 
@@ -36,6 +39,7 @@ export function DocsPage() {
   const [newVisibility, setNewVisibility] = useState<'company' | 'department' | 'personal'>('department')
   const [newShared, setNewShared] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'company' | 'department' | 'personal'>('all')
 
   const refreshTree = () => setTreeRefreshKey(k => k + 1)
 
@@ -45,7 +49,7 @@ export function DocsPage() {
       docsApi.get(urlDocId).then(res => {
         setSelectedDoc(res.document)
         setShowSidebar(false) // hide sidebar on mobile when opening direct link
-      }).catch(() => {})
+      }).catch((e) => { console.error(e) })
     }
   }, [urlDocId])
 
@@ -178,7 +182,7 @@ export function DocsPage() {
           </div>
         </div>
 
-        <div className="flex gap-1 mb-3">
+        <div className="flex items-center gap-1 mb-3">
           <button onClick={() => { setNewIsFolder(true); setNewParentId(null); setShowNewModal(true) }}
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">
             <FolderPlus size={14} /> 폴더
@@ -187,6 +191,23 @@ export function DocsPage() {
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">
             <FilePlus size={14} /> 문서
           </button>
+          <div className="ml-auto flex items-center gap-0.5">
+            {([
+              { value: 'all', label: '전체', icon: null },
+              { value: 'company', label: '', icon: <Building2 size={12} className="text-blue-500" /> },
+              { value: 'department', label: '', icon: <Users size={12} className="text-green-500" /> },
+              { value: 'personal', label: '', icon: <UserIcon size={12} className="text-purple-500" /> },
+            ] as const).map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => { setVisibilityFilter(opt.value); refreshTree() }}
+                className={`px-1.5 py-1 rounded text-[10px] ${visibilityFilter === opt.value ? 'bg-gray-200 font-semibold' : 'hover:bg-gray-100'}`}
+                title={opt.value === 'all' ? '전체' : opt.value === 'company' ? '회사' : opt.value === 'department' ? '부서' : '개인'}
+              >
+                {opt.icon || opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Document Tree */}
@@ -237,6 +258,8 @@ export function DocsPage() {
               }}
               onAddInFolder={(folderId) => { setNewParentId(folderId); setNewIsFolder(false); setShowNewModal(true) }}
               onMoved={refreshTree}
+              onRenamed={refreshTree}
+              visibilityFilter={visibilityFilter}
             />
           </div>
         )}
@@ -246,17 +269,17 @@ export function DocsPage() {
       <div className={`flex-1 bg-white rounded-xl border overflow-y-auto min-h-0 ${showSidebar ? 'hidden md:block' : ''}`}>
         {selectedDoc ? (
           <div className="h-full flex flex-col">
-            <div className="flex items-center justify-between px-6 py-3 border-b">
+            <div className="group/header flex items-center justify-between px-6 py-3 border-b">
               {editing ? (
                 <input
                   value={editTitle}
                   onChange={e => setEditTitle(e.target.value)}
-                  className="text-lg font-semibold bg-transparent border-b border-primary-300 focus:outline-none"
+                  className="flex-1 min-w-0 text-lg font-semibold bg-transparent border-b border-primary-300 focus:outline-none mr-2"
                 />
               ) : (
-                <h2 className="text-lg font-semibold text-gray-900">{selectedDoc.title}</h2>
+                <h2 className="text-lg font-semibold text-gray-900 truncate flex-1 min-w-0 mr-2">{selectedDoc.title}</h2>
               )}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-shrink-0 opacity-0 group-hover/header:opacity-100 transition-opacity">
                 {/* Font size controls */}
                 <div className="flex items-center gap-0.5 border rounded-lg px-1">
                   <button
@@ -400,24 +423,17 @@ export function DocsPage() {
 }
 
 function MarkdownPreview({ content, fontSize }: { content: string; fontSize: number }) {
-  const html = content
-    .replace(/^### (.+)$/gm, '<h3 class="font-semibold mt-4 mb-2" style="font-size:1.1em">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="font-semibold mt-5 mb-2" style="font-size:1.25em">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="font-bold mt-6 mb-3" style="font-size:1.4em">$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code class="bg-gray-100 px-1 rounded" style="font-size:0.9em">$1</code>')
-    .replace(/^\- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-    .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
-    // Markdown links [text](url)
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary-600 underline hover:text-primary-800" target="_blank" rel="noopener noreferrer">$1</a>')
-    // Auto-link bare URLs (not already inside href="")
-    .replace(/(?<!="|'>)(https?:\/\/[^\s<,)]+)/g, '<a href="$1" class="text-primary-600 underline hover:text-primary-800" target="_blank" rel="noopener noreferrer">$1</a>')
-    .replace(/\n{3,}/g, '<div class="mb-2"></div>')  // 3+ newlines → one paragraph break
-    .replace(/\n\n/g, '<div class="mb-1"></div>')   // double newline → small break
-    .replace(/\n/g, '<br/>')
-
-  return <div style={{ fontSize: `${fontSize}px`, lineHeight: '1.5' }} dangerouslySetInnerHTML={{ __html: html }} />
+  return (
+    <Suspense fallback={<div className="p-4 text-gray-400">로딩 중...</div>}>
+      <div style={{ fontSize: `${fontSize}px` }} data-color-mode="light">
+        <MDPreview
+          source={content}
+          remarkPlugins={[remarkGfm]}
+          style={{ padding: 0, background: 'transparent', fontSize: `${fontSize}px` }}
+        />
+      </div>
+    </Suspense>
+  )
 }
 
 // ── Share Modal ──────────────────────────────────────────────
@@ -654,7 +670,7 @@ function ShareModal({ open, onClose, docId }: { open: boolean; onClose: () => vo
 
 // ── Recursive Tree Components ────────────────────────────────
 
-function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAddInFolder, onMoved }: {
+function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAddInFolder, onMoved, onRenamed, visibilityFilter }: {
   deptId: string | null
   parentId: string | null
   depth: number
@@ -663,6 +679,8 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
   onDelete: (doc: any) => void
   onAddInFolder: (folderId: string) => void
   onMoved?: () => void
+  onRenamed?: () => void
+  visibilityFilter?: 'all' | 'company' | 'department' | 'personal'
 }) {
   const [docs, setDocs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -675,14 +693,19 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
 
     docsApi.list(params).then(res => {
       setDocs(res.documents || [])
-    }).catch(() => {}).finally(() => setLoading(false))
+    }).catch((e) => { console.error(e) }).finally(() => setLoading(false))
   }, [deptId, parentId])
 
   if (loading && depth === 0) return <p className="text-xs text-gray-400 text-center py-4">로딩 중...</p>
   if (docs.length === 0 && depth === 0) return <p className="text-xs text-gray-400 text-center py-4">문서가 없습니다</p>
 
+  // Filter by visibility
+  const filtered = visibilityFilter && visibilityFilter !== 'all'
+    ? docs.filter(d => d.is_folder || d.visibility === visibilityFilter)
+    : docs
+
   // Sort: AI-titled docs go to the bottom of each folder
-  const sortedDocs = [...docs].sort((a, b) => {
+  const sortedDocs = [...filtered].sort((a, b) => {
     if (a.is_folder !== b.is_folder) return a.is_folder ? -1 : 1
     if (a.title === 'AI' && b.title !== 'AI') return 1
     if (a.title !== 'AI' && b.title === 'AI') return -1
@@ -703,6 +726,8 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
             onDelete={onDelete}
             onAddInFolder={onAddInFolder}
             onMoved={onMoved}
+            onRenamed={onRenamed}
+            visibilityFilter={visibilityFilter}
           />
         ) : (
           <TreeItem
@@ -711,6 +736,7 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
             selectedId={selectedId}
             onSelect={onSelect}
             onDelete={onDelete}
+            onRenamed={onRenamed}
           />
         )
       ))}
@@ -718,7 +744,60 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
   )
 }
 
-function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddInFolder, onMoved }: {
+function VisibilitySelector({ doc, onChanged }: { doc: any; onChanged?: () => void }) {
+  const [open, setOpen] = useState(false)
+  const current = doc.visibility || 'department'
+
+  const options = [
+    { value: 'company', label: '전체', icon: <Building2 size={12} className="text-blue-500" /> },
+    { value: 'department', label: '부서', icon: <Users size={12} className="text-green-500" /> },
+    { value: 'personal', label: '개인', icon: <UserIcon size={12} className="text-purple-500" /> },
+  ]
+
+  const handleChange = async (value: string) => {
+    if (value === current) { setOpen(false); return }
+    try {
+      await docsApi.update(doc.id, { visibility: value })
+      doc.visibility = value
+      setOpen(false)
+      onChanged?.()
+      useToastStore.getState().addToast('success', '권한 변경 완료')
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '권한 변경 실패', e.message)
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
+        className="p-0.5 text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100"
+        title="권한 변경"
+      >
+        <Shield size={13} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-6 z-20 bg-white border rounded-lg shadow-lg py-1 w-24">
+            {options.map(opt => (
+              <button
+                key={opt.value}
+                onClick={(e) => { e.stopPropagation(); handleChange(opt.value) }}
+                className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs hover:bg-gray-50 ${current === opt.value ? 'font-semibold bg-gray-50' : ''}`}
+              >
+                {opt.icon}
+                <span>{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddInFolder, onMoved, onRenamed, visibilityFilter }: {
   doc: any
   deptId: string | null
   depth: number
@@ -727,9 +806,26 @@ function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddI
   onDelete: (doc: any) => void
   onAddInFolder: (folderId: string) => void
   onMoved?: () => void
+  onRenamed?: () => void
+  visibilityFilter?: 'all' | 'company' | 'department' | 'personal'
 }) {
   const [expanded, setExpanded] = useState(depth < 1) // auto-expand first level
   const [dragOver, setDragOver] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState(doc.title)
+
+  const handleRename = async () => {
+    if (!renameValue.trim() || renameValue === doc.title) { setRenaming(false); return }
+    try {
+      await docsApi.update(doc.id, { title: renameValue.trim() })
+      doc.title = renameValue.trim()
+      setRenaming(false)
+      onRenamed?.()
+      useToastStore.getState().addToast('success', '이름 변경 완료')
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '이름 변경 실패', e.message)
+    }
+  }
 
   return (
     <div
@@ -754,17 +850,39 @@ function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddI
         <button onClick={() => setExpanded(!expanded)} className="p-0.5 text-gray-400 hover:text-gray-600">
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
-        <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
-          {expanded ? <FolderOpen size={16} className="text-amber-500 flex-shrink-0" /> : <Folder size={16} className="text-amber-500 flex-shrink-0" />}
-          <span className="truncate font-medium text-gray-700">{doc.title}</span>
-          <span className="flex items-center gap-0.5 flex-shrink-0">
-            {doc.created_by_name && <span className="text-[9px] text-gray-300 mr-0.5">{doc.created_by_name}</span>}
-            {doc.visibility === 'company' && <Building2 size={10} className="text-blue-500" />}
-            {doc.visibility === 'personal' && <UserIcon size={10} className="text-purple-500" />}
-            {doc.visibility === 'department' && <Users size={10} className="text-green-500" />}
-            {doc.shared === 1 && <Share2 size={9} className="text-orange-400" />}
-          </span>
+        {renaming ? (
+          <form onSubmit={(e) => { e.preventDefault(); handleRename() }} className="flex items-center gap-1 flex-1 min-w-0">
+            {expanded ? <FolderOpen size={16} className="text-amber-500 flex-shrink-0" /> : <Folder size={16} className="text-amber-500 flex-shrink-0" />}
+            <input
+              autoFocus
+              className="flex-1 min-w-0 px-1 py-0 text-sm border border-blue-400 rounded outline-none"
+              value={renameValue}
+              onChange={e => setRenameValue(e.target.value)}
+              onBlur={handleRename}
+              onKeyDown={e => { if (e.key === 'Escape') { setRenaming(false); setRenameValue(doc.title) } }}
+            />
+          </form>
+        ) : (
+          <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+            {expanded ? <FolderOpen size={16} className="text-amber-500 flex-shrink-0" /> : <Folder size={16} className="text-amber-500 flex-shrink-0" />}
+            <span className="truncate font-medium text-gray-700">{doc.title}</span>
+            <span className="flex items-center gap-0.5 flex-shrink-0">
+              {doc.created_by_name && <span className="text-[9px] text-gray-300 mr-0.5">{doc.created_by_name}</span>}
+              {doc.visibility === 'company' && <Building2 size={10} className="text-blue-500" />}
+              {doc.visibility === 'personal' && <UserIcon size={10} className="text-purple-500" />}
+              {doc.visibility === 'department' && <Users size={10} className="text-green-500" />}
+              {doc.shared === 1 && <Share2 size={9} className="text-orange-400" />}
+            </span>
+          </button>
+        )}
+        <button
+          onClick={() => { setRenameValue(doc.title); setRenaming(true) }}
+          className="p-0.5 text-gray-300 hover:text-blue-500 opacity-0 group-hover:opacity-100"
+          title="이름 변경"
+        >
+          <Pencil size={13} />
         </button>
+        <VisibilitySelector doc={doc} onChanged={onRenamed} />
         <button
           onClick={() => onAddInFolder(doc.id)}
           className="p-0.5 text-gray-300 hover:text-primary-500 opacity-0 group-hover:opacity-100"
@@ -790,19 +908,37 @@ function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddI
           onDelete={onDelete}
           onAddInFolder={onAddInFolder}
           onMoved={onMoved}
+          onRenamed={onRenamed}
+          visibilityFilter={visibilityFilter}
         />
       )}
     </div>
   )
 }
 
-function TreeItem({ doc, selectedId, onSelect, onDelete }: {
+function TreeItem({ doc, selectedId, onSelect, onDelete, onRenamed }: {
   doc: any
   selectedId?: string
   onSelect: (doc: any) => void
   onDelete: (doc: any) => void
+  onRenamed?: () => void
 }) {
   const isAIGuide = doc.title === 'AI'
+  const [renaming, setRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState(doc.title)
+
+  const handleRename = async () => {
+    if (!renameValue.trim() || renameValue === doc.title) { setRenaming(false); return }
+    try {
+      await docsApi.update(doc.id, { title: renameValue.trim() })
+      doc.title = renameValue.trim()
+      setRenaming(false)
+      onRenamed?.()
+      useToastStore.getState().addToast('success', '이름 변경 완료')
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '이름 변경 실패', e.message)
+    }
+  }
 
   return (
     <div
@@ -811,18 +947,40 @@ function TreeItem({ doc, selectedId, onSelect, onDelete }: {
       className={`group flex items-center gap-1 w-full py-1 px-1 rounded-lg text-sm hover:bg-gray-100 ${selectedId === doc.id ? 'bg-primary-50 text-primary-700' : ''} ${isAIGuide ? 'opacity-40' : ''}`}
     >
       <span className="w-5" /> {/* indent spacer */}
-      <button onClick={() => onSelect(doc)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
-        <FileText size={15} className="text-gray-400 flex-shrink-0" />
-        <span className={`truncate ${isAIGuide ? 'italic text-gray-300' : ''}`}>{doc.title}</span>
-        {isAIGuide && <span className="text-[10px] text-gray-300 flex-shrink-0" title="AI 가이드">AI 가이드</span>}
-        <span className="flex items-center gap-0.5 flex-shrink-0">
-          {doc.created_by_name && <span className="text-[9px] text-gray-300 mr-0.5">{doc.created_by_name}</span>}
-          {doc.visibility === 'company' && <Building2 size={10} className="text-blue-500" />}
-          {doc.visibility === 'personal' && <UserIcon size={10} className="text-purple-500" />}
-          {doc.visibility === 'department' && <Users size={10} className="text-green-500" />}
-          {doc.shared === 1 && <Share2 size={9} className="text-orange-400" />}
-        </span>
+      {renaming ? (
+        <form onSubmit={(e) => { e.preventDefault(); handleRename() }} className="flex items-center gap-1.5 flex-1 min-w-0">
+          <FileText size={15} className="text-gray-400 flex-shrink-0" />
+          <input
+            autoFocus
+            className="flex-1 min-w-0 px-1 py-0 text-sm border border-blue-400 rounded outline-none"
+            value={renameValue}
+            onChange={e => setRenameValue(e.target.value)}
+            onBlur={handleRename}
+            onKeyDown={e => { if (e.key === 'Escape') { setRenaming(false); setRenameValue(doc.title) } }}
+          />
+        </form>
+      ) : (
+        <button onClick={() => onSelect(doc)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+          <FileText size={15} className="text-gray-400 flex-shrink-0" />
+          <span className={`truncate ${isAIGuide ? 'italic text-gray-300' : ''}`}>{doc.title}</span>
+          {isAIGuide && <span className="text-[10px] text-gray-300 flex-shrink-0" title="AI 가이드">AI 가이드</span>}
+          <span className="flex items-center gap-0.5 flex-shrink-0">
+            {doc.created_by_name && <span className="text-[9px] text-gray-300 mr-0.5">{doc.created_by_name}</span>}
+            {doc.visibility === 'company' && <Building2 size={10} className="text-blue-500" />}
+            {doc.visibility === 'personal' && <UserIcon size={10} className="text-purple-500" />}
+            {doc.visibility === 'department' && <Users size={10} className="text-green-500" />}
+            {doc.shared === 1 && <Share2 size={9} className="text-orange-400" />}
+          </span>
+        </button>
+      )}
+      <button
+        onClick={() => { setRenameValue(doc.title); setRenaming(true) }}
+        className="p-0.5 text-gray-300 hover:text-blue-500 opacity-0 group-hover:opacity-100"
+        title="이름 변경"
+      >
+        <Pencil size={13} />
       </button>
+      <VisibilitySelector doc={doc} onChanged={onRenamed} />
       <button
         onClick={() => onDelete(doc)}
         className="p-0.5 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"

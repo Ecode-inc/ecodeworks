@@ -61,7 +61,7 @@ export function KanbanPage() {
   // Load unified view
   const loadAllTasks = () => {
     const params = unifiedFilter === 'mine' ? { assignee_id: user?.id } : undefined
-    tasksApi.all(params).then(r => setAllTasks(r.tasks || [])).catch(() => {})
+    tasksApi.all(params).then(r => setAllTasks(r.tasks || [])).catch((e) => { console.error(e) })
   }
 
   useEffect(() => {
@@ -74,7 +74,7 @@ export function KanbanPage() {
       if ((r.boards || []).length > 0 && !selectedBoard && viewMode === 'board') {
         loadBoard(r.boards[0].id)
       }
-    }).catch(() => {})
+    }).catch((e) => { console.error(e) })
   }, [currentDeptId, viewMode])
 
   const loadBoard = async (boardId: string) => {
@@ -659,15 +659,15 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave, boards, uni
 
   useEffect(() => {
     if (open) {
-      membersApi.list().then(r => setMembers(r.members || [])).catch(() => {})
-      qaApi.listLinks().then(r => setQaLinks(r.links || [])).catch(() => {})
+      membersApi.list().then(r => setMembers(r.members || [])).catch((e) => { console.error(e) })
+      qaApi.listLinks().then(r => setQaLinks(r.links || [])).catch((e) => { console.error(e) })
       // For unified mode: set initial board/column
       if (!task && unifiedMode && boards?.length) {
         setSelectedBoardId(boards[0].id)
         boardsApi.get(boards[0].id).then(r => {
           setBoardColumns(r.columns || [])
           if (r.columns?.length) setSelectedColumnId(r.columns[0].id)
-        }).catch(() => {})
+        }).catch((e) => { console.error(e) })
       }
     }
   }, [open])
@@ -702,7 +702,7 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave, boards, uni
           if (t?.qa_link_ids?.length) {
             setSelectedQaLinks(t.qa_link_ids.map((id: string) => ({ id })))
           } else { setSelectedQaLinks([]) }
-        }).catch(() => { setSelectedDocs([]); setSelectedQaLinks([]) })
+        }).catch((e) => { console.error(e); setSelectedDocs([]); setSelectedQaLinks([]) })
       } else {
         setSelectedDocs([])
         setSelectedQaLinks([])
@@ -727,7 +727,7 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave, boards, uni
         docs.filter((d: any) => d.is_folder).forEach((d: any) => { folders[d.id] = d.title })
         setFolderMap(folders)
         setAllDocs(docs.filter((d: any) => !d.is_folder))
-      }).catch(() => {})
+      }).catch((e) => { console.error(e) })
     }
   }, [open])
 
@@ -825,7 +825,7 @@ function TaskModal({ open, onClose, task, boardId, columnId, onSave, boards, uni
                     boardsApi.get(bid).then(r => {
                       setBoardColumns(r.columns || [])
                       if (r.columns?.length) setSelectedColumnId(r.columns[0].id)
-                    }).catch(() => {})
+                    }).catch((e) => { console.error(e) })
                   }
                 }}
                 className="w-full border rounded-lg px-3 py-2 text-sm"

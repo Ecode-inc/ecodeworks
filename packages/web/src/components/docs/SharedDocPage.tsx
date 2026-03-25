@@ -1,23 +1,22 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { fetchSharedDoc } from '../../lib/api'
 import { FileText, AlertCircle } from 'lucide-react'
+import remarkGfm from 'remark-gfm'
+import '@uiw/react-markdown-preview/markdown.css'
+const MDPreview = lazy(() => import('@uiw/react-markdown-preview').then(m => ({ default: m.default })))
 
 function MarkdownPreview({ content }: { content: string }) {
-  const html = content
-    .replace(/^### (.+)$/gm, '<h3 class="font-semibold mt-4 mb-2" style="font-size:1.1em">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="font-semibold mt-5 mb-2" style="font-size:1.25em">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="font-bold mt-6 mb-3" style="font-size:1.4em">$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code class="bg-gray-100 px-1 rounded" style="font-size:0.9em">$1</code>')
-    .replace(/^\- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-    .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary-600 underline hover:text-primary-800" target="_blank" rel="noopener noreferrer">$1</a>')
-    .replace(/(?<!="|'>)(https?:\/\/[^\s<,)]+)/g, '<a href="$1" class="text-primary-600 underline hover:text-primary-800" target="_blank" rel="noopener noreferrer">$1</a>')
-    .replace(/\n\n/g, '<br/><br/>')
-    .replace(/\n/g, '<br/>')
-
-  return <div style={{ fontSize: '15px', lineHeight: '1.7' }} dangerouslySetInnerHTML={{ __html: html }} />
+  return (
+    <Suspense fallback={<div className="text-gray-400">로딩 중...</div>}>
+      <div data-color-mode="light">
+        <MDPreview
+          source={content}
+          remarkPlugins={[remarkGfm]}
+          style={{ padding: 0, background: 'transparent', fontSize: '15px' }}
+        />
+      </div>
+    </Suspense>
+  )
 }
 
 export function SharedDocPage({ token }: { token: string }) {

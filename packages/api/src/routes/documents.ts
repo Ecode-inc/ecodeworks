@@ -91,9 +91,27 @@ documentsRoutes.get('/search', async (c) => {
 
 // Get document (with content)
 documentsRoutes.get('/:id', async (c) => {
+  const user = c.get('user')
   const docId = c.req.param('id')
-  const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first()
+  const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first<any>()
   if (!doc) return c.json({ error: 'Document not found' }, 404)
+
+  // Visibility check (CEO/admin can see everything)
+  if (!user.is_ceo && !user.is_admin) {
+    if (doc.shared === 1) {
+      // shared docs are visible to anyone
+    } else if (doc.visibility === 'company') {
+      // company visibility: anyone in org can see
+    } else if (doc.visibility === 'department') {
+      const membership = await c.env.DB.prepare(
+        'SELECT 1 FROM user_departments WHERE user_id = ? AND department_id = ?'
+      ).bind(user.id, doc.department_id).first()
+      if (!membership) return c.json({ error: 'Access denied' }, 403)
+    } else if (doc.visibility === 'personal') {
+      if (doc.created_by !== user.id) return c.json({ error: 'Access denied' }, 403)
+    }
+  }
+
   return c.json({ document: doc })
 })
 
@@ -212,7 +230,20 @@ documentsRoutes.patch('/:id', authMiddleware, async (c) => {
 
 // Delete document
 documentsRoutes.delete('/:id', authMiddleware, async (c) => {
+  const user = c.get('user')
   const docId = c.req.param('id')
+
+  const doc = await c.env.DB.prepare('SELECT created_by, department_id FROM documents WHERE id = ?').bind(docId).first<{ created_by: string; department_id: string }>()
+  if (!doc) return c.json({ error: 'Document not found' }, 404)
+
+  // Permission check: only creator, dept head, CEO, or admin can delete
+  if (!user.is_ceo && !user.is_admin && doc.created_by !== user.id) {
+    const headCheck = await c.env.DB.prepare(
+      "SELECT 1 FROM user_departments WHERE user_id = ? AND department_id = ? AND role = 'head'"
+    ).bind(user.id, doc.department_id).first()
+    if (!headCheck) return c.json({ error: 'Only the creator, department head, or admin can delete' }, 403)
+  }
+
   await c.env.DB.prepare('DELETE FROM documents WHERE id = ?').bind(docId).run()
   return c.json({ success: true })
 })
@@ -256,12 +287,20 @@ documentsRoutes.get('/:id/versions/:versionId', async (c) => {
 // ── Share Links ──────────────────────────────────────────────
 
 // Create share link
-documentsRoutes.post('/:id/share', async (c) => {
+documentsRoutes.post('/:id/share', authMiddleware, async (c) => {
   const user = c.get('user')
   const docId = c.req.param('id')
 
-  const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first()
+  const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first<any>()
   if (!doc) return c.json({ error: 'Document not found' }, 404)
+
+  // Ownership/department check: only creator, dept head, CEO, or admin can create share links
+  if (!user.is_ceo && !user.is_admin && doc.created_by !== user.id) {
+    const headCheck = await c.env.DB.prepare(
+      "SELECT 1 FROM user_departments WHERE user_id = ? AND department_id = ? AND role = 'head'"
+    ).bind(user.id, doc.department_id).first()
+    if (!headCheck) return c.json({ error: 'Only the creator, department head, or admin can share' }, 403)
+  }
 
   const body = await c.req.json<{
     share_type: 'external' | 'internal'

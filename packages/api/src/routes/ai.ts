@@ -26,6 +26,30 @@ type Variables = { apiKeyOrgId: string; apiKeyScopes: string[] }
 
 export const aiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
+// Auto-log all /action/* calls to telegram_command_log
+aiRoutes.use('/action/*', async (c, next) => {
+  await next()
+  // Log after response (fire-and-forget)
+  try {
+    const orgId = c.get('apiKeyOrgId')
+    if (!orgId) return
+    const url = new URL(c.req.url)
+    const action = url.pathname.replace(/^.*\/action\//, '')
+    const params = Object.fromEntries(url.searchParams.entries())
+    const telegramUserId = params.telegram_user_id || ''
+    const userId = params.user_id || ''
+    // Remove sensitive/large params from args
+    delete params.content
+    delete params.password
+    const args = JSON.stringify(params)
+    const status = c.res.status < 400 ? 'ok' : 'error'
+    c.env.DB.prepare(
+      `INSERT INTO telegram_command_log (id, org_id, chat_id, telegram_user_id, user_id, command, args, response_summary)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(generateId(), orgId, '', telegramUserId, userId, action, args, status).run()
+  } catch { /* ignore logging errors */ }
+})
+
 // GET action guide - JSON format for AI bots (no auth required)
 aiRoutes.get('/actions', (c) => {
   return c.json({
@@ -107,6 +131,11 @@ aiRoutes.get('/actions', (c) => {
         'create-credential': 'service_name, username, password, url (선택), telegram_user_id or user_id or email',
         'view-credential': 'service_name, pin (4-8자리), telegram_user_id or user_id or email',
       },
+    },
+    ai_board: {
+      'list-board-posts': 'limit (default 10) — AI 게시판 글 목록 조회',
+      'create-board-post': 'title (제목), content (내용) — AI 게시판에 글 작성 (AI 작성자로 표시)',
+      'reply-board-post': 'post_id, content (댓글 내용) — AI 게시판 글에 댓글 달기',
     },
     privacy: {
       calendar_context: 'context=group hides personal events, context=private&user_id=X shows personal',
@@ -3597,6 +3626,107 @@ aiRoutes.get('/action/create-credential', async (c) => {
   ])
 
   return c.json({ success: true, credential: { id, service_name: serviceName, url, department_id: dept.department_id } })
+})
+
+// ──────────────────────────────────────────────────────────────
+// AI Board actions
+// ──────────────────────────────────────────────────────────────
+
+// List recent board posts
+aiRoutes.get('/action/list-board-posts', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const limit = Math.min(parseInt(c.req.query('limit') || '10'), 50)
+
+  const { results: posts } = await c.env.DB.prepare(
+    `SELECT p.id, p.title, p.author_name, p.is_ai, p.created_at, p.likes,
+       (SELECT COUNT(*) FROM ai_board_comments c WHERE c.post_id = p.id) as comment_count
+     FROM ai_board_posts p
+     WHERE p.org_id = ?
+     ORDER BY p.pinned DESC, p.created_at DESC
+     LIMIT ?`
+  ).bind(orgId, limit).all()
+
+  return c.json({ posts })
+})
+
+// Get a single post with comments
+aiRoutes.get('/action/get-board-post', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const postId = c.req.query('post_id')
+  if (!postId) return c.json({ error: 'post_id required' }, 400)
+
+  const post = await c.env.DB.prepare(
+    'SELECT * FROM ai_board_posts WHERE id = ? AND org_id = ?'
+  ).bind(postId, orgId).first()
+  if (!post) return c.json({ error: 'Post not found' }, 404)
+
+  const { results: comments } = await c.env.DB.prepare(
+    'SELECT id, author_name, is_ai, content, created_at FROM ai_board_comments WHERE post_id = ? AND org_id = ? ORDER BY created_at ASC'
+  ).bind(postId, orgId).all()
+
+  return c.json({ post, comments })
+})
+
+// Create a post as AI
+aiRoutes.get('/action/create-board-post', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const title = c.req.query('title')
+  const content = c.req.query('content')
+  const authorName = c.req.query('author_name') || '에디 (AI)'
+  const tagsParam = c.req.query('tags') || ''
+  const tags = tagsParam ? JSON.stringify(tagsParam.split(',').map(t => t.trim()).filter(Boolean)) : '[]'
+
+  if (!title || !content) return c.json({ error: 'title, content required' }, 400)
+
+  const id = generateId()
+  await c.env.DB.prepare(
+    `INSERT INTO ai_board_posts (id, org_id, user_id, author_name, is_ai, title, content, tags)
+     VALUES (?, ?, NULL, ?, 1, ?, ?, ?)`
+  ).bind(id, orgId, authorName, title, content, tags).run()
+
+  const post = await c.env.DB.prepare('SELECT * FROM ai_board_posts WHERE id = ?').bind(id).first()
+  return c.json({ success: true, post })
+})
+
+// Reply to a post as AI
+aiRoutes.get('/action/reply-board-post', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const postId = c.req.query('post_id')
+  const content = c.req.query('content')
+  const authorName = c.req.query('author_name') || '에디 (AI)'
+
+  if (!postId || !content) return c.json({ error: 'post_id, content required' }, 400)
+
+  // Verify post exists
+  const post = await c.env.DB.prepare(
+    'SELECT id FROM ai_board_posts WHERE id = ? AND org_id = ?'
+  ).bind(postId, orgId).first()
+
+  if (!post) return c.json({ error: 'Post not found' }, 404)
+
+  const id = generateId()
+  await c.env.DB.prepare(
+    `INSERT INTO ai_board_comments (id, post_id, org_id, user_id, author_name, is_ai, content)
+     VALUES (?, ?, ?, NULL, ?, 1, ?)`
+  ).bind(id, postId, orgId, authorName, content).run()
+
+  // Update post's updated_at
+  await c.env.DB.prepare(
+    "UPDATE ai_board_posts SET updated_at = datetime('now') WHERE id = ?"
+  ).bind(postId).run()
+
+  const comment = await c.env.DB.prepare('SELECT * FROM ai_board_comments WHERE id = ?').bind(id).first()
+  return c.json({ success: true, comment })
 })
 
 // View credential (requires PIN verification)
