@@ -55,7 +55,7 @@ aiRoutes.use('/action/*', async (c, next) => {
 aiRoutes.get('/actions', (c) => {
   return c.json({
     guide: 'All actions use GET with ?key=API_KEY. Parameters via query string.',
-    base_url: 'https://ecode-internal-api.justin21lee.workers.dev/api/v1',
+    base_url: 'https://ecode-internal-api.aws-eb2.workers.dev/api/v1',
     actions: {
       telegram_mapping: {
         'map-telegram-user': 'telegram_user_id, telegram_username, email',
@@ -3181,7 +3181,7 @@ aiRoutes.get('/action/search-images', async (c) => {
   const org = await c.env.DB.prepare('SELECT slug FROM organizations WHERE id = ?').bind(orgId).first<{ slug: string }>()
   const withUrls = (results || []).map((img: any) => ({
     ...img,
-    full_url: `https://ecode-internal-api.justin21lee.workers.dev/api/files/${encodeURI(img.file_url)}`,
+    full_url: `https://ecode-internal-api.aws-eb2.workers.dev/api/files/${encodeURI(img.file_url)}`,
   }))
 
   return c.json({ images: withUrls })
@@ -3231,7 +3231,7 @@ aiRoutes.get('/action/find-doc-images', async (c) => {
 
   const withUrls = (images || []).map((img: any) => ({
     ...img,
-    full_url: `https://ecode-internal-api.justin21lee.workers.dev/api/files/${encodeURI(img.file_url)}`,
+    full_url: `https://ecode-internal-api.aws-eb2.workers.dev/api/files/${encodeURI(img.file_url)}`,
   }))
 
   // Generate share link for the first document (so users can view all images in browser)
@@ -3444,7 +3444,7 @@ aiRoutes.get('/action/attach-file-url', async (c) => {
   const record = await c.env.DB.prepare('SELECT * FROM doc_files WHERE id = ?').bind(id).first()
 
   // Build public URL
-  const publicUrl = `https://ecode-internal-api.justin21lee.workers.dev/api/files/${r2Key}`
+  const publicUrl = `https://ecode-internal-api.aws-eb2.workers.dev/api/files/${r2Key}`
 
   return c.json({ success: true, file: record, public_url: publicUrl })
 })
@@ -3495,7 +3495,7 @@ aiRoutes.post('/action/attach-file', async (c) => {
   `).bind(id, documentId, orgId, r2Key, fileName, arrayBuffer.byteLength, contentType, uploadedBy).run()
 
   const record = await c.env.DB.prepare('SELECT * FROM doc_files WHERE id = ?').bind(id).first()
-  const publicUrl = `https://ecode-internal-api.justin21lee.workers.dev/api/files/${r2Key}`
+  const publicUrl = `https://ecode-internal-api.aws-eb2.workers.dev/api/files/${r2Key}`
 
   return c.json({ success: true, file: record, public_url: publicUrl })
 })

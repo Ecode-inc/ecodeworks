@@ -20,8 +20,8 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-const API_BASE = 'https://ecode-internal-api.justin21lee.workers.dev/api/v1'
-const MCP_ENDPOINT = 'https://ecode-internal-api.justin21lee.workers.dev/api/mcp'
+const API_BASE = 'https://ecode-internal-api.aws-eb2.workers.dev/api/v1'
+const MCP_ENDPOINT = 'https://ecode-internal-api.aws-eb2.workers.dev/api/mcp'
 
 // ── GET Action 엔드포인트 (web_fetch 호환) ──
 const getActions = [

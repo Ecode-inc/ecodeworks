@@ -8,7 +8,7 @@ ENVIRONMENT = "production"
 [[d1_databases]]
 binding = "DB"
 database_name = "ecode-db"
-database_id = "685edce0-62ee-4a6b-a3a2-4171c046b868"
+database_id = "c9794172-51cf-47e2-9765-b474db0471fc"
 
 [[r2_buckets]]
 binding = "FILES"

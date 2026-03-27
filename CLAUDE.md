@@ -75,7 +75,7 @@ CLOUDFLARE_ACCOUNT_ID=c3e0474724b7ce487cf7d2cbe2f26aaa npx wrangler pages deploy
 
 # ⚠️ 중요: VITE_API_URL은 packages/web/.env.production 파일에 설정됨
 # 빌드 시 별도로 환경변수를 전달하지 않아도 됨
-# .env.production 파일: VITE_API_URL=https://ecode-internal-api.justin21lee.workers.dev/api
+# .env.production 파일: VITE_API_URL=https://ecode-internal-api.aws-eb2.workers.dev/api
 # 이 파일이 없으면 API 호출이 /api 로 가서 Cloudflare Pages에서 405 에러 발생!
 
 # D1 마이그레이션 (원격)

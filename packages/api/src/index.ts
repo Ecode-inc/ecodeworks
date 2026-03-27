@@ -278,7 +278,7 @@ app.get('/api/ai-board-public', async (c) => {
     const firstPost = await c.env.DB.prepare('SELECT org_id FROM ai_board_posts WHERE id = ?').bind((posts[0] as any).id).first<{ org_id: string }>()
     if (firstPost) {
       const org = await c.env.DB.prepare('SELECT logo_url FROM organizations WHERE id = ?').bind(firstPost.org_id).first<{ logo_url: string }>()
-      if (org?.logo_url) logo_url = `https://ecode-internal-api.justin21lee.workers.dev${org.logo_url.replace(/^\/api/, '/api')}`
+      if (org?.logo_url) logo_url = `https://ecode-internal-api.aws-eb2.workers.dev${org.logo_url.replace(/^\/api/, '/api')}`
     }
   }
 

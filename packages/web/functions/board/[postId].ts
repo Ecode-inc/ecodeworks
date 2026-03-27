@@ -2,7 +2,7 @@ export const onRequestGet: PagesFunction = async (context) => {
   const postId = context.params.postId as string
 
   // Fetch OG meta from API server
-  const apiUrl = `https://ecode-internal-api.justin21lee.workers.dev/board/${postId}`
+  const apiUrl = `https://ecode-internal-api.aws-eb2.workers.dev/board/${postId}`
   const response = await fetch(apiUrl)
 
   if (response.ok) {
