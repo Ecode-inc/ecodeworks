@@ -2364,11 +2364,12 @@ aiRoutes.get('/action/update-doc', async (c) => {
     const maxVer = await c.env.DB.prepare(
       'SELECT COALESCE(MAX(version_number), 0) as max_ver FROM document_versions WHERE document_id = ?'
     ).bind(docId).first<{ max_ver: number }>()
-    const ceoUser = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND is_ceo = 1 LIMIT 1').bind(orgId).first<{ id: string }>()
-    const versionCreator = ceoUser?.id || ''
+    // Use a real user_id for FK constraint - get first user in org
+    const versionUser = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? LIMIT 1').bind(orgId).first<{ id: string }>()
+    const versionUserId = versionUser?.id || existing.created_by
     await c.env.DB.prepare(
       'INSERT INTO document_versions (id, document_id, content, version_number, created_by) VALUES (?, ?, ?, ?, ?)'
-    ).bind(generateId(), docId, updatedDoc.content, (maxVer?.max_ver ?? 0) + 1, versionCreator).run()
+    ).bind(generateId(), docId, updatedDoc.content, (maxVer?.max_ver ?? 0) + 1, versionUserId).run()
   }
 
   return c.json({ success: true, document: updatedDoc })
@@ -3657,22 +3658,30 @@ aiRoutes.get('/action/list-board-posts', async (c) => {
        (SELECT COUNT(*) FROM ai_board_comments c WHERE c.post_id = p.id) as comment_count,
        (SELECT GROUP_CONCAT(DISTINCT c2.author_name) FROM ai_board_comments c2 WHERE c2.post_id = p.id) as commented_by,
        (SELECT COUNT(*) FROM ai_board_comments c3 WHERE c3.post_id = p.id AND c3.is_ai = 0 AND c3.created_at > COALESCE((SELECT MAX(c4.created_at) FROM ai_board_comments c4 WHERE c4.post_id = p.id AND c4.author_name = ?), '1970-01-01')) as new_human_replies,
-       (SELECT author_name FROM ai_board_comments c5 WHERE c5.post_id = p.id ORDER BY c5.created_at DESC LIMIT 1) as last_commenter
+       (SELECT author_name FROM ai_board_comments c5 WHERE c5.post_id = p.id ORDER BY c5.created_at DESC LIMIT 1) as last_commenter,
+       (SELECT COUNT(*) FROM ai_board_comments c6 WHERE c6.post_id = p.id AND c6.is_ai = 1 AND c6.created_at > COALESCE((SELECT MAX(c7.created_at) FROM ai_board_comments c7 WHERE c7.post_id = p.id AND c7.is_ai = 0), '1970-01-01')) as ai_comments_since_human
      FROM ai_board_posts p
      WHERE ${whereClause}
      ORDER BY p.pinned DESC, p.created_at DESC
      LIMIT ?`
   ).bind(...params, limit).all()
 
-  return c.json({ posts, hint: 'new_human_replies>0이면 사람 새 댓글에 답글 가능. last_commenter가 내 이름이면 연속댓글이므로 건너뛰기. my_only=1로 내 글만 조회 가능.' })
+  return c.json({ posts, hint: '댓글 가능 조건: ai_comments_since_human < 2 AND last_commenter가 내 이름이 아닌 글만. 조건 안 맞으면 댓글 시도하지 말고 새 글만 써라. 토큰 아끼자.' })
 })
 
 // Get a single post with comments
+// Also handle /action/get-board-post/:id pattern (AI sometimes uses path instead of query)
+aiRoutes.get('/action/get-board-post/:id', async (c) => {
+  const url = new URL(c.req.url)
+  url.searchParams.set('post_id', c.req.param('id'))
+  return c.redirect(url.pathname.replace(/\/[^/]+$/, '') + '?' + url.searchParams.toString(), 307)
+})
+
 aiRoutes.get('/action/get-board-post', async (c) => {
   const scopes = c.get('apiKeyScopes')
   if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
   const orgId = c.get('apiKeyOrgId')
-  const postId = c.req.query('post_id')
+  const postId = c.req.query('post_id') || c.req.query('id')
   if (!postId) return c.json({ error: 'post_id required' }, 400)
 
   const post = await c.env.DB.prepare(
@@ -3693,13 +3702,40 @@ aiRoutes.get('/action/create-board-post', async (c) => {
   if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
   const orgId = c.get('apiKeyOrgId')
 
-  const title = c.req.query('title')
-  const content = c.req.query('content')
+  const rawTitle = c.req.query('title') || ''
+  const rawContent = c.req.query('content') || ''
   const authorName = c.req.query('author_name') || '에디 (AI)'
   const tagsParam = c.req.query('tags') || ''
   const tags = tagsParam ? JSON.stringify(tagsParam.split(',').map(t => t.trim()).filter(Boolean)) : '[]'
 
+  // Safely decode in case of double-encoding
+  let title = rawTitle
+  let content = rawContent
+  try { if (/%[0-9A-Fa-f]{2}/.test(title)) title = decodeURIComponent(title) } catch {}
+  try { if (/%[0-9A-Fa-f]{2}/.test(content)) content = decodeURIComponent(content) } catch {}
+
   if (!title || !content) return c.json({ error: 'title, content required' }, 400)
+
+  // Check for similar existing posts (prevent duplicate topics)
+  const titleWords = title.replace(/[^가-힣a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length >= 2)
+  if (titleWords.length > 0) {
+    const { results: recentPosts } = await c.env.DB.prepare(
+      'SELECT id, title FROM ai_board_posts WHERE org_id = ? ORDER BY created_at DESC LIMIT 30'
+    ).bind(orgId).all<{ id: string; title: string }>()
+
+    for (const existing of recentPosts) {
+      const existingWords = existing.title.replace(/[^가-힣a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length >= 2)
+      const overlap = titleWords.filter(w => existingWords.some(ew => ew.includes(w) || w.includes(ew)))
+      const similarity = overlap.length / Math.max(titleWords.length, 1)
+      if (similarity >= 0.5) {
+        return c.json({
+          error: 'similar_post_exists',
+          message: `비슷한 글이 이미 있습니다: "${existing.title}". 다른 주제로 써주세요.`,
+          existing_post_id: existing.id,
+        }, 409)
+      }
+    }
+  }
 
   const id = generateId()
   await c.env.DB.prepare(
@@ -3711,8 +3747,22 @@ aiRoutes.get('/action/create-board-post', async (c) => {
 
   // Notify all org users about AI board post
   try {
-    await notifyOrg(c.env.DB, orgId, '', 'board_post', `새 게시글: ${title}`, `${authorName}님이 게시글을 작성했습니다`, '/ai#board')
+    await notifyOrg(c.env.DB, orgId, '', 'board_post', `새 게시글: ${title}`, `${authorName}님이 게시글을 작성했습니다`, `/ai#board`)
   } catch { /* ignore notification errors */ }
+
+  // Check for mentions: @name or plain name (e.g. 윤승휘님, 황준식 선임)
+  try {
+    const { results: orgMembers } = await c.env.DB.prepare(
+      'SELECT id, name FROM users WHERE org_id = ?'
+    ).bind(orgId).all<{ id: string; name: string }>()
+    const notified = new Set<string>()
+    for (const member of orgMembers) {
+      if (content.includes(member.name) && !notified.has(member.id)) {
+        notified.add(member.id)
+        await createNotification(c.env.DB, orgId, member.id, 'board_mention', `게시판에서 언급됨`, `${authorName}님이 "${title}" 글에서 회원님을 언급했습니다`, `/board/${id}`)
+      }
+    }
+  } catch { /* ignore */ }
 
   return c.json({ success: true, post })
 })
@@ -3724,8 +3774,9 @@ aiRoutes.get('/action/reply-board-post', async (c) => {
   const orgId = c.get('apiKeyOrgId')
 
   const postId = c.req.query('post_id')
-  const content = c.req.query('content')
+  let content = c.req.query('content') || ''
   const authorName = c.req.query('author_name') || '에디 (AI)'
+  try { if (/%[0-9A-Fa-f]{2}/.test(content)) content = decodeURIComponent(content) } catch {}
 
   if (!postId || !content) return c.json({ error: 'post_id, content required' }, 400)
 
@@ -3742,7 +3793,21 @@ aiRoutes.get('/action/reply-board-post', async (c) => {
   ).bind(postId).first<{ author_name: string }>()
 
   if (lastComment && lastComment.author_name === authorName) {
-    return c.json({ error: 'duplicate_consecutive', message: '마지막 댓글이 이미 같은 작성자입니다. 다른 사람이 댓글을 달 때까지 기다리세요.' }, 409)
+    return c.json({ error: 'duplicate_consecutive', message: '마지막 댓글이 이미 같은 작성자입니다.' }, 409)
+  }
+
+  // Limit AI comments: max 2 AI comments after the last human comment
+  // Count AI comments since the last human (is_ai=0) comment
+  const aiCommentsSinceHuman = await c.env.DB.prepare(
+    `SELECT COUNT(*) as cnt FROM ai_board_comments
+     WHERE post_id = ? AND is_ai = 1 AND created_at > COALESCE(
+       (SELECT MAX(created_at) FROM ai_board_comments WHERE post_id = ? AND is_ai = 0),
+       '1970-01-01'
+     )`
+  ).bind(postId, postId).first<{ cnt: number }>()
+
+  if (aiCommentsSinceHuman && aiCommentsSinceHuman.cnt >= 2) {
+    return c.json({ error: 'ai_comment_limit', message: 'AI 댓글이 2개 이상입니다. 사람이 댓글을 달 때까지 기다리세요.' }, 429)
   }
 
   const id = generateId()
@@ -3755,6 +3820,19 @@ aiRoutes.get('/action/reply-board-post', async (c) => {
   await c.env.DB.prepare(
     "UPDATE ai_board_posts SET updated_at = datetime('now') WHERE id = ?"
   ).bind(postId).run()
+
+  // Check for mentions in comment (plain name or @name)
+  try {
+    const postData = await c.env.DB.prepare('SELECT title FROM ai_board_posts WHERE id = ?').bind(postId).first<{ title: string }>()
+    const { results: orgMembers } = await c.env.DB.prepare(
+      'SELECT id, name FROM users WHERE org_id = ?'
+    ).bind(orgId).all<{ id: string; name: string }>()
+    for (const member of orgMembers) {
+      if (content.includes(member.name)) {
+        await createNotification(c.env.DB, orgId, member.id, 'board_mention', '댓글에서 언급됨', `${authorName}님이 "${postData?.title}" 댓글에서 회원님을 언급했습니다`, `/board/${postId}`)
+      }
+    }
+  } catch { /* ignore */ }
 
   const comment = await c.env.DB.prepare('SELECT * FROM ai_board_comments WHERE id = ?').bind(id).first()
   return c.json({ success: true, comment })
@@ -3817,4 +3895,18 @@ aiRoutes.get('/action/view-credential', async (c) => {
       notes,
     },
   })
+})
+
+// Catch-all: help AI find the right endpoint
+aiRoutes.all('/*', (c) => {
+  return c.json({
+    error: 'endpoint_not_found',
+    message: '이 엔드포인트는 존재하지 않습니다. /actions 에서 사용 가능한 엔드포인트를 확인하세요.',
+    board_endpoints: {
+      list: '/action/list-board-posts?key={KEY}&limit=10&author_name={이름}',
+      get: '/action/get-board-post?key={KEY}&post_id={ID}',
+      create: '/action/create-board-post?key={KEY}&author_name={이름}&tags={태그}&title={제목}&content={내용}',
+      reply: '/action/reply-board-post?key={KEY}&post_id={ID}&author_name={이름}&content={내용}',
+    },
+  }, 404)
 })

@@ -288,14 +288,23 @@ app.get('/api/ai-board-public', async (c) => {
 app.get('/api/ai-board-public/:id', async (c) => {
   const id = c.req.param('id')
   const post = await c.env.DB.prepare(
-    `SELECT id, title, content, author_name, is_ai, likes, views, tags, created_at FROM ai_board_posts WHERE id = ?`
+    `SELECT id, org_id, title, content, author_name, is_ai, likes, views, tags, created_at FROM ai_board_posts WHERE id = ?`
   ).bind(id).first()
   if (!post) return c.json({ error: 'Not found' }, 404)
   await c.env.DB.prepare('UPDATE ai_board_posts SET views = views + 1 WHERE id = ?').bind(id).run()
   const { results: comments } = await c.env.DB.prepare(
     'SELECT id, author_name, is_ai, content, created_at FROM ai_board_comments WHERE post_id = ? ORDER BY created_at ASC'
   ).bind(id).all()
-  return c.json({ post, comments })
+
+  // Get member names for mention highlighting
+  const orgId = (post as any).org_id || await c.env.DB.prepare('SELECT org_id FROM ai_board_posts WHERE id = ?').bind(id).first<{org_id:string}>().then(r => r?.org_id)
+  let member_names: string[] = []
+  if (orgId) {
+    const { results: members } = await c.env.DB.prepare('SELECT name FROM users WHERE org_id = ?').bind(orgId).all<{name:string}>()
+    member_names = members.map(m => m.name)
+  }
+
+  return c.json({ post, comments, member_names })
 })
 
 // Public like (IP-based, no auth)

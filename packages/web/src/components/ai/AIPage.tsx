@@ -1,4 +1,5 @@
 import { useState, useEffect, FormEvent } from 'react'
+import { useAuthStore } from '../../stores/authStore'
 import { useToastStore } from '../../stores/toastStore'
 import { aiApi, telegramApi, membersApi } from '../../lib/api'
 import { Input } from '../ui/Input'
@@ -690,9 +691,13 @@ const tabs: { key: Tab; label: string }[] = [
 ]
 
 export function AIPage() {
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.is_ceo || user?.is_admin
+  const visibleTabs = isAdmin ? tabs : tabs.filter(t => t.key === 'board')
   const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : ''
-  const validTabs = tabs.map(t => t.key)
-  const [activeTab, setActiveTab] = useState<Tab>(validTabs.includes(hash as Tab) ? hash as Tab : 'keys')
+  const defaultTab = isAdmin ? 'keys' : 'board'
+  const validTabs = visibleTabs.map(t => t.key)
+  const [activeTab, setActiveTab] = useState<Tab>(validTabs.includes(hash as Tab) ? hash as Tab : defaultTab)
 
   const changeTab = (tab: Tab) => {
     setActiveTab(tab)
@@ -705,7 +710,7 @@ export function AIPage() {
 
       {/* Tab bar */}
       <div className="flex border-b mb-6">
-        {tabs.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t.key}
             onClick={() => changeTab(t.key)}

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Bot, MessageSquare, Heart, Trash2, Send, Plus, ArrowLeft, Clock, Eye, Lock } from 'lucide-react'
-import { aiBoardApi } from '../../lib/api'
+import { Bot, MessageSquare, Heart, Trash2, Send, Plus, ArrowLeft, Clock, Eye, Lock, Share2 } from 'lucide-react'
+import { aiBoardApi, membersApi } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
+import { useToastStore } from '../../stores/toastStore'
 
 interface Post {
   id: string
@@ -42,6 +43,7 @@ export function AIBoardPage() {
   const [commentText, setCommentText] = useState('')
   const [creating, setCreating] = useState(false)
   const [submittingComment, setSubmittingComment] = useState(false)
+  const [memberNames, setMemberNames] = useState<string[]>([])
 
   const fetchPosts = useCallback(async () => {
     try {
@@ -57,10 +59,24 @@ export function AIBoardPage() {
 
   useEffect(() => {
     fetchPosts()
+    // Load member names for mention highlighting
+    membersApi.list().then(res => {
+      setMemberNames((res.members || []).map((m: any) => m.name))
+    }).catch(() => {})
+    // Restore selected post from URL hash
+    const hash = window.location.hash
+    const postMatch = hash.match(/#board\/(.+)/)
+    if (postMatch) {
+      aiBoardApi.get(postMatch[1]).then(res => {
+        setSelectedPost(res.post)
+        setComments(res.comments || [])
+      }).catch(() => {})
+    }
   }, [fetchPosts])
 
   const openPost = async (post: Post) => {
     setSelectedPost(post)
+    window.location.hash = `board/${post.id}`
     setCommentLoading(true)
     try {
       const res = await aiBoardApi.get(post.id)
@@ -157,6 +173,27 @@ export function AIBoardPage() {
     return user?.id === authorId || user?.is_ceo || user?.is_admin
   }
 
+  const knownNames = (() => {
+    const names = new Set<string>(memberNames)
+    posts.forEach(p => { if (!p.is_ai && p.author_name) names.add(p.author_name.split(' ')[0]) })
+    return Array.from(names).filter(n => n.length >= 2)
+  })()
+
+  const highlightMentions = (text: string) => {
+    if (!text || knownNames.length === 0) return text
+    const escaped = knownNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    const regex = new RegExp(`(@?(?:${escaped.join('|')}))`, 'g')
+    const parts = text.split(regex)
+    return parts.map((part, i) => {
+      if (regex.test(part)) {
+        regex.lastIndex = 0
+        return <span key={i} className="text-blue-600 font-semibold bg-blue-50 px-0.5 rounded">{part}</span>
+      }
+      regex.lastIndex = 0
+      return part
+    })
+  }
+
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z')
     const now = new Date()
@@ -176,7 +213,7 @@ export function AIBoardPage() {
     return (
       <div className="max-w-3xl mx-auto p-4">
         <button
-          onClick={() => { setSelectedPost(null); setComments([]) }}
+          onClick={() => { setSelectedPost(null); setComments([]); window.location.hash = 'board' }}
           className="flex items-center gap-1 text-gray-500 hover:text-gray-700 mb-4 text-sm"
         >
           <ArrowLeft size={16} />
@@ -210,6 +247,17 @@ export function AIBoardPage() {
                 <Heart size={18} fill={selectedPost.liked ? 'currentColor' : 'none'} />
                 <span className="text-sm">{selectedPost.likes || 0}</span>
               </button>
+              <button
+                onClick={() => {
+                  const url = `https://work.e-code.kr/board/${selectedPost.id}`
+                  navigator.clipboard.writeText(url)
+                  useToastStore.getState().addToast('success', '링크 복사됨', url)
+                }}
+                className="text-gray-400 hover:text-blue-500 transition-colors"
+                title="공유 링크 복사"
+              >
+                <Share2 size={18} />
+              </button>
               {canDelete(selectedPost.author_id) && (
                 <button
                   onClick={() => handleDelete(selectedPost.id)}
@@ -221,7 +269,7 @@ export function AIBoardPage() {
             </div>
           </div>
           <div className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-            {selectedPost.content}
+            {highlightMentions(selectedPost.content)}
           </div>
         </div>
 
@@ -268,7 +316,7 @@ export function AIBoardPage() {
                     </button>
                   )}
                 </div>
-                <p className="text-gray-700 whitespace-pre-wrap">{c.content}</p>
+                <p className="text-gray-700 whitespace-pre-wrap">{highlightMentions(c.content)}</p>
               </div>
             ))
           )}
@@ -335,7 +383,7 @@ export function AIBoardPage() {
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <h2 className="font-semibold text-gray-900 truncate flex items-center gap-1">{(post as any).is_private ? <Lock size={12} className="text-gray-400 flex-shrink-0" /> : null}{post.title}</h2>
-                  <p className="text-sm text-gray-500 mt-1 line-clamp-2">{post.content}</p>
+                  <p className="text-sm text-gray-500 mt-1 line-clamp-2">{highlightMentions(post.content)}</p>
                   <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
                     {post.is_ai ? (
                       <span className="inline-flex items-center gap-1 text-blue-600 font-medium">

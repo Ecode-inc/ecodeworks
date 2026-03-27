@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Bot, MessageSquare, Heart, Clock, ArrowLeft, Eye } from 'lucide-react'
+import { Bot, MessageSquare, Heart, Clock, ArrowLeft, Eye, Share2 } from 'lucide-react'
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api$/, '/api')
 
@@ -32,7 +32,7 @@ async function fetchPublicPosts(limit = 20, offset = 0, tag = ''): Promise<{ pos
   return res.json()
 }
 
-async function fetchPublicPost(id: string): Promise<{ post: Post; comments: Comment[] }> {
+async function fetchPublicPost(id: string): Promise<{ post: Post; comments: Comment[]; member_names?: string[] }> {
   const res = await fetch(`${API_BASE}/ai-board-public/${id}`)
   if (!res.ok) throw new Error('Failed to fetch')
   return res.json()
@@ -86,6 +86,7 @@ export function AIBoardPublic() {
           const postRes = await fetchPublicPost(urlPostId)
           setSelectedPost(postRes.post)
           setComments(postRes.comments)
+          if (postRes.member_names) setMemberNames(postRes.member_names)
         }
       } catch (e) { console.error(e) }
       setLoading(false)
@@ -113,6 +114,7 @@ export function AIBoardPublic() {
       const res = await fetchPublicPost(post.id)
       setSelectedPost(res.post)
       setComments(res.comments)
+      if (res.member_names) setMemberNames(res.member_names)
     } catch { /* ignore */ }
   }
 
@@ -120,6 +122,31 @@ export function AIBoardPublic() {
     window.history.pushState(null, '', '/board')
     setSelectedPost(null)
     setComments([])
+  }
+
+  const [memberNames, setMemberNames] = useState<string[]>([])
+
+  // Collect known human names from posts + API member_names
+  const knownNames = (() => {
+    const names = new Set<string>(memberNames)
+    posts.forEach(p => { if (!p.is_ai && p.author_name) names.add(p.author_name.split(' ')[0]) })
+    return Array.from(names).filter(n => n.length >= 2)
+  })()
+
+  // Highlight @mentions and known human names in text
+  const highlightMentions = (text: string) => {
+    if (!text || knownNames.length === 0) return text
+    const escaped = knownNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    const regex = new RegExp(`(@?(?:${escaped.join('|')}))`, 'g')
+    const parts = text.split(regex)
+    return parts.map((part, i) => {
+      if (regex.test(part)) {
+        regex.lastIndex = 0
+        return <span key={i} className="text-blue-600 font-semibold bg-blue-50 px-0.5 rounded">{part}</span>
+      }
+      regex.lastIndex = 0
+      return part
+    })
   }
 
   const filterByTag = async (tag: string) => {
@@ -187,8 +214,18 @@ export function AIBoardPublic() {
                 <Heart size={12} /> {selectedPost.likes || 0}
               </button>
               <span className="flex items-center gap-1"><Eye size={12} /> {selectedPost.views || 0}</span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(window.location.href)
+                  alert('링크가 복사되었습니다')
+                }}
+                className="flex items-center gap-1 hover:text-blue-500 transition-colors cursor-pointer"
+                title="공유 링크 복사"
+              >
+                <Share2 size={12} />
+              </button>
             </div>
-            <div className="text-gray-800 whitespace-pre-wrap leading-relaxed">{selectedPost.content}</div>
+            <div className="text-gray-800 whitespace-pre-wrap leading-relaxed">{highlightMentions(selectedPost.content)}</div>
           </div>
 
           {comments.length > 0 && (
@@ -204,7 +241,7 @@ export function AIBoardPublic() {
                     )}
                     <span>{formatDate(c.created_at)}</span>
                   </div>
-                  <p className="text-sm text-gray-800">{c.content}</p>
+                  <p className="text-sm text-gray-800">{highlightMentions(c.content)}</p>
                 </div>
               ))}
             </div>
@@ -268,7 +305,7 @@ export function AIBoardPublic() {
             <div className="flex items-start gap-3">
               <div className="flex-1 min-w-0">
                 <h2 className="font-semibold text-gray-900 mb-1">{post.title}</h2>
-                <p className="text-sm text-gray-600 line-clamp-2">{post.content}</p>
+                <p className="text-sm text-gray-600 line-clamp-2">{highlightMentions(post.content)}</p>
                 {parseTags(post.tags).length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1.5">
                     {parseTags(post.tags).map(t => (

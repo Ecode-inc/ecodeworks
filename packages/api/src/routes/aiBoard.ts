@@ -75,11 +75,18 @@ aiBoardRoutes.post('/', async (c) => {
 
   const tags = JSON.stringify(body.tags || [])
   const isPrivate = body.is_private ? 1 : 0
+
+  // Get user's position for display
+  const userInfo = await c.env.DB.prepare(
+    'SELECT u.name, p.name as position_name FROM users u LEFT JOIN positions p ON p.id = u.position_id WHERE u.id = ?'
+  ).bind(user.id).first<{ name: string; position_name: string | null }>()
+  const authorName = userInfo?.position_name ? `${userInfo.name} ${userInfo.position_name}` : user.name
+
   const id = generateId()
   await c.env.DB.prepare(
     `INSERT INTO ai_board_posts (id, org_id, user_id, author_name, is_ai, title, content, tags, is_private)
      VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`
-  ).bind(id, user.org_id, user.id, user.name, body.title, body.content, tags, isPrivate).run()
+  ).bind(id, user.org_id, user.id, authorName, body.title, body.content, tags, isPrivate).run()
 
   const post = await c.env.DB.prepare('SELECT * FROM ai_board_posts WHERE id = ?').bind(id).first()
 
@@ -110,11 +117,17 @@ aiBoardRoutes.post('/:id/comments', async (c) => {
 
   if (!post) return c.json({ error: '게시글을 찾을 수 없습니다' }, 404)
 
+  // Get user's position for display
+  const commentUserInfo = await c.env.DB.prepare(
+    'SELECT u.name, p.name as position_name FROM users u LEFT JOIN positions p ON p.id = u.position_id WHERE u.id = ?'
+  ).bind(user.id).first<{ name: string; position_name: string | null }>()
+  const commentAuthorName = commentUserInfo?.position_name ? `${commentUserInfo.name} ${commentUserInfo.position_name}` : user.name
+
   const id = generateId()
   await c.env.DB.prepare(
     `INSERT INTO ai_board_comments (id, post_id, org_id, user_id, author_name, is_ai, content)
      VALUES (?, ?, ?, ?, ?, 0, ?)`
-  ).bind(id, postId, user.org_id, user.id, user.name, body.content).run()
+  ).bind(id, postId, user.org_id, user.id, commentAuthorName, body.content).run()
 
   // Update post's updated_at
   await c.env.DB.prepare(
@@ -130,6 +143,39 @@ aiBoardRoutes.post('/:id/comments', async (c) => {
 
   const comment = await c.env.DB.prepare('SELECT * FROM ai_board_comments WHERE id = ?').bind(id).first()
   return c.json({ comment }, 201)
+})
+
+// ──────────────────────────────────────────────────────────────
+// PATCH /:id - Update post (CEO/admin only)
+// ──────────────────────────────────────────────────────────────
+aiBoardRoutes.patch('/:id', async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id')
+  if (!user.is_ceo && !user.is_admin) return c.json({ error: '권한 없음' }, 403)
+
+  const body = await c.req.json<{ title?: string; content?: string; tags?: string[] }>()
+  const updates: string[] = []
+  const values: unknown[] = []
+  if (body.title !== undefined) { updates.push('title = ?'); values.push(body.title) }
+  if (body.content !== undefined) { updates.push('content = ?'); values.push(body.content) }
+  if (body.tags !== undefined) { updates.push('tags = ?'); values.push(JSON.stringify(body.tags)) }
+  if (updates.length === 0) return c.json({ error: '수정할 내용이 없습니다' }, 400)
+  updates.push("updated_at = datetime('now')")
+  values.push(id, user.org_id)
+
+  await c.env.DB.prepare(`UPDATE ai_board_posts SET ${updates.join(', ')} WHERE id = ? AND org_id = ?`).bind(...values).run()
+  const post = await c.env.DB.prepare('SELECT * FROM ai_board_posts WHERE id = ?').bind(id).first()
+  return c.json({ post })
+})
+
+// PATCH /comments/:commentId - Update comment (CEO/admin only)
+aiBoardRoutes.patch('/comments/:commentId', async (c) => {
+  const user = c.get('user')
+  if (!user.is_ceo && !user.is_admin) return c.json({ error: '권한 없음' }, 403)
+  const commentId = c.req.param('commentId')
+  const body = await c.req.json<{ content: string }>()
+  await c.env.DB.prepare('UPDATE ai_board_comments SET content = ? WHERE id = ? AND org_id = ?').bind(body.content, commentId, user.org_id).run()
+  return c.json({ success: true })
 })
 
 // ──────────────────────────────────────────────────────────────

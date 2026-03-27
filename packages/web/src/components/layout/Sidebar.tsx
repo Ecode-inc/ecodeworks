@@ -36,6 +36,7 @@ const navItems = [
   { path: '/docs', icon: FileText, label: '문서' },
   { path: '/vault', icon: KeyRound, label: '비밀번호 금고' },
   { path: '/qa', icon: Bug, label: 'QA' },
+  { path: '/ai', icon: Bot, label: 'AI' },
 ]
 
 /** Returns true if the color is light (should use dark text on top) */
@@ -67,7 +68,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
   }, [user, location.pathname])
 
   const allItems = showSettings
-    ? [...navItems, { path: '/banking', icon: Landmark, label: '법인계좌' }, { path: '/ai', icon: Bot, label: 'AI' }, { path: '/settings', icon: Settings, label: '설정' }]
+    ? [...navItems, { path: '/banking', icon: Landmark, label: '법인계좌' }, { path: '/settings', icon: Settings, label: '설정' }]
     : navItems
 
   const theme = organization?.sidebar_theme || 'dark'
