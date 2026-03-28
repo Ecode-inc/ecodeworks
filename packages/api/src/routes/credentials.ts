@@ -98,12 +98,13 @@ credentialsRoutes.get('/', requirePermission('vault', 'read'), async (c) => {
   const params: unknown[] = []
 
   // Visibility filtering (CEO sees everything)
-  if (!user.is_ceo) {
+  if (!user.is_ceo && !user.is_admin) {
     query += ` AND (
       visibility = 'company'
       OR (visibility = 'department' AND department_id IN (SELECT department_id FROM user_departments WHERE user_id = ?))
+      OR (visibility = 'personal' AND created_by = ?)
     )`
-    params.push(user.id)
+    params.push(user.id, user.id)
   }
 
   if (deptId) {
