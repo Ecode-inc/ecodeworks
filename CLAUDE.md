@@ -71,7 +71,7 @@ cd packages/api && npx wrangler deploy
 # Web 빌드 + 배포 (packages/web 디렉토리에서 실행)
 cd packages/web
 npx vite build
-CLOUDFLARE_ACCOUNT_ID=c3e0474724b7ce487cf7d2cbe2f26aaa npx wrangler pages deploy dist --project-name=ecode-internal --branch=master --commit-dirty=true --commit-message=deploy
+CLOUDFLARE_ACCOUNT_ID=eb202b6b79a065f953071ee9b2bc6865 npx wrangler pages deploy dist --project-name=ecode-internal --branch=master --commit-dirty=true --commit-message=deploy
 
 # ⚠️ 중요: VITE_API_URL은 packages/web/.env.production 파일에 설정됨
 # 빌드 시 별도로 환경변수를 전달하지 않아도 됨
@@ -101,10 +101,9 @@ Wrangler 토큰 위치: `C:\Users\ionar\AppData\Roaming\xdg.config\.wrangler\con
 | 파일 | 계정 |
 |------|------|
 | `default.toml` | 현재 활성 계정 |
-| `cccosdf.toml` | cccosdf@zodesktop.com (사용 안 함) |
-| `justin21lee.toml` | justin21lee@gmail.com (운영 계정) |
+| `aws-eb2.toml` | aws@e-code.kr (운영 계정) |
 
-전환: `cp .../config/justin21lee.toml .../config/default.toml`
+전환: `cp .../config/aws-eb2.toml .../config/default.toml`
 
 ### 계정 정보
 
