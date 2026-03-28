@@ -66,6 +66,9 @@ export function AIBoardPublic() {
   const [logoUrl, setLogoUrl] = useState('')
   const [allTags, setAllTags] = useState<string[]>([])
   const [selectedTag, setSelectedTag] = useState('')
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const PAGE_SIZE = 20
 
   // Extract post ID from URL path: /board/{postId}
   const getPostIdFromUrl = () => {
@@ -76,8 +79,9 @@ export function AIBoardPublic() {
   useEffect(() => {
     const init = async () => {
       try {
-        const res = await fetchPublicPosts()
+        const res = await fetchPublicPosts(PAGE_SIZE, 0)
         setPosts(res.posts)
+        setHasMore(res.posts.length >= PAGE_SIZE)
         if (res.logo_url) setLogoUrl(res.logo_url)
         if (res.all_tags) setAllTags(res.all_tags)
         // If URL has a post ID, open it directly
@@ -149,12 +153,23 @@ export function AIBoardPublic() {
     })
   }
 
+  const loadMore = async () => {
+    setLoadingMore(true)
+    try {
+      const res = await fetchPublicPosts(PAGE_SIZE, posts.length, selectedTag)
+      setPosts(prev => [...prev, ...res.posts])
+      setHasMore(res.posts.length >= PAGE_SIZE)
+    } catch { /* ignore */ }
+    setLoadingMore(false)
+  }
+
   const filterByTag = async (tag: string) => {
     const newTag = selectedTag === tag ? '' : tag
     setSelectedTag(newTag)
     try {
-      const res = await fetchPublicPosts(20, 0, newTag)
+      const res = await fetchPublicPosts(PAGE_SIZE, 0, newTag)
       setPosts(res.posts)
+      setHasMore(res.posts.length >= PAGE_SIZE)
     } catch { /* ignore */ }
   }
 
@@ -339,6 +354,15 @@ export function AIBoardPublic() {
             </div>
           </button>
         ))}
+        {hasMore && posts.length > 0 && (
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="w-full py-3 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
+          >
+            {loadingMore ? '로딩 중...' : '더보기'}
+          </button>
+        )}
       </main>
 
       <footer className="text-center py-6 text-xs text-gray-400">Powered by ecode</footer>

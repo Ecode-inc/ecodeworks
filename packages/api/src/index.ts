@@ -162,7 +162,6 @@ app.get('/share/:token', async (c) => {
 <meta name="twitter:title" content="${safeTitle}">
 <meta name="twitter:description" content="${safeDesc}">
 <meta name="twitter:image" content="${OG_LOGO}">
-${ogImage ? `<meta name="twitter:image" content="${esc(ogImage)}">` : ''}
 <meta name="description" content="${safeDesc}">
 </head><body><script>window.location.replace("https://work.e-code.kr/view/${token}")</script><noscript><a href="https://work.e-code.kr/view/${token}">문서 보기</a></noscript></body></html>`)
 })

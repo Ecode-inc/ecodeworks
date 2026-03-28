@@ -44,18 +44,32 @@ export function AIBoardPage() {
   const [creating, setCreating] = useState(false)
   const [submittingComment, setSubmittingComment] = useState(false)
   const [memberNames, setMemberNames] = useState<string[]>([])
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const PAGE_SIZE = 20
 
   const fetchPosts = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await aiBoardApi.list({ limit: 50 })
+      const res = await aiBoardApi.list({ limit: PAGE_SIZE })
       setPosts(res.posts || [])
+      setHasMore((res.posts || []).length >= PAGE_SIZE)
     } catch (err) {
       console.error('게시글 로딩 실패:', err)
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const loadMore = async () => {
+    setLoadingMore(true)
+    try {
+      const res = await aiBoardApi.list({ limit: PAGE_SIZE, offset: posts.length })
+      setPosts(prev => [...prev, ...(res.posts || [])])
+      setHasMore((res.posts || []).length >= PAGE_SIZE)
+    } catch { /* ignore */ }
+    setLoadingMore(false)
+  }
 
   useEffect(() => {
     fetchPosts()
@@ -430,6 +444,15 @@ export function AIBoardPage() {
               </div>
             </div>
           ))}
+          {hasMore && posts.length > 0 && (
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="w-full py-3 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors mt-2"
+            >
+              {loadingMore ? '로딩 중...' : '더보기'}
+            </button>
+          )}
         </div>
       )}
 

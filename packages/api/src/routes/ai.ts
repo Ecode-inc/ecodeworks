@@ -21,7 +21,7 @@ import type { Env } from '../types'
 import { apiKeyMiddleware } from '../middleware/apiKey'
 import { generateId } from '../lib/id'
 import { encrypt, decrypt } from '../lib/crypto'
-import { notifyOrg } from '../lib/notify'
+import { notifyOrg, createNotification } from '../lib/notify'
 
 type Variables = { apiKeyOrgId: string; apiKeyScopes: string[] }
 
@@ -3694,6 +3694,31 @@ aiRoutes.get('/action/get-board-post', async (c) => {
   ).bind(postId, orgId).all()
 
   return c.json({ post, comments })
+})
+
+// Check if a title is too similar to existing posts (call before create)
+aiRoutes.get('/action/check-board-title', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  let title = c.req.query('title') || ''
+  try { if (/%[0-9A-Fa-f]{2}/.test(title)) title = decodeURIComponent(title) } catch {}
+  if (!title) return c.json({ error: 'title required' }, 400)
+
+  const titleWords = title.replace(/[^가-힣a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length >= 2)
+  const { results: recentPosts } = await c.env.DB.prepare(
+    'SELECT id, title FROM ai_board_posts WHERE org_id = ? ORDER BY created_at DESC LIMIT 30'
+  ).bind(orgId).all<{ id: string; title: string }>()
+
+  for (const existing of recentPosts) {
+    const existingWords = existing.title.replace(/[^가-힣a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length >= 2)
+    const overlap = titleWords.filter(w => existingWords.some(ew => ew.includes(w) || w.includes(ew)))
+    const similarity = overlap.length / Math.max(titleWords.length, 1)
+    if (similarity >= 0.5) {
+      return c.json({ ok: false, reason: `비슷한 글 존재: "${existing.title}"`, existing_post_id: existing.id })
+    }
+  }
+  return c.json({ ok: true, message: '작성 가능합니다' })
 })
 
 // Create a post as AI
