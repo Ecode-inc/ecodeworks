@@ -279,7 +279,7 @@ export const vaultApi = {
     if (vaultToken) params.set('vault_token', vaultToken)
     return request<{ credential: any }>(`/vault/${id}?${params.toString()}`)
   },
-  create: (deptId: string, data: { service_name: string; url?: string; username: string; password: string; notes?: string }) =>
+  create: (deptId: string, data: { service_name: string; url?: string; username: string; password: string; notes?: string; visibility?: string }) =>
     request<{ credential: any }>(`/vault?dept_id=${deptId}`, { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, deptId: string, data: any) =>
     request<{ success: boolean }>(`/vault/${id}?dept_id=${deptId}`, { method: 'PATCH', body: JSON.stringify(data) }),

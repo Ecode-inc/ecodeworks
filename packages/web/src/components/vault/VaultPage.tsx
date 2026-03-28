@@ -509,14 +509,15 @@ function CredentialForm({ open, onClose, deptId, onSave }: {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [notes, setNotes] = useState('')
+  const [visibility, setVisibility] = useState('department')
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async () => {
     if (!serviceName || !username || !password) return
     setLoading(true)
     try {
-      await vaultApi.create(deptId, { service_name: serviceName, url, username, password, notes })
-      setServiceName(''); setUrl(''); setUsername(''); setPassword(''); setNotes('')
+      await vaultApi.create(deptId, { service_name: serviceName, url, username, password, notes, visibility })
+      setServiceName(''); setUrl(''); setUsername(''); setPassword(''); setNotes(''); setVisibility('department')
       onSave()
     } catch (e: any) {
       useToastStore.getState().addToast('error', '저장 실패', e.message)
@@ -537,6 +538,14 @@ function CredentialForm({ open, onClose, deptId, onSave }: {
           className="w-full border rounded-lg px-3 py-2 text-sm"
           rows={2}
         />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">공개 범위</label>
+          <select value={visibility} onChange={e => setVisibility(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="company">전체 공개</option>
+            <option value="department">부서 공개</option>
+            <option value="personal">개인 전용</option>
+          </select>
+        </div>
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>취소</Button>
           <Button onClick={handleSubmit} loading={loading}>저장</Button>
@@ -554,6 +563,7 @@ function CredentialEditForm({ open, onClose, deptId, credential, onSave }: {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [notes, setNotes] = useState('')
+  const [visibility, setVisibility] = useState('department')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -563,6 +573,7 @@ function CredentialEditForm({ open, onClose, deptId, credential, onSave }: {
       setUsername(credential.username || '')
       setPassword(credential.password || '')
       setNotes(credential.notes || '')
+      setVisibility(credential.visibility || 'department')
     }
   }, [credential])
 
@@ -570,7 +581,7 @@ function CredentialEditForm({ open, onClose, deptId, credential, onSave }: {
     if (!serviceName || !username || !password) return
     setLoading(true)
     try {
-      await vaultApi.update(credential.id, deptId, { service_name: serviceName, url, username, password, notes })
+      await vaultApi.update(credential.id, deptId, { service_name: serviceName, url, username, password, notes, visibility })
       useToastStore.getState().addToast('success', '수정 완료')
       onSave()
     } catch (e: any) {
@@ -592,6 +603,14 @@ function CredentialEditForm({ open, onClose, deptId, credential, onSave }: {
           className="w-full border rounded-lg px-3 py-2 text-sm"
           rows={2}
         />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">공개 범위</label>
+          <select value={visibility} onChange={e => setVisibility(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <option value="company">전체 공개</option>
+            <option value="department">부서 공개</option>
+            <option value="personal">개인 전용</option>
+          </select>
+        </div>
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>취소</Button>
           <Button onClick={handleSubmit} loading={loading}>저장</Button>

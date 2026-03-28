@@ -188,12 +188,14 @@ credentialsRoutes.post('/', requirePermission('vault', 'write'), async (c) => {
     username: string
     password: string
     notes?: string
+    visibility?: string
   }>()
 
   if (!body.service_name || !body.username || !body.password) {
     return c.json({ error: 'service_name, username, password required' }, 400)
   }
 
+  const visibility = body.visibility || 'department'
   const id = generateId()
   const usernameEnc = await encrypt(body.username, c.env.VAULT_KEY)
   const passwordEnc = await encrypt(body.password, c.env.VAULT_KEY)
@@ -203,9 +205,9 @@ credentialsRoutes.post('/', requirePermission('vault', 'write'), async (c) => {
 
   await c.env.DB.batch([
     c.env.DB.prepare(
-      `INSERT INTO credentials (id, department_id, service_name, url, username_enc, password_enc, notes_enc, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(id, deptId, body.service_name, body.url || '', usernameEnc, passwordEnc, notesEnc, user.id),
+      `INSERT INTO credentials (id, department_id, service_name, url, username_enc, password_enc, notes_enc, created_by, visibility)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, deptId, body.service_name, body.url || '', usernameEnc, passwordEnc, notesEnc, user.id, visibility),
     c.env.DB.prepare(
       'INSERT INTO credential_access_log (id, credential_id, user_id, action, ip_address) VALUES (?, ?, ?, ?, ?)'
     ).bind(generateId(), id, user.id, 'create', ip),
@@ -226,6 +228,7 @@ credentialsRoutes.patch('/:id', requirePermission('vault', 'write'), async (c) =
     username?: string
     password?: string
     notes?: string
+    visibility?: string
   }>()
 
   const updates: string[] = []
@@ -233,6 +236,7 @@ credentialsRoutes.patch('/:id', requirePermission('vault', 'write'), async (c) =
 
   if (body.service_name !== undefined) { updates.push('service_name = ?'); values.push(body.service_name) }
   if (body.url !== undefined) { updates.push('url = ?'); values.push(body.url) }
+  if (body.visibility !== undefined) { updates.push('visibility = ?'); values.push(body.visibility) }
   if (body.username !== undefined) { updates.push('username_enc = ?'); values.push(await encrypt(body.username, c.env.VAULT_KEY)) }
   if (body.password !== undefined) { updates.push('password_enc = ?'); values.push(await encrypt(body.password, c.env.VAULT_KEY)) }
   if (body.notes !== undefined) { updates.push('notes_enc = ?'); values.push(await encrypt(body.notes, c.env.VAULT_KEY)) }
