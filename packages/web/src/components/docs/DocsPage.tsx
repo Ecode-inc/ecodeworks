@@ -852,7 +852,7 @@ function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddI
         </button>
         {renaming ? (
           <form onSubmit={(e) => { e.preventDefault(); handleRename() }} className="flex items-center gap-1 flex-1 min-w-0">
-            {expanded ? <FolderOpen size={16} className="text-amber-500 flex-shrink-0" /> : <Folder size={16} className="text-amber-500 flex-shrink-0" />}
+            {expanded ? <FolderOpen size={16} className={`flex-shrink-0 ${doc.visibility === 'company' ? 'text-blue-500' : doc.visibility === 'personal' ? 'text-purple-500' : 'text-amber-500'}`} /> : <Folder size={16} className={`flex-shrink-0 ${doc.visibility === 'company' ? 'text-blue-500' : doc.visibility === 'personal' ? 'text-purple-500' : 'text-amber-500'}`} />}
             <input
               autoFocus
               className="flex-1 min-w-0 px-1 py-0 text-sm border border-blue-400 rounded outline-none"
@@ -864,7 +864,7 @@ function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddI
           </form>
         ) : (
           <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left" title={`${doc.title}${doc.created_by_name ? ' · ' + doc.created_by_name : ''}`}>
-            {expanded ? <FolderOpen size={16} className="text-amber-500 flex-shrink-0" /> : <Folder size={16} className="text-amber-500 flex-shrink-0" />}
+            {expanded ? <FolderOpen size={16} className={`flex-shrink-0 ${doc.visibility === 'company' ? 'text-blue-500' : doc.visibility === 'personal' ? 'text-purple-500' : 'text-amber-500'}`} /> : <Folder size={16} className={`flex-shrink-0 ${doc.visibility === 'company' ? 'text-blue-500' : doc.visibility === 'personal' ? 'text-purple-500' : 'text-amber-500'}`} />}
             <span className="truncate font-medium text-gray-700">{doc.title}</span>
           </button>
         )}
@@ -942,7 +942,7 @@ function TreeItem({ doc, selectedId, onSelect, onDelete, onRenamed }: {
       <span className="w-5" /> {/* indent spacer */}
       {renaming ? (
         <form onSubmit={(e) => { e.preventDefault(); handleRename() }} className="flex items-center gap-1.5 flex-1 min-w-0">
-          <FileText size={15} className="text-gray-400 flex-shrink-0" />
+          <FileText size={15} className={`flex-shrink-0 ${doc.visibility === 'company' ? 'text-blue-500' : doc.visibility === 'personal' ? 'text-purple-500' : 'text-green-500'}`} />
           <input
             autoFocus
             className="flex-1 min-w-0 px-1 py-0 text-sm border border-blue-400 rounded outline-none"
@@ -954,7 +954,7 @@ function TreeItem({ doc, selectedId, onSelect, onDelete, onRenamed }: {
         </form>
       ) : (
         <button onClick={() => onSelect(doc)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left" title={`${doc.title}${doc.created_by_name ? ' · ' + doc.created_by_name : ''}`}>
-          <FileText size={15} className="text-gray-400 flex-shrink-0" />
+          <FileText size={15} className={`flex-shrink-0 ${doc.visibility === 'company' ? 'text-blue-500' : doc.visibility === 'personal' ? 'text-purple-500' : 'text-green-500'}`} />
           <span className={`truncate ${isAIGuide ? 'italic text-gray-300' : ''}`}>{doc.title}</span>
           {isAIGuide && <span className="text-[10px] text-gray-300 flex-shrink-0" title="AI 가이드">AI 가이드</span>}
         </button>
