@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "include": ["/board/*"],
+  "exclude": ["/assets/*", "/*.js", "/*.css", "/*.ico", "/*.png", "/*.json", "/*.webmanifest"]
+}
