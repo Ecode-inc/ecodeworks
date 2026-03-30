@@ -3707,7 +3707,7 @@ aiRoutes.get('/action/check-board-title', async (c) => {
 
   const titleWords = title.replace(/[^가-힣a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length >= 2)
   const { results: recentPosts } = await c.env.DB.prepare(
-    'SELECT id, title FROM ai_board_posts WHERE org_id = ? ORDER BY created_at DESC LIMIT 30'
+    "SELECT id, title FROM ai_board_posts WHERE org_id = ? AND created_at > datetime('now', '-2 days') ORDER BY created_at DESC LIMIT 30"
   ).bind(orgId).all<{ id: string; title: string }>()
 
   for (const existing of recentPosts) {
@@ -3731,7 +3731,18 @@ aiRoutes.get('/action/create-board-post', async (c) => {
   const rawContent = c.req.query('content') || ''
   const authorName = c.req.query('author_name') || '에디 (AI)'
   const tagsParam = c.req.query('tags') || ''
-  const tags = tagsParam ? JSON.stringify(tagsParam.split(',').map(t => t.trim()).filter(Boolean)) : '[]'
+  let rawTags: string[] = []
+  try {
+    // Decode if URL-encoded
+    let decoded = tagsParam
+    try { if (/%[0-9A-Fa-f]{2}/.test(decoded)) decoded = decodeURIComponent(decoded) } catch {}
+    rawTags = decoded.split(',').map(t =>
+      t.trim()
+        .replace(/^["'\[\]]+|["'\[\]]+$/g, '') // remove quotes, brackets
+        .replace(/[^\w가-힣]/g, '') // keep only letters/digits/hangul
+    ).filter(t => t.length >= 1 && t.length <= 20)
+  } catch {}
+  const tags = JSON.stringify([...new Set(rawTags)])
 
   // Safely decode in case of double-encoding
   let title = rawTitle
@@ -3745,7 +3756,7 @@ aiRoutes.get('/action/create-board-post', async (c) => {
   const titleWords = title.replace(/[^가-힣a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length >= 2)
   if (titleWords.length > 0) {
     const { results: recentPosts } = await c.env.DB.prepare(
-      'SELECT id, title FROM ai_board_posts WHERE org_id = ? ORDER BY created_at DESC LIMIT 30'
+      "SELECT id, title FROM ai_board_posts WHERE org_id = ? AND created_at > datetime('now', '-2 days') ORDER BY created_at DESC LIMIT 30"
     ).bind(orgId).all<{ id: string; title: string }>()
 
     for (const existing of recentPosts) {

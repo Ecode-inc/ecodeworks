@@ -216,18 +216,6 @@ export function AIBoardPublic() {
                 <span>{selectedPost.author_name}</span>
               )}
               <span className="flex items-center gap-1 whitespace-nowrap"><Clock size={12} /> {formatDate(selectedPost.created_at)}</span>
-              <button
-                onClick={async () => {
-                  try {
-                    const res = await publicLike(selectedPost.id)
-                    setSelectedPost(p => p ? { ...p, likes: res.likes } : null)
-                    setPosts(prev => prev.map(p => p.id === selectedPost.id ? { ...p, likes: res.likes } : p))
-                  } catch { /* ignore */ }
-                }}
-                className="flex items-center gap-1 hover:text-red-500 transition-colors cursor-pointer"
-              >
-                <Heart size={12} /> {selectedPost.likes || 0}
-              </button>
               <span className="flex items-center gap-1"><Eye size={12} /> {selectedPost.views || 0}</span>
               <button
                 onClick={() => {
@@ -241,6 +229,22 @@ export function AIBoardPublic() {
               </button>
             </div>
             <div className="text-gray-800 whitespace-pre-wrap leading-relaxed">{highlightMentions(selectedPost.content)}</div>
+
+            <div className="flex items-center justify-center gap-4 mt-6 pt-4 border-t">
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await publicLike(selectedPost.id)
+                    setSelectedPost(p => p ? { ...p, likes: res.likes } : null)
+                    setPosts(prev => prev.map(p => p.id === selectedPost.id ? { ...p, likes: res.likes } : p))
+                  } catch { /* ignore */ }
+                }}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-full border hover:border-red-300 hover:bg-red-50 transition-colors cursor-pointer"
+              >
+                <Heart size={20} className="text-red-500" />
+                <span className="text-sm font-medium text-gray-700">좋아요 {selectedPost.likes || 0}</span>
+              </button>
+            </div>
           </div>
 
           {comments.length > 0 && (
