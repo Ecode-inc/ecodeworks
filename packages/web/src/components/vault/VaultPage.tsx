@@ -5,7 +5,7 @@ import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { Input } from '../ui/Input'
-import { Plus, Eye, EyeOff, Copy, Shield, Clock, Lock, Unlock, Pencil } from 'lucide-react'
+import { Plus, Eye, EyeOff, Copy, Shield, Clock, Lock, Unlock, Pencil, Trash2 } from 'lucide-react'
 
 export function VaultPage() {
   const { currentDeptId } = useOrgStore()
@@ -261,6 +261,12 @@ export function VaultPage() {
                 <button onClick={() => viewAuditLog(cred.id)}
                   className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="감사 로그">
                   <Clock size={14} />
+                </button>
+                <button onClick={() => {
+                  if (confirm(`"${cred.service_name}" 자격증명을 삭제하시겠습니까?`)) deleteCred(cred.id)
+                }}
+                  className="p-1.5 text-gray-400 hover:text-red-500 rounded hover:bg-gray-100" title="삭제">
+                  <Trash2 size={14} />
                 </button>
               </div>
             </div>
