@@ -127,6 +127,14 @@ Wrangler 토큰 위치: `C:\Users\ionar\AppData\Roaming\xdg.config\.wrangler\con
 - **가이드**: `https://work.e-code.kr/?key=API_KEY`로 접근 시 가이드 페이지 표시
 - **스코프**: calendar, kanban, docs, vault(메타만), members, departments, telegram
 
+### 징계 관리
+
+- **DB**: `disciplines` 테이블
+- **API**: `/api/v1/action/create-discipline`, `/api/v1/action/list-disciplines` (API 키 인증)
+- **유형**: 감봉, 연차삭감, 대표면담, 반성문
+- **MCP**: `list_disciplines`, `create_discipline`
+- **스코프**: members:read (조회), members:write (등록)
+
 ### 텔레그램 연동
 
 - **DB**: `telegram_chats`, `telegram_user_mappings`, `telegram_command_log`

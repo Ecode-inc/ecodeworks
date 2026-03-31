@@ -122,6 +122,13 @@ const getActions = [
     ],
   },
   {
+    category: '⚖️ 징계 관리',
+    items: [
+      { path: '/action/create-discipline', desc: '징계 등록', params: 'user_id, type (감봉|연차삭감|대표면담|반성문), reason, amount (감봉/연차삭감 시), created_by' },
+      { path: '/action/list-disciplines', desc: '징계 내역 조회', params: 'user_id (선택)' },
+    ],
+  },
+  {
     category: '✅ 칸반',
     items: [
       { path: '/action/list-boards', desc: '보드 목록', params: 'dept_id (선택)' },
@@ -189,6 +196,7 @@ const mcpTools = [
   'log_telegram_command', 'resolve_telegram_user',
   'map_telegram_user', 'unmap_telegram_user', 'list_telegram_mappings',
   'get_folder_guide', 'update_folder_guide',
+  'list_disciplines', 'create_discipline',
 ]
 
 export function AIGuidePage({ apiKey }: AIGuidePageProps) {
@@ -386,7 +394,7 @@ export function AIGuidePage({ apiKey }: AIGuidePageProps) {
         </section>
 
         <footer className="text-center text-xs text-gray-400 py-4">
-          이코드웍스 AI API — 최종 업데이트: 2026-03-16
+          이코드웍스 AI API — 최종 업데이트: 2026-03-31
         </footer>
       </main>
     </div>

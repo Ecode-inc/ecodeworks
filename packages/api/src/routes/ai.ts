@@ -3933,6 +3933,66 @@ aiRoutes.get('/action/view-credential', async (c) => {
   })
 })
 
+// ── Discipline actions (GET-based) ──────────────────────────────
+
+// 징계 등록
+aiRoutes.get('/action/create-discipline', async (c) => {
+  const scopes = c.get('apiKeyScopes') as string[]
+  if (!checkScope(scopes, 'members:write')) return c.json({ error: 'Insufficient scope: members:write required' }, 403)
+
+  const orgId = c.get('apiKeyOrgId') as string
+  const userId = c.req.query('user_id')
+  const type = c.req.query('type')
+  const reason = c.req.query('reason') || ''
+  const amountStr = c.req.query('amount')
+  const createdBy = c.req.query('created_by') || ''
+
+  if (!userId) return c.json({ error: 'user_id required' }, 400)
+  if (!type) return c.json({ error: 'type required' }, 400)
+
+  const validTypes = ['감봉', '연차삭감', '대표면담', '반성문']
+  if (!validTypes.includes(type)) return c.json({ error: `Invalid type. Must be one of: ${validTypes.join(', ')}` }, 400)
+
+  const amount = amountStr ? parseFloat(amountStr) : 0
+
+  // Verify user belongs to org
+  const user = await c.env.DB.prepare('SELECT id, name FROM users WHERE id = ? AND org_id = ?').bind(userId, orgId).first<{ id: string; name: string }>()
+  if (!user) return c.json({ error: '해당 조직에 사용자를 찾을 수 없습니다' }, 404)
+
+  const id = generateId()
+  await c.env.DB.prepare(
+    'INSERT INTO disciplines (id, org_id, user_id, type, reason, amount, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime(\'now\'))'
+  ).bind(id, orgId, userId, type, reason, amount, createdBy).run()
+
+  const discipline = await c.env.DB.prepare(
+    'SELECT d.*, u.name as user_name FROM disciplines d LEFT JOIN users u ON u.id = d.user_id WHERE d.id = ?'
+  ).bind(id).first()
+
+  return c.json({ success: true, discipline })
+})
+
+// 징계 내역 조회
+aiRoutes.get('/action/list-disciplines', async (c) => {
+  const scopes = c.get('apiKeyScopes') as string[]
+  if (!checkScope(scopes, 'members:read')) return c.json({ error: 'Insufficient scope: members:read required' }, 403)
+
+  const orgId = c.get('apiKeyOrgId') as string
+  const userId = c.req.query('user_id')
+
+  let query = 'SELECT d.*, u.name as user_name FROM disciplines d LEFT JOIN users u ON u.id = d.user_id WHERE d.org_id = ?'
+  const params: unknown[] = [orgId]
+
+  if (userId) {
+    query += ' AND d.user_id = ?'
+    params.push(userId)
+  }
+
+  query += ' ORDER BY d.created_at DESC LIMIT 100'
+
+  const { results } = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ data: results })
+})
+
 // Catch-all: help AI find the right endpoint
 aiRoutes.all('/*', (c) => {
   return c.json({

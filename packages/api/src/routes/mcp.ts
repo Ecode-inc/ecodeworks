@@ -370,6 +370,31 @@ const TOOLS: ToolDefinition[] = [
       required: ['parent_id', 'content'],
     },
   },
+  {
+    name: 'list_disciplines',
+    description: '징계 내역 조회. 특정 사용자의 징계 목록을 확인합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: '사용자 ID (선택, 미지정 시 전체 조회)' },
+      },
+    },
+  },
+  {
+    name: 'create_discipline',
+    description: '징계 등록. 감봉, 연차삭감, 대표면담, 반성문 중 하나를 등록합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: '대상 사용자 ID' },
+        type: { type: 'string', enum: ['감봉', '연차삭감', '대표면담', '반성문'], description: '징계 유형' },
+        reason: { type: 'string', description: '징계 사유' },
+        amount: { type: 'number', description: '감봉액(원) 또는 삭감 연차일수. 감봉/연차삭감 시 필수' },
+        created_by: { type: 'string', description: '징계 등록자 (선택)' },
+      },
+      required: ['user_id', 'type'],
+    },
+  },
 ]
 
 // ── Tool execution ──────────────────────────────────────────
@@ -972,6 +997,29 @@ async function executeTool(
         const doc = await db.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first()
         return text({ document: doc })
       }
+    }
+
+    case 'list_disciplines': {
+      if (!checkScope(scopes, 'members:read')) throw new Error('Insufficient scope: members:read required')
+      let query = 'SELECT d.*, u.name as user_name FROM disciplines d LEFT JOIN users u ON u.id = d.user_id WHERE d.org_id = ?'
+      const params: unknown[] = [orgId]
+      if (args.user_id) { query += ' AND d.user_id = ?'; params.push(args.user_id) }
+      query += ' ORDER BY d.created_at DESC LIMIT 100'
+      const { results } = await db.prepare(query).bind(...params).all()
+      return text({ disciplines: results })
+    }
+
+    case 'create_discipline': {
+      if (!checkScope(scopes, 'members:write')) throw new Error('Insufficient scope: members:write required')
+      const validTypes = ['감봉', '연차삭감', '대표면담', '반성문']
+      if (!args.user_id) throw new Error('user_id is required')
+      if (!args.type || !validTypes.includes(args.type as string)) throw new Error(`type must be one of: ${validTypes.join(', ')}`)
+      const user = await db.prepare('SELECT id, name FROM users WHERE id = ? AND org_id = ?').bind(args.user_id, orgId).first<{ id: string; name: string }>()
+      if (!user) throw new Error('해당 조직에 사용자를 찾을 수 없습니다')
+      const did = generateId()
+      await db.prepare('INSERT INTO disciplines (id, org_id, user_id, type, reason, amount, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime(\'now\'))').bind(did, orgId, args.user_id, args.type, args.reason || '', args.amount || 0, args.created_by || '').run()
+      const discipline = await db.prepare('SELECT d.*, u.name as user_name FROM disciplines d LEFT JOIN users u ON u.id = d.user_id WHERE d.id = ?').bind(did).first()
+      return text({ success: true, discipline })
     }
 
     default:
