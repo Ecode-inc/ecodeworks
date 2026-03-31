@@ -1861,14 +1861,23 @@ aiRoutes.get('/action/create-task', async (c) => {
   const board = await c.env.DB.prepare('SELECT b.id FROM boards b JOIN departments d ON d.id = b.department_id WHERE b.id = ? AND d.org_id = ?').bind(boardId, orgId).first()
   if (!board) return c.json({ error: 'Board not found' }, 404)
 
+  // Validate assignee IDs exist
+  let validAssignees: string[] = []
+  if (assigneeIds.length > 0) {
+    const { results: users } = await c.env.DB.prepare(
+      `SELECT id FROM users WHERE org_id = ? AND id IN (${assigneeIds.map(() => '?').join(',')})`
+    ).bind(orgId, ...assigneeIds).all<{ id: string }>()
+    validAssignees = users.map(u => u.id)
+  }
+
   const id = generateId()
-  const firstAssignee = assigneeIds[0] || null
+  const firstAssignee = validAssignees[0] || null
 
   const statements = [
     c.env.DB.prepare(
       "INSERT INTO tasks (id, board_id, column_id, title, description, assignee_id, priority, due_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
     ).bind(id, boardId, columnId, title, description, firstAssignee, priority, dueDate),
-    ...assigneeIds.map(uid =>
+    ...validAssignees.map(uid =>
       c.env.DB.prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)').bind(id, uid)
     ),
   ]
@@ -1934,16 +1943,22 @@ aiRoutes.get('/action/update-task', async (c) => {
     statements.push(c.env.DB.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).bind(...values))
   }
 
-  // Update junction table if assignee_ids provided
+  // Update junction table if assignee_ids provided (validate first)
   if (assigneeIds) {
+    const { results: validUsers } = await c.env.DB.prepare(
+      `SELECT id FROM users WHERE org_id = ? AND id IN (${assigneeIds.map(() => '?').join(',')})`
+    ).bind(orgId, ...assigneeIds).all<{ id: string }>()
+    const validIds = validUsers.map(u => u.id)
     statements.push(c.env.DB.prepare('DELETE FROM task_assignees WHERE task_id = ?').bind(taskId))
-    for (const uid of assigneeIds) {
+    for (const uid of validIds) {
       statements.push(c.env.DB.prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)').bind(taskId, uid))
     }
   } else if (assigneeId) {
-    // Single assignee_id: sync to junction table too
+    const validUser = await c.env.DB.prepare('SELECT id FROM users WHERE org_id = ? AND id = ?').bind(orgId, assigneeId).first()
     statements.push(c.env.DB.prepare('DELETE FROM task_assignees WHERE task_id = ?').bind(taskId))
-    statements.push(c.env.DB.prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)').bind(taskId, assigneeId))
+    if (validUser) {
+      statements.push(c.env.DB.prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)').bind(taskId, assigneeId))
+    }
   }
 
   if (statements.length > 0) {
