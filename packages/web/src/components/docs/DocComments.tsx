@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { MessageSquare, Check, Trash2, X, Send } from 'lucide-react'
+import { useToastStore } from '../../stores/toastStore'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -216,7 +217,18 @@ export function CommentPanel({
               className={`p-3 border-b hover:bg-gray-50 cursor-pointer ${c.resolved ? 'opacity-50' : ''}`}
               onClick={() => onScrollTo?.(c)}
             >
-              <div className="bg-gray-50 text-sm italic p-2 rounded text-gray-600 mb-2 line-clamp-2">
+              <div
+                className="bg-gray-50 text-sm italic p-2 rounded text-gray-600 mb-2 line-clamp-2 hover:bg-yellow-50 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (onScrollTo) {
+                    onScrollTo(c)
+                  } else {
+                    navigator.clipboard.writeText(c.selection_text)
+                  }
+                }}
+                title="클릭하여 해당 위치로 이동 (편집 모드에서는 텍스트 복사)"
+              >
                 &ldquo;{c.selection_text}&rdquo;
               </div>
               <p className={`text-sm text-gray-800 mb-1 ${c.resolved ? 'line-through' : ''}`}>{c.content}</p>
@@ -364,18 +376,39 @@ export function useDocComments(api: CommentApi) {
     start: number
     end: number
   } | null>(null)
+  const commentCountRef = useRef(0)
+  const isFirstLoad = useRef(true)
 
   const loadComments = useCallback(async () => {
     try {
       const res = await api.list()
-      setComments(res.comments || [])
+      const newComments = res.comments || []
+      const prevCount = commentCountRef.current
+      commentCountRef.current = newComments.length
+
+      if (!isFirstLoad.current && newComments.length !== prevCount) {
+        if (newComments.length > prevCount) {
+          const latest = newComments[newComments.length - 1]
+          const msg = latest?.author_name ? `${latest.author_name}님이 코멘트를 남겼습니다` : '새 코멘트가 추가되었습니다'
+          try { useToastStore.getState().addToast('info', '💬 코멘트 업데이트', msg) } catch {}
+        } else {
+          try { useToastStore.getState().addToast('info', '💬 코멘트 삭제됨', '코멘트가 삭제되었습니다') } catch {}
+        }
+      }
+      isFirstLoad.current = false
+      setComments(newComments)
     } catch {
       // ignore
     }
   }, [api])
 
   useEffect(() => {
+    isFirstLoad.current = true
+    commentCountRef.current = 0
     loadComments()
+    // Poll every 10 seconds
+    const interval = setInterval(loadComments, 10000)
+    return () => clearInterval(interval)
   }, [loadComments])
 
   const handleStartComment = useCallback((text: string, start: number, end: number) => {

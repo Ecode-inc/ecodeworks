@@ -172,17 +172,12 @@ documentsRoutes.post('/', requirePermission('docs', 'write'), async (c) => {
 
 // ── Document Comments (static paths before /:id) ──────────────
 
-// Delete a comment (creator, CEO, or admin only)
+// Delete a comment (any authenticated user)
 documentsRoutes.delete('/comments/:commentId', async (c) => {
-  const user = c.get('user')
   const commentId = c.req.param('commentId')
 
-  const comment = await c.env.DB.prepare('SELECT * FROM doc_comments WHERE id = ?').bind(commentId).first<{ user_id: string }>()
+  const comment = await c.env.DB.prepare('SELECT * FROM doc_comments WHERE id = ?').bind(commentId).first()
   if (!comment) return c.json({ error: 'Comment not found' }, 404)
-
-  if (!user.is_ceo && !user.is_admin && comment.user_id !== user.id) {
-    return c.json({ error: 'Only the creator, CEO, or admin can delete' }, 403)
-  }
 
   await c.env.DB.prepare('DELETE FROM doc_comments WHERE id = ?').bind(commentId).run()
   return c.json({ success: true })

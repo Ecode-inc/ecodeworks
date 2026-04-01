@@ -413,7 +413,14 @@ export function DocsPage() {
                     onClose={() => setShowCommentPanel(false)}
                     onDelete={handleDeleteComment}
                     onResolve={handleResolveComment}
-                    onScrollTo={(c) => scrollToComment(contentRef, c)}
+                    onScrollTo={(c) => {
+                      if (editing) {
+                        navigator.clipboard.writeText(c.selection_text)
+                        useToastStore.getState().addToast('success', '텍스트 복사됨', 'Ctrl+H로 에디터에서 검색하세요')
+                      } else {
+                        scrollToComment(contentRef, c)
+                      }
+                    }}
                   />
                 </div>
               )}
