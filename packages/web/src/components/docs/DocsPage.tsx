@@ -349,13 +349,11 @@ export function DocsPage() {
                     title="글자 확대"
                   >A+</button>
                 </div>
-                {!editing && (
-                  <CommentToggleButton
-                    count={comments.length}
-                    open={showCommentPanel}
-                    onClick={() => setShowCommentPanel(!showCommentPanel)}
-                  />
-                )}
+                <CommentToggleButton
+                  count={comments.length}
+                  open={showCommentPanel}
+                  onClick={() => setShowCommentPanel(!showCommentPanel)}
+                />
                 <button onClick={() => setShowShareModal(true)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="공유">
                   <Share2 size={16} />
                 </button>
@@ -408,7 +406,7 @@ export function DocsPage() {
                 )}
               </div>
               {/* Comment Panel Sidebar */}
-              {showCommentPanel && !editing && (
+              {showCommentPanel && (
                 <div className="sticky top-0 h-[calc(100vh-8rem)] flex-shrink-0">
                   <CommentPanel
                     comments={comments}

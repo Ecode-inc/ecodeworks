@@ -402,11 +402,12 @@ export function useDocComments(api: CommentApi) {
 
   const handleDelete = useCallback(async (id: string) => {
     if (!api.delete) return
+    if (!confirm('이 코멘트를 삭제하시겠습니까?')) return
     try {
       await api.delete(id)
       await loadComments()
-    } catch {
-      // ignore
+    } catch (e: any) {
+      alert('삭제 실패: ' + (e.message || ''))
     }
   }, [api, loadComments])
 
@@ -494,7 +495,7 @@ export function scrollToComment(containerRef: React.RefObject<HTMLDivElement | n
 }
 
 function formatTime(iso: string): string {
-  const d = new Date(iso)
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
   const now = new Date()
   const diffMs = now.getTime() - d.getTime()
   const diffMin = Math.floor(diffMs / 60000)
