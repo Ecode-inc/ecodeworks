@@ -1090,6 +1090,7 @@ function UnifiedKanbanView({ tasks, onTaskClick, onRefresh }: {
   const groups = [
     { key: 'todo', label: 'To Do', color: '#6B7280', match: (c: string) => /to.?do|할.?일|대기/i.test(c) },
     { key: 'progress', label: 'In Progress', color: '#3B82F6', match: (c: string) => /progress|진행/i.test(c) },
+    { key: 'hold', label: '보류', color: '#F59E0B', match: (c: string) => /hold|보류/i.test(c) },
     { key: 'done', label: 'Done', color: '#10B981', match: (c: string) => /done|완료/i.test(c) },
     { key: 'other', label: '기타', color: '#8B5CF6', match: () => true },
   ]
