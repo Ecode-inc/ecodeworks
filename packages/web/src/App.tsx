@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { VersionCheck } from './components/layout/VersionCheck'
 import { Routes, Route, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from './stores/authStore'
 import { useOrgStore } from './stores/orgStore'
@@ -121,6 +122,7 @@ export default function App() {
   // Logged in
   return (
     <AppShell>
+      <VersionCheck />
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/calendar" element={<CalendarPage />} />

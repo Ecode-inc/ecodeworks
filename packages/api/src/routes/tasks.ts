@@ -10,6 +10,50 @@ export const tasksRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 tasksRoutes.use('/*', authMiddleware)
 
+// My task counts (To Do / In Progress)
+tasksRoutes.get('/my-counts', async (c) => {
+  const user = c.get('user')
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT bc.name as column_name, COUNT(*) as cnt
+    FROM tasks t
+    JOIN task_assignees ta ON ta.task_id = t.id
+    JOIN board_columns bc ON bc.id = t.column_id
+    WHERE ta.user_id = ?
+    GROUP BY bc.name
+  `).bind(user.id).all()
+
+  let todo = 0, in_progress = 0
+  for (const r of results) {
+    const name = (r as any).column_name || ''
+    if (/to.?do|할.?일|대기/i.test(name)) todo += (r as any).cnt
+    else if (/progress|진행/i.test(name)) in_progress += (r as any).cnt
+  }
+
+  return c.json({ todo, in_progress })
+})
+
+// My active tasks list (not done)
+tasksRoutes.get('/my-tasks', async (c) => {
+  const user = c.get('user')
+  const { results } = await c.env.DB.prepare(`
+    SELECT t.id, t.title, t.priority, t.due_date, bc.name as column_name, b.name as board_name
+    FROM tasks t
+    JOIN task_assignees ta ON ta.task_id = t.id
+    JOIN board_columns bc ON bc.id = t.column_id
+    JOIN boards b ON b.id = t.board_id
+    WHERE ta.user_id = ?
+    AND bc.name NOT LIKE '%Done%' AND bc.name NOT LIKE '%완료%'
+    ORDER BY
+      CASE WHEN bc.name LIKE '%To%Do%' OR bc.name LIKE '%할%일%' OR bc.name LIKE '%대기%' THEN 0
+           WHEN bc.name LIKE '%Progress%' OR bc.name LIKE '%진행%' THEN 1
+           ELSE 2 END,
+      t.due_date ASC NULLS LAST
+    LIMIT 10
+  `).bind(user.id).all()
+  return c.json({ tasks: results })
+})
+
 // All tasks across all boards (unified kanban view)
 tasksRoutes.get('/all', async (c) => {
   const user = c.get('user')

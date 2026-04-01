@@ -18,7 +18,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
-import { leaveApi } from '../../lib/api'
+import { leaveApi, taskCountApi } from '../../lib/api'
 
 interface SidebarProps {
   collapsed: boolean
@@ -27,8 +27,8 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { path: '/kanban', icon: KanbanSquare, label: '업무보드', highlight: true },
   { path: '/', icon: LayoutDashboard, label: '대시보드' },
+  { path: '/kanban', icon: KanbanSquare, label: '업무보드', badgeKey: 'tasks' as const },
   { path: '/calendar', icon: Calendar, label: '캘린더' },
   { path: '/attendance', icon: Clock, label: '근태관리' },
   { path: '/leave', icon: CalendarDays, label: '휴가/결재', badgeKey: 'leave' as const },
@@ -58,6 +58,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
   const showSettings = user?.is_ceo || user?.is_admin
   const apiBase = import.meta.env.VITE_API_URL || '/api'
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0)
+  const [taskCounts, setTaskCounts] = useState<{ todo: number; in_progress: number }>({ todo: 0, in_progress: 0 })
 
   useEffect(() => {
     if (user) {
@@ -66,6 +67,18 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
         .catch((e) => { console.error(e) })
     }
   }, [user, location.pathname])
+
+  useEffect(() => {
+    if (!user) return
+    const fetchCounts = () => {
+      taskCountApi.my()
+        .then(setTaskCounts)
+        .catch((e) => { console.error(e) })
+    }
+    fetchCounts()
+    const interval = setInterval(fetchCounts, 60000)
+    return () => clearInterval(interval)
+  }, [user])
 
   const allItems = showSettings
     ? [...navItems, { path: '/banking', icon: Landmark, label: '법인계좌' }, { path: '/settings', icon: Settings, label: '설정' }]
@@ -153,7 +166,6 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
           const active = location.pathname === item.path ||
             (item.path !== '/' && location.pathname.startsWith(item.path))
 
-          const isHighlight = 'highlight' in item && item.highlight
           return (
             <button
               key={item.path}
@@ -161,17 +173,34 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
               className={`relative flex items-center w-full px-4 py-2.5 text-sm transition-colors ${
                 active
                   ? themeStyles.activeBg
-                  : isHighlight && !active
-                  ? 'bg-primary-600/10 text-primary-400 font-semibold ' + themeStyles.hoverBg
                   : themeStyles.hoverBg
               }`}
               title={collapsed ? item.label : undefined}
             >
-              <item.icon size={isHighlight ? 22 : 20} />
-              {!collapsed && <span className={`ml-3 flex-1 text-left ${isHighlight ? 'font-semibold' : ''}`}>{item.label}</span>}
+              <item.icon size={20} />
+              {!collapsed && <span className="ml-3 flex-1 text-left">{item.label}</span>}
               {'badgeKey' in item && item.badgeKey === 'leave' && pendingLeaveCount > 0 && (
                 <span className={`${collapsed ? 'absolute top-0.5 right-0.5' : 'ml-auto'} bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1`}>
                   {pendingLeaveCount}
+                </span>
+              )}
+              {'badgeKey' in item && item.badgeKey === 'tasks' && !collapsed && (taskCounts.todo > 0 || taskCounts.in_progress > 0) && (
+                <span className="ml-auto flex items-center gap-1">
+                  {taskCounts.todo > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] min-w-[16px] h-4 rounded-full flex items-center justify-center px-1">
+                      {taskCounts.todo}
+                    </span>
+                  )}
+                  {taskCounts.in_progress > 0 && (
+                    <span className="bg-green-500 text-white text-[10px] min-w-[16px] h-4 rounded-full flex items-center justify-center px-1">
+                      {taskCounts.in_progress}
+                    </span>
+                  )}
+                </span>
+              )}
+              {'badgeKey' in item && item.badgeKey === 'tasks' && collapsed && (taskCounts.todo > 0 || taskCounts.in_progress > 0) && (
+                <span className="absolute top-0.5 right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                  {taskCounts.todo + taskCounts.in_progress}
                 </span>
               )}
             </button>

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../../stores/authStore'
-import { dashboardApi } from '../../lib/api'
+import { dashboardApi, taskCountApi } from '../../lib/api'
 import type { DashboardStats } from '../../lib/api'
-import { Calendar, KanbanSquare, FileText, KeyRound, Bug, ClipboardCheck, Users, Loader2 } from 'lucide-react'
+import { Calendar, KanbanSquare, FileText, KeyRound, Bug, ClipboardCheck, Users, Loader2, ArrowRight, AlertCircle, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 
@@ -19,12 +19,20 @@ export function DashboardPage() {
   const navigate = useNavigate()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [taskCounts, setTaskCounts] = useState<{ todo: number; in_progress: number }>({ todo: 0, in_progress: 0 })
+  const [myTasks, setMyTasks] = useState<any[]>([])
 
   useEffect(() => {
     dashboardApi.stats()
       .then(setStats)
       .catch(() => {})
       .finally(() => setLoading(false))
+    taskCountApi.my()
+      .then(setTaskCounts)
+      .catch(() => {})
+    taskCountApi.myTasks()
+      .then(res => setMyTasks(res.tasks || []))
+      .catch(() => {})
   }, [])
 
   return (
@@ -37,6 +45,33 @@ export function DashboardPage() {
           {organization?.name} 대시보드
         </p>
       </div>
+
+      {/* Task awareness banner */}
+      {(taskCounts.todo > 0 || taskCounts.in_progress > 0) && (
+        <div
+          onClick={() => navigate('/kanban')}
+          className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-xl p-4 mb-4 cursor-pointer hover:shadow-sm transition-shadow"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="text-red-500 flex-shrink-0" size={22} />
+              <div className="space-y-0.5">
+                {taskCounts.todo > 0 && (
+                  <p className="text-sm font-medium text-gray-800">
+                    현재 담당하고 있는 할 일이 <span className="text-red-600 font-bold">{taskCounts.todo}건</span> 있습니다
+                  </p>
+                )}
+                {taskCounts.in_progress > 0 && (
+                  <p className="text-sm font-medium text-gray-800">
+                    진행 중인 작업이 <span className="text-green-600 font-bold">{taskCounts.in_progress}건</span> 있습니다
+                  </p>
+                )}
+              </div>
+            </div>
+            <ArrowRight className="text-gray-400 flex-shrink-0" size={18} />
+          </div>
+        </div>
+      )}
 
       {/* Stat widgets */}
       {loading ? (
@@ -116,6 +151,48 @@ export function DashboardPage() {
           )}
         </div>
       ) : null}
+
+      {/* My tasks section */}
+      {myTasks.length > 0 && (
+        <div className="bg-white border rounded-xl p-4 mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <KanbanSquare size={16} />
+            나의 할 일
+          </h3>
+          <ul className="divide-y">
+            {myTasks.map((task: any) => (
+              <li
+                key={task.id}
+                className="py-2 flex items-center justify-between cursor-pointer hover:bg-gray-50 -mx-2 px-2 rounded"
+                onClick={() => navigate('/kanban')}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
+                      /to.?do|할.?일|대기/i.test(task.column_name) ? 'bg-red-500' : 'bg-green-500'
+                    }`} />
+                    <p className="text-sm font-medium text-gray-900 truncate">{task.title}</p>
+                  </div>
+                  <p className="text-xs text-gray-400 ml-4">{task.board_name} · {task.column_name}</p>
+                </div>
+                <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                  {task.due_date && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                      dayjs(task.due_date).isBefore(dayjs(), 'day') ? 'bg-red-100 text-red-600' : 'text-gray-400'
+                    }`}>
+                      <Clock size={10} className="inline mr-0.5" />
+                      {dayjs(task.due_date).format('MM/DD')}
+                    </span>
+                  )}
+                  {task.priority === 'high' && (
+                    <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">긴급</span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Module navigation */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

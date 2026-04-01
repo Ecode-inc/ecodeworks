@@ -215,6 +215,11 @@ export const boardsApi = {
     request<{ success: boolean }>(`/boards/${boardId}/columns/reorder`, { method: 'PATCH', body: JSON.stringify({ orders }) }),
 }
 
+export const taskCountApi = {
+  my: () => request<{ todo: number; in_progress: number }>('/tasks/my-counts'),
+  myTasks: () => request<{ tasks: any[] }>('/tasks/my-tasks'),
+}
+
 export const tasksApi = {
   all: (params?: { assignee_id?: string }) => {
     const qs = params?.assignee_id ? `?assignee_id=${params.assignee_id}` : ''
