@@ -209,39 +209,31 @@ export function DocsPage() {
 
       {/* Sidebar - Document Tree */}
       <div className={`w-full md:w-72 flex-shrink-0 bg-white rounded-xl border p-4 overflow-y-auto ${showSidebar ? '' : 'hidden md:block'}`}>
-        <div className="flex items-center gap-2 mb-4">
-          <div className="flex-1 relative">
-            <Search size={14} className="absolute left-2 top-2.5 text-gray-400" />
-            <input
-              placeholder="검색..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSearch()}
-              className="w-full pl-7 pr-2 py-1.5 text-sm border rounded-lg"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1 mb-3">
+        {/* Line 1: 새폴더 / 새문서 */}
+        <div className="flex items-center gap-1 mb-2">
           <button onClick={() => { setNewIsFolder(true); setNewParentId(null); setShowNewModal(true) }}
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">
-            <FolderPlus size={14} /> 폴더
+            <FolderPlus size={14} /> 새폴더
           </button>
           <button onClick={() => { setNewIsFolder(false); setNewParentId(null); setShowNewModal(true) }}
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">
-            <FilePlus size={14} /> 문서
+            <FilePlus size={14} /> 새문서
           </button>
-          <div className="ml-auto flex items-center gap-0.5">
+        </div>
+
+        {/* Line 2: 권한필터 | 정렬필터 */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-0.5">
             {([
               { value: 'all', label: '전체', icon: null },
-              { value: 'company', label: '', icon: <Building2 size={12} className="text-blue-500" /> },
-              { value: 'department', label: '', icon: <Users size={12} className="text-green-500" /> },
-              { value: 'personal', label: '', icon: <UserIcon size={12} className="text-purple-500" /> },
+              { value: 'company', label: '', icon: <Building2 size={11} className="text-blue-500" />, title: '회사' },
+              { value: 'department', label: '', icon: <Users size={11} className="text-green-500" />, title: '부서' },
+              { value: 'personal', label: '', icon: <UserIcon size={11} className="text-purple-500" />, title: '개인' },
             ] as const).map(opt => (
               <button
                 key={opt.value}
                 onClick={() => { setVisibilityFilter(opt.value); refreshTree() }}
-                className={`px-1.5 py-1 rounded text-[10px] ${visibilityFilter === opt.value ? 'bg-gray-200 font-semibold' : 'hover:bg-gray-100'}`}
+                className={`px-1.5 py-0.5 rounded text-[10px] ${visibilityFilter === opt.value ? 'bg-gray-200 font-semibold' : 'hover:bg-gray-100'}`}
                 title={opt.value === 'all' ? '전체' : opt.value === 'company' ? '회사' : opt.value === 'department' ? '부서' : '개인'}
               >
                 {opt.icon || opt.label}
@@ -250,16 +242,26 @@ export function DocsPage() {
           </div>
           <div className="flex items-center gap-0.5">
             <button
-              onClick={() => { setSortMode('recent'); refreshTree() }}
-              className={`px-1.5 py-1 rounded text-[10px] ${sortMode === 'recent' ? 'bg-gray-200 font-semibold' : 'hover:bg-gray-100'}`}
-              title="최근순"
-            >최근</button>
+              onClick={() => setSortMode('recent')}
+              className={`px-1.5 py-0.5 rounded text-[10px] ${sortMode === 'recent' ? 'bg-gray-200 font-semibold' : 'hover:bg-gray-100'}`}
+            >최근순</button>
             <button
-              onClick={() => { setSortMode('name'); refreshTree() }}
-              className={`px-1.5 py-1 rounded text-[10px] ${sortMode === 'name' ? 'bg-gray-200 font-semibold' : 'hover:bg-gray-100'}`}
-              title="가나다순"
-            >이름</button>
+              onClick={() => setSortMode('name')}
+              className={`px-1.5 py-0.5 rounded text-[10px] ${sortMode === 'name' ? 'bg-gray-200 font-semibold' : 'hover:bg-gray-100'}`}
+            >이름순</button>
           </div>
+        </div>
+
+        {/* Line 3: 검색바 */}
+        <div className="relative mb-3">
+          <Search size={14} className="absolute left-2 top-2 text-gray-400" />
+          <input
+            placeholder="검색..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            className="w-full pl-7 pr-2 py-1.5 text-sm border rounded-lg"
+          />
         </div>
 
         {/* Document Tree */}

@@ -107,7 +107,7 @@ export function DashboardPage() {
                       <p className="text-xs text-gray-400">{doc.author_name}</p>
                     </div>
                     <span className="text-xs text-gray-400 whitespace-nowrap ml-4">
-                      {dayjs(doc.updated_at).format('MM/DD HH:mm')}
+                      {dayjs(doc.updated_at.endsWith('Z') ? doc.updated_at : doc.updated_at + 'Z').format('MM/DD HH:mm')}
                     </span>
                   </li>
                 ))}
