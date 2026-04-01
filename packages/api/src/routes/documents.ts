@@ -170,6 +170,38 @@ documentsRoutes.post('/', requirePermission('docs', 'write'), async (c) => {
   return c.json({ document: doc }, 201)
 })
 
+// ── Document Comments (static paths before /:id) ──────────────
+
+// Delete a comment (creator, CEO, or admin only)
+documentsRoutes.delete('/comments/:commentId', async (c) => {
+  const user = c.get('user')
+  const commentId = c.req.param('commentId')
+
+  const comment = await c.env.DB.prepare('SELECT * FROM doc_comments WHERE id = ?').bind(commentId).first<{ user_id: string }>()
+  if (!comment) return c.json({ error: 'Comment not found' }, 404)
+
+  if (!user.is_ceo && !user.is_admin && comment.user_id !== user.id) {
+    return c.json({ error: 'Only the creator, CEO, or admin can delete' }, 403)
+  }
+
+  await c.env.DB.prepare('DELETE FROM doc_comments WHERE id = ?').bind(commentId).run()
+  return c.json({ success: true })
+})
+
+// Toggle resolved status
+documentsRoutes.patch('/comments/:commentId/resolve', async (c) => {
+  const commentId = c.req.param('commentId')
+
+  const comment = await c.env.DB.prepare('SELECT is_resolved FROM doc_comments WHERE id = ?').bind(commentId).first<{ is_resolved: number }>()
+  if (!comment) return c.json({ error: 'Comment not found' }, 404)
+
+  const newResolved = comment.is_resolved ? 0 : 1
+  await c.env.DB.prepare('UPDATE doc_comments SET is_resolved = ? WHERE id = ?').bind(newResolved, commentId).run()
+
+  const updated = await c.env.DB.prepare('SELECT * FROM doc_comments WHERE id = ?').bind(commentId).first()
+  return c.json({ comment: updated })
+})
+
 // Update document (with optimistic locking via expected_updated_at)
 documentsRoutes.patch('/:id', authMiddleware, async (c) => {
   const user = c.get('user')
@@ -355,4 +387,46 @@ documentsRoutes.delete('/shares/:shareId', async (c) => {
     'UPDATE doc_share_links SET is_active = 0 WHERE id = ?'
   ).bind(shareId).run()
   return c.json({ success: true })
+})
+
+// ── Document Comments (parameterized paths) ────────────────────
+
+// List comments for a document
+documentsRoutes.get('/:id/comments', async (c) => {
+  const docId = c.req.param('id')
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, document_id, user_id, user_name, content, selection_text, selection_start, selection_end, is_resolved, created_at
+     FROM doc_comments WHERE document_id = ? ORDER BY selection_start ASC, created_at ASC`
+  ).bind(docId).all()
+  return c.json({ comments: results || [] })
+})
+
+// Add a comment
+documentsRoutes.post('/:id/comments', async (c) => {
+  const user = c.get('user')
+  const docId = c.req.param('id')
+
+  const doc = await c.env.DB.prepare('SELECT id FROM documents WHERE id = ?').bind(docId).first()
+  if (!doc) return c.json({ error: 'Document not found' }, 404)
+
+  const body = await c.req.json<{
+    content: string
+    selection_text?: string
+    selection_start?: number
+    selection_end?: number
+  }>()
+
+  if (!body.content) return c.json({ error: 'content required' }, 400)
+
+  const id = generateId()
+  await c.env.DB.prepare(
+    `INSERT INTO doc_comments (id, document_id, org_id, user_id, user_name, content, selection_text, selection_start, selection_end)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id, docId, user.org_id, user.id, user.name,
+    body.content, body.selection_text || '', body.selection_start ?? 0, body.selection_end ?? 0
+  ).run()
+
+  const comment = await c.env.DB.prepare('SELECT * FROM doc_comments WHERE id = ?').bind(id).first()
+  return c.json({ comment }, 201)
 })

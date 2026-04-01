@@ -1,11 +1,11 @@
-import { useState, useEffect, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 const MDEditor = lazy(() => import('@uiw/react-md-editor'))
 import remarkGfm from 'remark-gfm'
 import '@uiw/react-markdown-preview/markdown.css'
 const MDPreview = lazy(() => import('@uiw/react-markdown-preview').then(m => ({ default: m.default })))
 import { useOrgStore } from '../../stores/orgStore'
-import { docsApi, docShareApi } from '../../lib/api'
+import { docsApi, docShareApi, docCommentApi } from '../../lib/api'
 import { useToastStore } from '../../stores/toastStore'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
@@ -13,6 +13,13 @@ import { Input } from '../ui/Input'
 import { FileText, Folder, FolderOpen, FolderPlus, FilePlus, Search, ChevronRight, ChevronDown, Clock, Share2, Building2, Users, UserIcon, Trash2, Link, Copy, Check, X as XIcon, Pencil, Shield } from 'lucide-react'
 import { ImageGallery } from './ImageGallery'
 import { FileAttachments } from './FileAttachments'
+import {
+  FloatingCommentButton,
+  CommentPanel,
+  CommentToggleButton,
+  InlineCommentForm,
+  useDocComments,
+} from './DocComments'
 
 export function DocsPage() {
   const { docId: urlDocId } = useParams<{ docId?: string }>()
@@ -40,6 +47,30 @@ export function DocsPage() {
   const [newShared, setNewShared] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'company' | 'department' | 'personal'>('all')
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  const commentApiMemo = useMemo(() => selectedDoc ? ({
+    list: () => docCommentApi.list(selectedDoc.id),
+    create: (data: any) => docCommentApi.create(selectedDoc.id, data),
+    delete: (id: string) => docCommentApi.delete(id),
+    resolve: (id: string) => docCommentApi.resolve(id),
+  }) : null, [selectedDoc?.id])
+
+  const {
+    comments,
+    showPanel: showCommentPanel,
+    setShowPanel: setShowCommentPanel,
+    commentForm,
+    setCommentForm,
+    handleStartComment,
+    handleSubmitComment,
+    handleDelete: handleDeleteComment,
+    handleResolve: handleResolveComment,
+    loadComments,
+  } = useDocComments(commentApiMemo || {
+    list: async () => ({ comments: [] }),
+    create: async () => ({}),
+  })
 
   const refreshTree = () => setTreeRefreshKey(k => k + 1)
 
@@ -52,6 +83,13 @@ export function DocsPage() {
       }).catch((e) => { console.error(e) })
     }
   }, [urlDocId])
+
+  // Reload comments when doc changes
+  useEffect(() => {
+    if (selectedDoc?.id) {
+      loadComments()
+    }
+  }, [selectedDoc?.id])
 
   const openDocument = async (doc: any) => {
     try {
@@ -294,6 +332,13 @@ export function DocsPage() {
                     title="글자 확대"
                   >A+</button>
                 </div>
+                {!editing && (
+                  <CommentToggleButton
+                    count={comments.length}
+                    open={showCommentPanel}
+                    onClick={() => setShowCommentPanel(!showCommentPanel)}
+                  />
+                )}
                 <button onClick={() => setShowShareModal(true)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100" title="공유">
                   <Share2 size={16} />
                 </button>
@@ -314,30 +359,45 @@ export function DocsPage() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto" data-color-mode="light">
-              {editing ? (
-                <Suspense fallback={<div className="p-6 text-gray-400">에디터 로딩 중...</div>}>
-                  <MDEditor
-                    value={editContent}
-                    onChange={(val) => setEditContent(val || '')}
-                    height="100%"
-                    preview="live"
-                    visibleDragbar={false}
-                  />
-                </Suspense>
-              ) : (
-                <>
-                  <div className="prose prose-sm max-w-none p-6">
-                    <MarkdownPreview content={selectedDoc.content || ''} fontSize={fontSize} />
-                  </div>
-                  {!selectedDoc.is_folder && (
-                    <>
-                      <LinkedTasks documentId={selectedDoc.id} />
-                      <ImageGallery documentId={selectedDoc.id} />
-                      <FileAttachments documentId={selectedDoc.id} />
-                    </>
-                  )}
-                </>
+            <div className="flex-1 overflow-y-auto flex" data-color-mode="light">
+              <div className="flex-1 min-w-0">
+                {editing ? (
+                  <Suspense fallback={<div className="p-6 text-gray-400">에디터 로딩 중...</div>}>
+                    <MDEditor
+                      value={editContent}
+                      onChange={(val) => setEditContent(val || '')}
+                      height="100%"
+                      preview="live"
+                      visibleDragbar={false}
+                    />
+                  </Suspense>
+                ) : (
+                  <>
+                    <div className="prose prose-sm max-w-none p-6 relative" ref={contentRef}>
+                      <FloatingCommentButton
+                        containerRef={contentRef}
+                        onComment={handleStartComment}
+                      />
+                      <MarkdownPreview content={selectedDoc.content || ''} fontSize={fontSize} />
+                    </div>
+                    {!selectedDoc.is_folder && (
+                      <>
+                        <LinkedTasks documentId={selectedDoc.id} />
+                        <ImageGallery documentId={selectedDoc.id} />
+                        <FileAttachments documentId={selectedDoc.id} />
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+              {/* Comment Panel Sidebar */}
+              {showCommentPanel && !editing && (
+                <CommentPanel
+                  comments={comments}
+                  onClose={() => setShowCommentPanel(false)}
+                  onDelete={handleDeleteComment}
+                  onResolve={handleResolveComment}
+                />
               )}
             </div>
           </div>
@@ -416,6 +476,15 @@ export function DocsPage() {
           open={showShareModal}
           onClose={() => setShowShareModal(false)}
           docId={selectedDoc.id}
+        />
+      )}
+
+      {/* Comment Form Modal */}
+      {commentForm && (
+        <InlineCommentForm
+          selectionText={commentForm.text}
+          onSubmit={handleSubmitComment}
+          onCancel={() => setCommentForm(null)}
         />
       )}
     </div>

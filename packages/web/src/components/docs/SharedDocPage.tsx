@@ -1,8 +1,16 @@
-import { useState, useEffect, lazy, Suspense } from 'react'
-import { fetchSharedDoc } from '../../lib/api'
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
+import { fetchSharedDoc, shareCommentApi } from '../../lib/api'
 import { FileText, AlertCircle } from 'lucide-react'
 import remarkGfm from 'remark-gfm'
 import '@uiw/react-markdown-preview/markdown.css'
+import {
+  FloatingCommentButton,
+  CommentPanel,
+  CommentToggleButton,
+  InlineCommentForm,
+  useDocComments,
+} from './DocComments'
+
 const MDPreview = lazy(() => import('@uiw/react-markdown-preview').then(m => ({ default: m.default })))
 
 function MarkdownPreview({ content }: { content: string }) {
@@ -23,6 +31,22 @@ export function SharedDocPage({ token }: { token: string }) {
   const [doc, setDoc] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  const commentApiMemo = useMemo(() => ({
+    list: () => shareCommentApi.list(token),
+    create: (data: any) => shareCommentApi.create(token, data),
+  }), [token])
+
+  const {
+    comments,
+    showPanel,
+    setShowPanel,
+    commentForm,
+    setCommentForm,
+    handleStartComment,
+    handleSubmitComment,
+  } = useDocComments(commentApiMemo)
 
   useEffect(() => {
     fetchSharedDoc(token)
@@ -72,27 +96,70 @@ export function SharedDocPage({ token }: { token: string }) {
             </div>
             <span className="text-sm font-semibold text-gray-700">ecode</span>
           </div>
-          <span className="text-xs text-gray-400">공유 문서 (읽기 전용)</span>
+          <div className="flex items-center gap-3">
+            <CommentToggleButton
+              count={comments.length}
+              open={showPanel}
+              onClick={() => setShowPanel(!showPanel)}
+            />
+            <span className="text-xs text-gray-400">공유 문서 (읽기 전용)</span>
+          </div>
         </div>
       </header>
 
       {/* Content */}
-      <main className="max-w-4xl mx-auto px-6 py-8">
-        <div className="bg-white rounded-xl border p-8">
-          <div className="flex items-center gap-3 mb-6 pb-4 border-b">
-            <FileText size={22} className="text-gray-400" />
-            <h1 className="text-2xl font-bold text-gray-900">{doc.title}</h1>
+      <div className="flex">
+        <main className={`flex-1 ${showPanel ? 'max-w-3xl' : 'max-w-4xl'} mx-auto px-6 py-8 transition-all`}>
+          <div className="bg-white rounded-xl border p-8">
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b">
+              <FileText size={22} className="text-gray-400" />
+              <h1 className="text-2xl font-bold text-gray-900">{doc.title}</h1>
+            </div>
+            {doc.updated_at && (
+              <p className="text-xs text-gray-400 mb-6">
+                마지막 수정: {new Date(doc.updated_at).toLocaleString('ko')}
+              </p>
+            )}
+            <div className="prose prose-sm max-w-none relative" ref={contentRef}>
+              <FloatingCommentButton
+                containerRef={contentRef}
+                onComment={handleStartComment}
+              />
+              <MarkdownPreview content={doc.content || ''} />
+            </div>
           </div>
-          {doc.updated_at && (
-            <p className="text-xs text-gray-400 mb-6">
-              마지막 수정: {new Date(doc.updated_at).toLocaleString('ko')}
-            </p>
-          )}
-          <div className="prose prose-sm max-w-none">
-            <MarkdownPreview content={doc.content || ''} />
+        </main>
+
+        {/* Comment Panel */}
+        {showPanel && (
+          <div className="hidden md:block sticky top-0 h-screen">
+            <CommentPanel
+              comments={comments}
+              onClose={() => setShowPanel(false)}
+            />
           </div>
+        )}
+      </div>
+
+      {/* Mobile Comment Panel */}
+      {showPanel && (
+        <div className="md:hidden fixed inset-x-0 bottom-0 z-30 h-72 border-t bg-white shadow-lg">
+          <CommentPanel
+            comments={comments}
+            onClose={() => setShowPanel(false)}
+          />
         </div>
-      </main>
+      )}
+
+      {/* Comment Form Modal */}
+      {commentForm && (
+        <InlineCommentForm
+          selectionText={commentForm.text}
+          onSubmit={handleSubmitComment}
+          onCancel={() => setCommentForm(null)}
+          requireAuthorName
+        />
+      )}
 
       {/* Footer */}
       <footer className="text-center py-6 text-xs text-gray-400">

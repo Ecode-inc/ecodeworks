@@ -192,6 +192,64 @@ app.get('/api/share/:token', async (c) => {
   return c.json({ document: doc })
 })
 
+// Public share link: list comments (no auth)
+app.get('/api/share/:token/comments', async (c) => {
+  const token = c.req.param('token')
+  const share = await c.env.DB.prepare(
+    'SELECT * FROM doc_share_links WHERE token = ? AND is_active = 1'
+  ).bind(token).first<{ document_id: string; expires_at: string | null }>()
+
+  if (!share) return c.json({ error: '링크가 만료되었거나 유효하지 않습니다' }, 404)
+  if (share.expires_at && new Date(share.expires_at) < new Date()) {
+    return c.json({ error: '링크가 만료되었거나 유효하지 않습니다' }, 410)
+  }
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, document_id, user_id, user_name, content, selection_text, selection_start, selection_end, is_resolved, created_at
+     FROM doc_comments WHERE document_id = ? ORDER BY selection_start ASC, created_at ASC`
+  ).bind(share.document_id).all()
+
+  return c.json({ comments: results || [] })
+})
+
+// Public share link: add comment (no auth, author_name required)
+app.post('/api/share/:token/comments', async (c) => {
+  const token = c.req.param('token')
+  const share = await c.env.DB.prepare(
+    'SELECT * FROM doc_share_links WHERE token = ? AND is_active = 1'
+  ).bind(token).first<{ document_id: string; org_id: string; expires_at: string | null }>()
+
+  if (!share) return c.json({ error: '링크가 만료되었거나 유효하지 않습니다' }, 404)
+  if (share.expires_at && new Date(share.expires_at) < new Date()) {
+    return c.json({ error: '링크가 만료되었거나 유효하지 않습니다' }, 410)
+  }
+
+  const body = await c.req.json<{
+    content: string
+    selection_text?: string
+    selection_start?: number
+    selection_end?: number
+    author_name: string
+  }>()
+
+  if (!body.content) return c.json({ error: 'content required' }, 400)
+  if (!body.author_name) return c.json({ error: 'author_name required' }, 400)
+
+  const { generateId } = await import('./lib/id')
+  const id = generateId()
+
+  await c.env.DB.prepare(
+    `INSERT INTO doc_comments (id, document_id, org_id, user_id, user_name, content, selection_text, selection_start, selection_end)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id, share.document_id, share.org_id, '', body.author_name,
+    body.content, body.selection_text || '', body.selection_start ?? 0, body.selection_end ?? 0
+  ).run()
+
+  const comment = await c.env.DB.prepare('SELECT * FROM doc_comments WHERE id = ?').bind(id).first()
+  return c.json({ comment }, 201)
+})
+
 // Phase 5: Vault
 app.route('/api/vault', credentialsRoutes)
 

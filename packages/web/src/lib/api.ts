@@ -575,6 +575,29 @@ export const notificationApi = {
   markAllRead: () => request<{ success: boolean }>('/notifications/read-all', { method: 'POST' }),
 }
 
+// Document Comments
+export const docCommentApi = {
+  list: (docId: string) => request<{ comments: any[] }>(`/docs/${docId}/comments`),
+  create: (docId: string, data: { content: string; selection_text: string; selection_start: number; selection_end: number }) =>
+    request<{ comment: any }>(`/docs/${docId}/comments`, { method: 'POST', body: JSON.stringify(data) }),
+  delete: (commentId: string) =>
+    request<{ success: boolean }>(`/docs/comments/${commentId}`, { method: 'DELETE' }),
+  resolve: (commentId: string) =>
+    request<{ comment: any }>(`/docs/comments/${commentId}/resolve`, { method: 'PATCH' }),
+}
+
+// Public Share Comments (no auth)
+export const shareCommentApi = {
+  list: (token: string) => {
+    const base = import.meta.env.VITE_API_URL || '/api'
+    return fetch(`${base}/share/${token}/comments`).then(r => r.json())
+  },
+  create: (token: string, data: { content: string; selection_text: string; selection_start: number; selection_end: number; author_name: string }) => {
+    const base = import.meta.env.VITE_API_URL || '/api'
+    return fetch(`${base}/share/${token}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json())
+  },
+}
+
 // Telegram Integration
 export const telegramApi = {
   listChats: () => request<{ chats: any[] }>('/telegram/chats'),
