@@ -22,6 +22,11 @@ import {
   scrollToComment,
 } from './DocComments'
 
+const EMPTY_COMMENT_API = {
+  list: async () => ({ comments: [] as any[] }),
+  create: async () => ({}),
+}
+
 export function DocsPage() {
   const { docId: urlDocId } = useParams<{ docId?: string }>()
   const navigate = useNavigate()
@@ -70,10 +75,7 @@ export function DocsPage() {
     handleDelete: handleDeleteComment,
     handleResolve: handleResolveComment,
     loadComments,
-  } = useDocComments(commentApiMemo || {
-    list: async () => ({ comments: [] }),
-    create: async () => ({}),
-  })
+  } = useDocComments(commentApiMemo || EMPTY_COMMENT_API)
 
   const refreshTree = () => setTreeRefreshKey(k => k + 1)
 
