@@ -48,6 +48,7 @@ export function DocsPage() {
   const [newShared, setNewShared] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'company' | 'department' | 'personal'>('all')
+  const [sortMode, setSortMode] = useState<'recent' | 'name'>('recent')
   const contentRef = useRef<HTMLDivElement>(null)
 
   const commentApiMemo = useMemo(() => selectedDoc ? ({
@@ -247,6 +248,18 @@ export function DocsPage() {
               </button>
             ))}
           </div>
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => { setSortMode('recent'); refreshTree() }}
+              className={`px-1.5 py-1 rounded text-[10px] ${sortMode === 'recent' ? 'bg-gray-200 font-semibold' : 'hover:bg-gray-100'}`}
+              title="최근순"
+            >최근</button>
+            <button
+              onClick={() => { setSortMode('name'); refreshTree() }}
+              className={`px-1.5 py-1 rounded text-[10px] ${sortMode === 'name' ? 'bg-gray-200 font-semibold' : 'hover:bg-gray-100'}`}
+              title="가나다순"
+            >이름</button>
+          </div>
         </div>
 
         {/* Document Tree */}
@@ -299,6 +312,7 @@ export function DocsPage() {
               onMoved={refreshTree}
               onRenamed={refreshTree}
               visibilityFilter={visibilityFilter}
+              sortMode={sortMode}
             />
           </div>
         )}
@@ -393,13 +407,15 @@ export function DocsPage() {
               </div>
               {/* Comment Panel Sidebar */}
               {showCommentPanel && !editing && (
-                <CommentPanel
-                  comments={comments}
-                  onClose={() => setShowCommentPanel(false)}
-                  onDelete={handleDeleteComment}
-                  onResolve={handleResolveComment}
-                  onScrollTo={(c) => scrollToComment(contentRef, c)}
-                />
+                <div className="sticky top-0 h-[calc(100vh-8rem)] flex-shrink-0">
+                  <CommentPanel
+                    comments={comments}
+                    onClose={() => setShowCommentPanel(false)}
+                    onDelete={handleDeleteComment}
+                    onResolve={handleResolveComment}
+                    onScrollTo={(c) => scrollToComment(contentRef, c)}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -741,7 +757,7 @@ function ShareModal({ open, onClose, docId }: { open: boolean; onClose: () => vo
 
 // ── Recursive Tree Components ────────────────────────────────
 
-function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAddInFolder, onMoved, onRenamed, visibilityFilter }: {
+function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAddInFolder, onMoved, onRenamed, visibilityFilter, sortMode }: {
   deptId: string | null
   parentId: string | null
   depth: number
@@ -752,6 +768,7 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
   onMoved?: () => void
   onRenamed?: () => void
   visibilityFilter?: 'all' | 'company' | 'department' | 'personal'
+  sortMode?: 'recent' | 'name'
 }) {
   const [docs, setDocs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -775,11 +792,16 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
     ? docs.filter(d => d.is_folder || d.visibility === visibilityFilter)
     : docs
 
-  // Sort: AI-titled docs go to the bottom of each folder
+  // Sort: folders first, then documents by sortMode
   const sortedDocs = [...filtered].sort((a, b) => {
     if (a.is_folder !== b.is_folder) return a.is_folder ? -1 : 1
     if (a.title === 'AI' && b.title !== 'AI') return 1
     if (a.title !== 'AI' && b.title === 'AI') return -1
+    // Only sort documents (not folders)
+    if (!a.is_folder && !b.is_folder) {
+      if (sortMode === 'name') return (a.title || '').localeCompare(b.title || '', 'ko')
+      if (sortMode === 'recent') return (b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || '')
+    }
     return 0
   })
 
@@ -799,6 +821,7 @@ function DocTree({ deptId, parentId, depth, selectedId, onSelect, onDelete, onAd
             onMoved={onMoved}
             onRenamed={onRenamed}
             visibilityFilter={visibilityFilter}
+            sortMode={sortMode}
           />
         ) : (
           <TreeItem
@@ -868,7 +891,7 @@ function VisibilitySelector({ doc, onChanged }: { doc: any; onChanged?: () => vo
   )
 }
 
-function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddInFolder, onMoved, onRenamed, visibilityFilter }: {
+function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddInFolder, onMoved, onRenamed, visibilityFilter, sortMode }: {
   doc: any
   deptId: string | null
   depth: number
@@ -879,6 +902,7 @@ function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddI
   onMoved?: () => void
   onRenamed?: () => void
   visibilityFilter?: 'all' | 'company' | 'department' | 'personal'
+  sortMode?: 'recent' | 'name'
 }) {
   const [expanded, setExpanded] = useState(depth < 1) // auto-expand first level
   const [dragOver, setDragOver] = useState(false)
@@ -974,6 +998,7 @@ function FolderNode({ doc, deptId, depth, selectedId, onSelect, onDelete, onAddI
           onMoved={onMoved}
           onRenamed={onRenamed}
           visibilityFilter={visibilityFilter}
+          sortMode={sortMode}
         />
       )}
     </div>
