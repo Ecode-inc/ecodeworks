@@ -56,6 +56,7 @@ export function DocsPage() {
     create: (data: any) => docCommentApi.create(selectedDoc.id, data),
     delete: (id: string) => docCommentApi.delete(id),
     resolve: (id: string) => docCommentApi.resolve(id),
+    docId: selectedDoc.id,
   }) : null, [selectedDoc?.id])
 
   const {

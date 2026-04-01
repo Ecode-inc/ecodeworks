@@ -20,6 +20,7 @@ interface CommentApi {
   create: (data: { content: string; selection_text: string; selection_start: number; selection_end: number; author_name?: string }) => Promise<any>
   delete?: (commentId: string) => Promise<any>
   resolve?: (commentId: string) => Promise<any>
+  docId?: string  // for WebSocket connection
 }
 
 // ── Floating Comment Button (appears on text selection) ────────
@@ -406,10 +407,51 @@ export function useDocComments(api: CommentApi) {
     isFirstLoad.current = true
     commentCountRef.current = 0
     loadComments()
-    // Poll every 10 seconds
-    const interval = setInterval(loadComments, 10000)
-    return () => clearInterval(interval)
-  }, [loadComments])
+
+    let ws: WebSocket | null = null
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null
+
+    const startPollingFallback = () => {
+      if (!fallbackInterval) {
+        fallbackInterval = setInterval(loadComments, 10000)
+      }
+    }
+
+    if (api.docId) {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || '/api'
+        const wsBase = apiUrl.replace('https://', 'wss://').replace('http://', 'ws://')
+        const wsUrl = wsBase + '/docs/' + api.docId + '/ws'
+        ws = new WebSocket(wsUrl)
+
+        ws.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data)
+            if (msg.type === 'comment_added' || msg.type === 'comment_deleted') {
+              loadComments()
+            }
+          } catch {}
+        }
+
+        ws.onclose = () => {
+          startPollingFallback()
+        }
+
+        ws.onerror = () => {
+          startPollingFallback()
+        }
+      } catch {
+        startPollingFallback()
+      }
+    } else {
+      startPollingFallback()
+    }
+
+    return () => {
+      ws?.close()
+      if (fallbackInterval) clearInterval(fallbackInterval)
+    }
+  }, [loadComments, api.docId])
 
   const handleStartComment = useCallback((text: string, start: number, end: number) => {
     setCommentForm({ text, start, end })

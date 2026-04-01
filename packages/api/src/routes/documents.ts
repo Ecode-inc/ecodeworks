@@ -176,10 +176,22 @@ documentsRoutes.post('/', requirePermission('docs', 'write'), async (c) => {
 documentsRoutes.delete('/comments/:commentId', async (c) => {
   const commentId = c.req.param('commentId')
 
-  const comment = await c.env.DB.prepare('SELECT * FROM doc_comments WHERE id = ?').bind(commentId).first()
+  const comment = await c.env.DB.prepare('SELECT * FROM doc_comments WHERE id = ?').bind(commentId).first<{ document_id: string }>()
   if (!comment) return c.json({ error: 'Comment not found' }, 404)
 
+  const docId = comment.document_id
   await c.env.DB.prepare('DELETE FROM doc_comments WHERE id = ?').bind(commentId).run()
+
+  // Broadcast via WebSocket
+  try {
+    const roomId = c.env.WEBSOCKET_ROOM.idFromName(`doc-comments-${docId}`)
+    const room = c.env.WEBSOCKET_ROOM.get(roomId)
+    await room.fetch(new Request('https://internal/broadcast', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'comment_deleted', data: { commentId } }),
+    }))
+  } catch {}
+
   return c.json({ success: true })
 })
 
@@ -423,5 +435,16 @@ documentsRoutes.post('/:id/comments', async (c) => {
   ).run()
 
   const comment = await c.env.DB.prepare('SELECT * FROM doc_comments WHERE id = ?').bind(id).first()
+
+  // Broadcast via WebSocket
+  try {
+    const roomId = c.env.WEBSOCKET_ROOM.idFromName(`doc-comments-${docId}`)
+    const room = c.env.WEBSOCKET_ROOM.get(roomId)
+    await room.fetch(new Request('https://internal/broadcast', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'comment_added', data: { comment } }),
+    }))
+  } catch {}
+
   return c.json({ comment }, 201)
 })

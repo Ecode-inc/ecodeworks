@@ -37,7 +37,8 @@ export function SharedDocPage({ token }: { token: string }) {
   const commentApiMemo = useMemo(() => ({
     list: () => shareCommentApi.list(token),
     create: (data: any) => shareCommentApi.create(token, data),
-  }), [token])
+    docId: doc?.id as string | undefined,
+  }), [token, doc?.id])
 
   const {
     comments,

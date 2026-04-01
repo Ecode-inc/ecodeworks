@@ -247,6 +247,17 @@ app.post('/api/share/:token/comments', async (c) => {
   ).run()
 
   const comment = await c.env.DB.prepare('SELECT * FROM doc_comments WHERE id = ?').bind(id).first()
+
+  // Broadcast via WebSocket
+  try {
+    const roomId = c.env.WEBSOCKET_ROOM.idFromName(`doc-comments-${share.document_id}`)
+    const room = c.env.WEBSOCKET_ROOM.get(roomId)
+    await room.fetch(new Request('https://internal/broadcast', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'comment_added', data: { comment } }),
+    }))
+  } catch {}
+
   return c.json({ comment }, 201)
 })
 
@@ -401,6 +412,22 @@ app.get('/api/files/*', async (c) => {
   object.writeHttpMetadata(headers)
   headers.set('Cache-Control', 'public, max-age=86400')
   return new Response(object.body, { headers })
+})
+
+// WebSocket upgrade (document comment sync, no auth required for shared docs)
+app.get('/api/docs/:docId/ws', async (c) => {
+  const upgradeHeader = c.req.header('Upgrade')
+  if (!upgradeHeader || upgradeHeader !== 'websocket') {
+    return c.text('Expected WebSocket', 426)
+  }
+  const docId = c.req.param('docId')
+  const roomId = c.env.WEBSOCKET_ROOM.idFromName(`doc-comments-${docId}`)
+  const room = c.env.WEBSOCKET_ROOM.get(roomId)
+  // Pass anonymous user_id since doc comment WS doesn't require auth
+  const url = new URL(c.req.url)
+  url.searchParams.set('user_id', url.searchParams.get('user_id') || 'anonymous')
+  const newRequest = new Request(url.toString(), c.req.raw)
+  return room.fetch(newRequest)
 })
 
 // WebSocket upgrade (department-scoped rooms)
