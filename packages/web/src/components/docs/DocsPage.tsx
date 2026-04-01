@@ -19,6 +19,7 @@ import {
   CommentToggleButton,
   InlineCommentForm,
   useDocComments,
+  scrollToComment,
 } from './DocComments'
 
 export function DocsPage() {
@@ -397,6 +398,7 @@ export function DocsPage() {
                   onClose={() => setShowCommentPanel(false)}
                   onDelete={handleDeleteComment}
                   onResolve={handleResolveComment}
+                  onScrollTo={(c) => scrollToComment(contentRef, c)}
                 />
               )}
             </div>

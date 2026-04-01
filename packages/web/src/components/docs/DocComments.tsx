@@ -117,7 +117,7 @@ function CommentForm({
   requireAuthorName?: boolean
 }) {
   const [content, setContent] = useState('')
-  const [authorName, setAuthorName] = useState('')
+  const [authorName, setAuthorName] = useState(() => localStorage.getItem('docCommentAuthor') || '')
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -127,9 +127,9 @@ function CommentForm({
   const handleSubmit = () => {
     if (!content.trim()) return
     if (requireAuthorName && !authorName.trim()) return
+    if (authorName.trim()) localStorage.setItem('docCommentAuthor', authorName.trim())
     onSubmit(content.trim(), authorName.trim() || undefined)
     setContent('')
-    setAuthorName('')
   }
 
   return (
@@ -448,6 +448,49 @@ function getTextOffset(root: Node, targetNode: Node, targetOffset: number): numb
     node = walker.nextNode()
   }
   return offset
+}
+
+// Scroll to comment's selection text and highlight it
+export function scrollToComment(containerRef: React.RefObject<HTMLDivElement | null>, comment: DocComment) {
+  if (!containerRef.current || !comment.selection_text) return
+
+  // Remove any existing highlights
+  containerRef.current.querySelectorAll('.comment-highlight-active').forEach(el => {
+    const parent = el.parentNode
+    if (parent) {
+      parent.replaceChild(document.createTextNode(el.textContent || ''), el)
+      parent.normalize()
+    }
+  })
+
+  // Find the text in the DOM
+  const walker = document.createTreeWalker(containerRef.current, NodeFilter.SHOW_TEXT)
+  let node = walker.nextNode()
+  while (node) {
+    const idx = (node.textContent || '').indexOf(comment.selection_text)
+    if (idx >= 0) {
+      const range = document.createRange()
+      range.setStart(node, idx)
+      range.setEnd(node, idx + comment.selection_text.length)
+
+      const highlight = document.createElement('mark')
+      highlight.className = 'comment-highlight-active bg-yellow-200 transition-colors duration-300 rounded px-0.5'
+      range.surroundContents(highlight)
+
+      highlight.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+      // Remove highlight after 3 seconds
+      setTimeout(() => {
+        const parent = highlight.parentNode
+        if (parent) {
+          parent.replaceChild(document.createTextNode(highlight.textContent || ''), highlight)
+          parent.normalize()
+        }
+      }, 3000)
+      return
+    }
+    node = walker.nextNode()
+  }
 }
 
 function formatTime(iso: string): string {

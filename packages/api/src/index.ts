@@ -242,7 +242,7 @@ app.post('/api/share/:token/comments', async (c) => {
     `INSERT INTO doc_comments (id, document_id, org_id, user_id, user_name, content, selection_text, selection_start, selection_end)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
-    id, share.document_id, share.org_id, '', body.author_name,
+    id, share.document_id, share.org_id, null, body.author_name,
     body.content, body.selection_text || '', body.selection_start ?? 0, body.selection_end ?? 0
   ).run()
 

@@ -9,6 +9,7 @@ import {
   CommentToggleButton,
   InlineCommentForm,
   useDocComments,
+  scrollToComment,
 } from './DocComments'
 
 const MDPreview = lazy(() => import('@uiw/react-markdown-preview').then(m => ({ default: m.default })))
@@ -91,10 +92,8 @@ export function SharedDocPage({ token }: { token: string }) {
       <header className="bg-white border-b">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">e</span>
-            </div>
-            <span className="text-sm font-semibold text-gray-700">ecode</span>
+            <img src="/og-logo.png" alt="이코드" className="h-8 object-contain" />
+            <span className="text-sm font-semibold text-gray-700">이코드웍스 문서</span>
           </div>
           <div className="flex items-center gap-3">
             <CommentToggleButton
@@ -136,6 +135,7 @@ export function SharedDocPage({ token }: { token: string }) {
             <CommentPanel
               comments={comments}
               onClose={() => setShowPanel(false)}
+              onScrollTo={(c) => scrollToComment(contentRef, c)}
             />
           </div>
         )}
