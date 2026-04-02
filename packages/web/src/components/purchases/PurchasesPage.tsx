@@ -57,6 +57,8 @@ export function PurchasesPage() {
   const [showStats, setShowStats] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [editingCell, setEditingCell] = useState<{ id: string; field: 'quantity' | 'unit_price' } | null>(null)
+  const [editValue, setEditValue] = useState('')
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('')
@@ -118,6 +120,19 @@ export function PurchasesPage() {
   }, [loadCategories, loadDepartments])
 
   // Actions
+  const saveInlineEdit = async () => {
+    if (!editingCell) return
+    const val = parseInt(editValue)
+    if (isNaN(val) || val < 0) { setEditingCell(null); return }
+    try {
+      await purchaseApi.update(editingCell.id, { [editingCell.field]: val })
+      setPurchases(prev => prev.map(p => p.id === editingCell.id ? { ...p, [editingCell.field]: val } : p))
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '수정 실패', e.message)
+    }
+    setEditingCell(null)
+  }
+
   const handleAction = async (action: string, id: string) => {
     try {
       switch (action) {
@@ -289,8 +304,32 @@ export function PurchasesPage() {
                       p.item_name
                     )}
                   </td>
-                  <td className="px-4 py-2 text-right text-gray-600">{(p.quantity || 0).toLocaleString()}</td>
-                  <td className="px-4 py-2 text-right text-gray-600">{formatKRW(p.unit_price || 0)}</td>
+                  <td className="px-4 py-2 text-right text-gray-600">
+                    {editingCell?.id === p.id && editingCell.field === 'quantity' ? (
+                      <input type="number" autoFocus className="w-16 text-right border rounded px-1 py-0.5 text-sm" value={editValue}
+                        onChange={e => setEditValue(e.target.value)}
+                        onBlur={saveInlineEdit}
+                        onKeyDown={e => { if (e.key === 'Enter') saveInlineEdit(); if (e.key === 'Escape') setEditingCell(null) }}
+                      />
+                    ) : (
+                      <span className={p.status === 'requested' ? 'cursor-pointer hover:bg-blue-50 hover:text-blue-600 px-1 rounded' : ''}
+                        onClick={() => { if (p.status === 'requested') { setEditingCell({ id: p.id, field: 'quantity' }); setEditValue(String(p.quantity || 0)) } }}
+                      >{(p.quantity || 0).toLocaleString()}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-right text-gray-600">
+                    {editingCell?.id === p.id && editingCell.field === 'unit_price' ? (
+                      <input type="number" autoFocus className="w-24 text-right border rounded px-1 py-0.5 text-sm" value={editValue}
+                        onChange={e => setEditValue(e.target.value)}
+                        onBlur={saveInlineEdit}
+                        onKeyDown={e => { if (e.key === 'Enter') saveInlineEdit(); if (e.key === 'Escape') setEditingCell(null) }}
+                      />
+                    ) : (
+                      <span className={p.status === 'requested' ? 'cursor-pointer hover:bg-blue-50 hover:text-blue-600 px-1 rounded' : ''}
+                        onClick={() => { if (p.status === 'requested') { setEditingCell({ id: p.id, field: 'unit_price' }); setEditValue(String(p.unit_price || 0)) } }}
+                      >{formatKRW(p.unit_price || 0)}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right font-medium text-gray-900">{formatKRW((p.quantity || 0) * (p.unit_price || 0))}</td>
                   <td className="px-4 py-2 text-gray-600">{p.requester_name || '-'}</td>
                   <td className="px-4 py-2">
