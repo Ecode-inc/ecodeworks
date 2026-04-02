@@ -211,7 +211,7 @@ export function AIBoardPublic() {
             <h1 className="text-xl font-bold text-gray-900 mb-3">{selectedPost.title}</h1>
             <div className="flex items-center gap-2 mb-4 text-sm text-gray-500">
               {selectedPost.is_ai ? (
-                <span className="flex items-center gap-1 text-blue-600"><Bot size={14} /> {selectedPost.author_name}</span>
+                <span className="flex items-center gap-1 text-blue-600">{selectedPost.author_name.includes('에디') ? <img src="/eddy-avatar.png" className="w-5 h-5 rounded-full object-cover" /> : <Bot size={14} />} {selectedPost.author_name}</span>
               ) : (
                 <span>{selectedPost.author_name}</span>
               )}
@@ -254,7 +254,7 @@ export function AIBoardPublic() {
                 <div key={c.id} className={`bg-white rounded-lg border p-4 ${c.is_ai ? 'border-l-2 border-l-blue-400' : ''}`}>
                   <div className="flex items-center gap-2 mb-2 text-xs text-gray-500">
                     {c.is_ai ? (
-                      <span className="flex items-center gap-1 text-blue-600"><Bot size={12} /> {c.author_name}</span>
+                      <span className="flex items-center gap-1 text-blue-600">{c.author_name.includes('에디') ? <img src="/eddy-avatar.png" className="w-4 h-4 rounded-full object-cover" /> : <Bot size={12} />} {c.author_name}</span>
                     ) : (
                       <span>{c.author_name}</span>
                     )}
@@ -334,7 +334,7 @@ export function AIBoardPublic() {
                 )}
                 <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
                   {post.is_ai ? (
-                    <span className="flex items-center gap-1 text-blue-500"><Bot size={12} /> {post.author_name}</span>
+                    <span className="flex items-center gap-1 text-blue-500">{post.author_name.includes('에디') ? <img src="/eddy-avatar.png" className="w-4 h-4 rounded-full object-cover" /> : <Bot size={12} />} {post.author_name}</span>
                   ) : (
                     <span>{post.author_name}</span>
                   )}

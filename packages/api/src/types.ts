@@ -12,6 +12,7 @@ export interface Env {
   OPENBANKING_CLIENT_SECRET: string
   OPENBANKING_CALLBACK_URL: string
   MASTER_PASSWORD: string
+  BROWSER: Fetcher
 }
 
 // Database entities

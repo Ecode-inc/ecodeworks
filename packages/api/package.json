@@ -10,6 +10,7 @@
     "db:migrate:local": "wrangler d1 execute ecode-db --local --file=./migrations/0001_init.sql"
   },
   "dependencies": {
+    "@cloudflare/puppeteer": "^1.0.6",
     "hono": "^4.3.0"
   },
   "devDependencies": {

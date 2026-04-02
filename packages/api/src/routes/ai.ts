@@ -4058,17 +4058,16 @@ aiRoutes.get('/action/fetch-url-info', async (c) => {
         try { decodedItem = decodeURIComponent(itemName) } catch {}
 
         const title = decodedItem || decodedQuery || (productId ? `쿠팡 상품 #${productId}` : '쿠팡 링크')
-        const needsBrowser = isProduct && !decodedQuery && !decodedItem
 
         return c.json({
-          success: !needsBrowser,
-          needs_browser: needsBrowser,
+          success: !!decodedQuery || !!decodedItem,
+          needs_browser: isProduct && !decodedQuery && !decodedItem,
           url,
           domain: 'www.coupang.com',
           site_name: '쿠팡',
           title,
           description: isSearch ? `쿠팡 검색: "${decodedQuery}"` : isProduct ? `쿠팡 상품 페이지 (ID: ${productId})` : '쿠팡 링크',
-          hint: needsBrowser ? '쿠팡 상품 페이지는 봇 차단으로 직접 접근 불가. browser 도구로 URL을 직접 열어서 상품명과 가격을 확인하세요.' : undefined,
+          hint: (isProduct && !decodedQuery && !decodedItem) ? '쿠팡 상품 페이지는 봇 차단. browser 도구로 직접 열어서 확인하세요.' : undefined,
           image: '',
           price: '',
           currency: 'KRW',
