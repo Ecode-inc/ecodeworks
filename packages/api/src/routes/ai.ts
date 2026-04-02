@@ -92,7 +92,7 @@ aiRoutes.get('/actions', (c) => {
         'list-docs': 'dept_id, parent_id, flat=true',
         'get-doc': 'id',
         'create-doc': 'title, content, department_id, parent_id OR parent_name (폴더이름으로 검색), is_folder, visibility',
-        'update-doc': 'id, title, content, append (텍스트를 기존에 추가, 또는 append=true&content=텍스트)',
+        'update-doc': 'id, title, content, append (텍스트를 기존에 추가, 또는 append=true&content=텍스트), visibility (company|department|personal)',
         'doc-history': 'id (문서ID) - 변경 이력 조회',
         'get-doc-share-link': 'q (title search) or id, expiry (1d/7d/30d/none)',
         'get-folder-guide': 'parent_id',
@@ -2337,6 +2337,7 @@ aiRoutes.get('/action/update-doc', async (c) => {
   const title = c.req.query('title')
   const content = c.req.query('content')
   const appendParam = c.req.query('append')
+  const visibility = c.req.query('visibility')
 
   if (!docId) return c.json({ error: 'id required' }, 400)
 
@@ -2351,6 +2352,9 @@ aiRoutes.get('/action/update-doc', async (c) => {
   const updates: string[] = []
   const values: unknown[] = []
   if (title) { updates.push('title = ?'); values.push(title) }
+  if (visibility && ['company', 'department', 'personal'].includes(visibility)) {
+    updates.push('visibility = ?'); values.push(visibility)
+  }
 
   // Append mode: if append=true, use content param as append text
   // if append=<actual text>, use that directly (but skip "true"/"1")
@@ -2369,7 +2373,7 @@ aiRoutes.get('/action/update-doc', async (c) => {
     updates.push('content = ?'); values.push(content)
   }
 
-  if (updates.length === 0) return c.json({ error: 'title or content required' }, 400)
+  if (updates.length === 0) return c.json({ error: 'title, content, or visibility required' }, 400)
 
   updates.push("updated_at = datetime('now')")
   values.push(docId)

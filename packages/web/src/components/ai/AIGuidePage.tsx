@@ -64,7 +64,7 @@ const getActions = [
       { path: '/action/list-docs', desc: '문서/폴더 목록', params: 'dept_id (선택), parent_id (폴더 ID, 선택), flat=true (전체 플랫 리스트)' },
       { path: '/action/get-doc', desc: '문서 상세 (내용 포함)', params: 'id' },
       { path: '/action/create-doc', desc: '문서 생성', params: 'title, content, parent_name (폴더이름, 예: 이코드) 또는 parent_id, department_id (선택), is_folder, visibility' },
-      { path: '/action/update-doc', desc: '문서 수정', params: 'id, title (선택), content (전체 덮어쓰기), append (텍스트 추가, 또는 append=true&content=텍스트)' },
+      { path: '/action/update-doc', desc: '문서 수정', params: 'id, title (선택), content (전체 덮어쓰기), append (텍스트 추가, 또는 append=true&content=텍스트), visibility (company|department|personal)' },
       { path: '/action/doc-history', desc: '문서 변경 이력', params: 'id (문서ID)' },
       { path: '/action/get-doc-share-link', desc: '문서 공유링크 조회/생성', params: 'id (문서ID) 또는 q (제목 검색), expiry (1d/7d/30d/none)' },
       { path: '/action/get-folder-guide', desc: '폴더 AI 가이드 조회', params: 'parent_id (폴더ID)' },

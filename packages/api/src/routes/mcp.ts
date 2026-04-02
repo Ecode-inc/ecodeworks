@@ -211,6 +211,7 @@ const TOOLS: ToolDefinition[] = [
         id: { type: 'string' },
         title: { type: 'string' },
         content: { type: 'string' },
+        visibility: { type: 'string', enum: ['company', 'department', 'personal'], description: '공개범위: company(전체), department(부서), personal(개인)' },
       },
       required: ['id'],
     },
@@ -666,7 +667,7 @@ async function executeTool(
       `).bind(args.id, orgId).first()
       if (!existingDoc) throw new Error('Document not found')
 
-      const allowedFields = ['title', 'content', 'parent_id', 'order_index']
+      const allowedFields = ['title', 'content', 'parent_id', 'order_index', 'visibility']
       const sets: string[] = []
       const params: unknown[] = []
 

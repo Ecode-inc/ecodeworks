@@ -71,6 +71,7 @@ export function CalendarPage() {
     company: true,
     shared: true,
   })
+  const [expandedDay, setExpandedDay] = useState<dayjs.Dayjs | null>(null)
   const [attendanceRecords, setAttendanceRecords] = useState<{date: string; status: string}[]>([])
 
   const loadEvents = useCallback(async () => {
@@ -134,8 +135,8 @@ export function CalendarPage() {
     setShowModal(true)
   }
 
-  const handleEventClick = (evt: CalendarEvent, e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleEventClick = (evt: CalendarEvent, e?: React.MouseEvent) => {
+    e?.stopPropagation()
     // For recurring occurrences, load the parent event for editing
     if (evt.is_recurring && evt.recurring_parent_id) {
       // Find the original event (the one without _ suffix) or use parent id
@@ -299,7 +300,10 @@ export function CalendarPage() {
                   )
                 })}
                 {dayEvents.length > 3 && (
-                  <span className="text-xs text-gray-400">+{dayEvents.length - 3}</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setExpandedDay(day) }}
+                    className="text-xs text-blue-500 hover:text-blue-700 hover:underline cursor-pointer"
+                  >+{dayEvents.length - 3}개 더보기</button>
                 )}
                 {showAttendance && (() => {
                   const dayStr = day.format('YYYY-MM-DD')
@@ -324,6 +328,47 @@ export function CalendarPage() {
           })}
         </div>
       </div>
+
+      {/* Expanded Day Modal */}
+      {expandedDay && (
+        <div className="fixed inset-0 z-40 bg-black/30 flex items-center justify-center p-4" onClick={() => setExpandedDay(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">{expandedDay.format('M월 D일 (ddd)')}</h3>
+              <button onClick={() => setExpandedDay(null)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+            </div>
+            <div className="space-y-1 max-h-[60vh] overflow-y-auto">
+              {events
+                .filter(evt => {
+                  const start = dayjs(evt.start_at)
+                  const end = dayjs(evt.end_at)
+                  return expandedDay.isSame(start, 'day') || expandedDay.isSame(end, 'day') ||
+                    (expandedDay.isAfter(start, 'day') && expandedDay.isBefore(end, 'day'))
+                })
+                .map(evt => {
+                  const isPast = dayjs(evt.end_at).isBefore(dayjs(), 'day')
+                  return (
+                    <button
+                      key={evt.id}
+                      onClick={() => { setExpandedDay(null); handleEventClick(evt) }}
+                      className={`w-full text-left text-sm px-3 py-2 rounded-lg text-white flex items-center gap-1 ${isPast ? 'opacity-40' : ''}`}
+                      style={{ backgroundColor: evt.importance === 'important' ? '#EF4444' : (evt.color || '#3B82F6') }}
+                    >
+                      {evt.importance === 'important' && <Star size={12} className="shrink-0 fill-yellow-300 text-yellow-300" />}
+                      {(evt.document_count && evt.document_count > 0) ? <FileText size={12} className="shrink-0" /> : null}
+                      <span className="truncate">{evt.title}</span>
+                      {!evt.all_day && <span className="ml-auto text-xs opacity-75 shrink-0">{dayjs(evt.start_at).format('HH:mm')}</span>}
+                    </button>
+                  )
+                })}
+            </div>
+            <button
+              onClick={() => { setExpandedDay(null); setPrefillDate(expandedDay.format('YYYY-MM-DD')); setEditingEvent(null); setShowModal(true) }}
+              className="mt-3 w-full text-center text-sm text-blue-600 hover:text-blue-800 py-1"
+            >+ 이 날짜에 일정 추가</button>
+          </div>
+        </div>
+      )}
 
       {/* Event Modal */}
       <EventModal

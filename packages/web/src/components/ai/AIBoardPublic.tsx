@@ -172,8 +172,26 @@ export function AIBoardPublic() {
 
   const createPost = async () => {
     if (!newTitle.trim() || !newContent.trim() || !loggedInUser) return
-    const token = getAccessToken()
-    if (!token) return
+    let token = getAccessToken()
+    // Try refreshing token if expired
+    if (!token) {
+      const rt = getStoredRefreshToken()
+      if (rt) {
+        try {
+          const r = await fetch(`${API_BASE}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: rt }),
+          })
+          if (r.ok) {
+            const d = await r.json()
+            setTokens(d.accessToken, d.refreshToken)
+            token = d.accessToken
+          }
+        } catch {}
+      }
+    }
+    if (!token) { alert('로그인이 필요합니다'); return }
     try {
       const res = await fetch(`${API_BASE}/ai-board`, {
         method: 'POST',
@@ -184,24 +202,52 @@ export function AIBoardPublic() {
         setNewTitle(''); setNewContent(''); setShowCreateModal(false)
         const data = await fetchPublicPosts(PAGE_SIZE, 0, selectedTag)
         setPosts(data.posts)
+      } else {
+        const err = await res.text().catch(() => '')
+        alert(`글쓰기 실패: ${res.status} ${err}`)
       }
-    } catch {}
+    } catch (e: any) {
+      alert(`글쓰기 오류: ${e.message}`)
+    }
   }
 
   const addComment = async (postId: string) => {
     if (!commentText.trim() || !loggedInUser) return
-    const token = getAccessToken()
-    if (!token) return
+    let token = getAccessToken()
+    if (!token) {
+      const rt = getStoredRefreshToken()
+      if (rt) {
+        try {
+          const r = await fetch(`${API_BASE}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: rt }),
+          })
+          if (r.ok) {
+            const d = await r.json()
+            setTokens(d.accessToken, d.refreshToken)
+            token = d.accessToken
+          }
+        } catch {}
+      }
+    }
+    if (!token) { alert('로그인이 필요합니다'); return }
     try {
-      await fetch(`${API_BASE}/ai-board/${postId}/comments`, {
+      const res = await fetch(`${API_BASE}/ai-board/${postId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ content: commentText.trim() }),
       })
-      setCommentText('')
-      const res = await fetchPublicPost(postId)
-      setComments(res.comments)
-    } catch {}
+      if (res.ok) {
+        setCommentText('')
+        const data = await fetchPublicPost(postId)
+        setComments(data.comments)
+      } else {
+        alert(`댓글 실패: ${res.status}`)
+      }
+    } catch (e: any) {
+      alert(`댓글 오류: ${e.message}`)
+    }
   }
 
   const [memberNames, setMemberNames] = useState<string[]>([])
@@ -522,6 +568,36 @@ export function AIBoardPublic() {
       </main>
 
       <footer className="text-center py-6 text-xs text-gray-400">Powered by ecode</footer>
+
+      {showCreateModal && loggedInUser && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowCreateModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-4">글쓰기</h2>
+            <input
+              value={newTitle}
+              onChange={e => setNewTitle(e.target.value)}
+              placeholder="제목"
+              className="w-full border rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+            />
+            <textarea
+              value={newContent}
+              onChange={e => setNewContent(e.target.value)}
+              placeholder="내용을 입력하세요..."
+              rows={6}
+              className="w-full border rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm text-gray-600">취소</button>
+              <button
+                onClick={createPost}
+                disabled={!newTitle.trim() || !newContent.trim()}
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >작성</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

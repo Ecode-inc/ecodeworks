@@ -483,7 +483,7 @@ export function KanbanPage() {
                       }}
                       onClick={() => { setEditingTask(task); setTargetColumnId(task.column_id); setShowTaskModal(true) }}
                       style={{ touchAction: 'none' }}
-                      className={`bg-white rounded p-2 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${priorityColors[task.priority] || ''} ${/done|완료/i.test(col.name) ? 'opacity-50' : ''}`}
+                      className={`bg-white rounded p-2 border border-l-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${priorityColors[task.priority] || ''} ${/done|완료/i.test(col.name) ? 'opacity-50' : ''} ${(task.assignee_ids ? String(task.assignee_ids).split(',') : task.assignee_id ? [task.assignee_id] : []).includes(user?.id || '') ? 'ring-2 ring-primary-400 ring-offset-1' : ''}`}
                     >
                       <div className="flex items-start gap-1.5">
                         <GripVertical size={12} className="text-gray-300 mt-0.5 flex-shrink-0 cursor-grab" />
@@ -1198,7 +1198,7 @@ function UnifiedKanbanView({ tasks, onTaskClick, onRefresh }: {
                         task.priority === 'urgent' ? 'border-l-red-500' :
                         task.priority === 'high' ? 'border-l-orange-500' :
                         task.priority === 'low' ? 'border-l-gray-300' : 'border-l-blue-500'
-                      } ${isDone ? 'opacity-50' : ''}`}
+                      } ${isDone ? 'opacity-50' : ''} ${(task.assignee_ids ? String(task.assignee_ids).split(',') : task.assignee_id ? [task.assignee_id] : []).includes(user?.id || '') ? 'ring-2 ring-primary-400 ring-offset-1' : ''}`}
                     >
                       {/* Board/Dept badge */}
                       <div className="flex items-center gap-1 mb-0.5">
