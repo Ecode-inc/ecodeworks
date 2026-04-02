@@ -18,7 +18,7 @@ documentsRoutes.get('/', async (c) => {
   const parentId = c.req.query('parent_id')
   const flat = c.req.query('flat')
 
-  let query = `SELECT d.id, d.department_id, d.parent_id, d.title, d.is_folder, d.order_index, d.created_by, d.created_at, d.updated_at, d.visibility, d.shared, u.name as created_by_name FROM documents d LEFT JOIN users u ON u.id = d.created_by WHERE 1=1`
+  let query = `SELECT d.id, d.department_id, d.parent_id, d.title, d.is_folder, d.order_index, d.created_by, d.created_at, d.updated_at, d.visibility, d.shared, u.name as created_by_name FROM documents d LEFT JOIN users u ON u.id = d.created_by WHERE d.deleted_at IS NULL`
   const params: unknown[] = []
 
   // Visibility filtering (CEO sees everything)
@@ -66,7 +66,7 @@ documentsRoutes.get('/search', async (c) => {
            snippet(documents_fts, 1, '<mark>', '</mark>', '...', 32) as snippet
     FROM documents_fts fts
     JOIN documents d ON d.rowid = fts.rowid
-    WHERE documents_fts MATCH ?`
+    WHERE documents_fts MATCH ? AND d.deleted_at IS NULL`
   const params: unknown[] = [q]
 
   if (!user.is_ceo) {
@@ -88,6 +88,73 @@ documentsRoutes.get('/search', async (c) => {
   query += ' ORDER BY rank LIMIT 50'
   const { results } = await c.env.DB.prepare(query).bind(...params).all()
   return c.json({ documents: results })
+})
+
+// ──────────────────────────────────────────────────────────────
+// Trash (must be before /:id to avoid matching "trash" as id)
+// ──────────────────────────────────────────────────────────────
+
+// List trash (soft-deleted documents)
+documentsRoutes.get('/trash/list', async (c) => {
+  const user = c.get('user')
+  const { results } = await c.env.DB.prepare(
+    `SELECT d.id, d.department_id, d.parent_id, d.title, d.is_folder, d.created_by, d.deleted_at, d.visibility, u.name as created_by_name, dept.name as department_name
+     FROM documents d
+     LEFT JOIN users u ON u.id = d.created_by
+     LEFT JOIN departments dept ON dept.id = d.department_id
+     WHERE d.deleted_at IS NOT NULL AND dept.org_id = ?
+     ORDER BY d.deleted_at DESC`
+  ).bind(user.org_id).all()
+  return c.json({ documents: results })
+})
+
+// Restore document from trash
+documentsRoutes.post('/trash/restore/:id', authMiddleware, async (c) => {
+  const docId = c.req.param('id')
+  const doc = await c.env.DB.prepare('SELECT id, is_folder, parent_id FROM documents WHERE id = ? AND deleted_at IS NOT NULL').bind(docId).first<any>()
+  if (!doc) return c.json({ error: 'Document not found in trash' }, 404)
+
+  // If parent is also deleted, restore to root
+  if (doc.parent_id) {
+    const parent = await c.env.DB.prepare('SELECT deleted_at FROM documents WHERE id = ?').bind(doc.parent_id).first<any>()
+    if (parent?.deleted_at) {
+      await c.env.DB.prepare('UPDATE documents SET deleted_at = NULL, parent_id = NULL WHERE id = ?').bind(docId).run()
+    } else {
+      await c.env.DB.prepare('UPDATE documents SET deleted_at = NULL WHERE id = ?').bind(docId).run()
+    }
+  } else {
+    await c.env.DB.prepare('UPDATE documents SET deleted_at = NULL WHERE id = ?').bind(docId).run()
+  }
+
+  // If folder, also restore children
+  if (doc.is_folder) {
+    await c.env.DB.prepare('UPDATE documents SET deleted_at = NULL WHERE parent_id = ?').bind(docId).run()
+  }
+
+  return c.json({ success: true })
+})
+
+// Permanently delete document
+documentsRoutes.delete('/trash/permanent/:id', authMiddleware, async (c) => {
+  const user = c.get('user')
+  if (!user.is_ceo && !user.is_admin) return c.json({ error: 'Only CEO or admin can permanently delete' }, 403)
+
+  const doc = await c.env.DB.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NOT NULL').bind(c.req.param('id')).first()
+  if (!doc) return c.json({ error: 'Document not found in trash' }, 404)
+
+  await c.env.DB.prepare('DELETE FROM documents WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ success: true })
+})
+
+// Empty entire trash
+documentsRoutes.delete('/trash/empty', authMiddleware, async (c) => {
+  const user = c.get('user')
+  if (!user.is_ceo && !user.is_admin) return c.json({ error: 'Only CEO or admin can empty trash' }, 403)
+
+  await c.env.DB.prepare(
+    `DELETE FROM documents WHERE deleted_at IS NOT NULL AND department_id IN (SELECT id FROM departments WHERE org_id = ?)`
+  ).bind(user.org_id).run()
+  return c.json({ success: true })
 })
 
 // Get document (with content)
@@ -276,12 +343,12 @@ documentsRoutes.patch('/:id', authMiddleware, async (c) => {
   return c.json({ document: doc })
 })
 
-// Delete document
+// Soft-delete document (move to trash)
 documentsRoutes.delete('/:id', authMiddleware, async (c) => {
   const user = c.get('user')
   const docId = c.req.param('id')
 
-  const doc = await c.env.DB.prepare('SELECT created_by, department_id FROM documents WHERE id = ?').bind(docId).first<{ created_by: string; department_id: string }>()
+  const doc = await c.env.DB.prepare('SELECT created_by, department_id, is_folder FROM documents WHERE id = ? AND deleted_at IS NULL').bind(docId).first<{ created_by: string; department_id: string; is_folder: number }>()
   if (!doc) return c.json({ error: 'Document not found' }, 404)
 
   // Permission check: only creator, dept head, CEO, or admin can delete
@@ -292,7 +359,11 @@ documentsRoutes.delete('/:id', authMiddleware, async (c) => {
     if (!headCheck) return c.json({ error: 'Only the creator, department head, or admin can delete' }, 403)
   }
 
-  await c.env.DB.prepare('DELETE FROM documents WHERE id = ?').bind(docId).run()
+  // Soft delete: set deleted_at timestamp (also soft-delete children if folder)
+  if (doc.is_folder) {
+    await c.env.DB.prepare("UPDATE documents SET deleted_at = datetime('now') WHERE parent_id = ? AND deleted_at IS NULL").bind(docId).run()
+  }
+  await c.env.DB.prepare("UPDATE documents SET deleted_at = datetime('now') WHERE id = ?").bind(docId).run()
   return c.json({ success: true })
 })
 

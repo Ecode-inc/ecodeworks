@@ -254,6 +254,11 @@ export const docsApi = {
   versions: (id: string) => request<{ versions: any[] }>(`/docs/${id}/versions`),
   getVersion: (id: string, versionId: string) => request<{ version: any }>(`/docs/${id}/versions/${versionId}`),
   linkedTasks: (id: string) => request<{ tasks: any[] }>(`/docs/${id}/tasks`),
+  // Trash
+  listTrash: () => request<{ documents: any[] }>('/docs/trash/list'),
+  restore: (id: string) => request<{ success: boolean }>(`/docs/trash/restore/${id}`, { method: 'POST' }),
+  permanentDelete: (id: string) => request<{ success: boolean }>(`/docs/trash/permanent/${id}`, { method: 'DELETE' }),
+  emptyTrash: () => request<{ success: boolean }>('/docs/trash/empty', { method: 'DELETE' }),
 }
 
 // Document Share Links

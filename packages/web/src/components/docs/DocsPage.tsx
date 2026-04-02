@@ -54,6 +54,9 @@ export function DocsPage() {
   const [showShareModal, setShowShareModal] = useState(false)
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'company' | 'department' | 'personal'>('all')
   const [sortMode, setSortMode] = useState<'recent' | 'name'>('recent')
+  const [showTrash, setShowTrash] = useState(false)
+  const [trashDocs, setTrashDocs] = useState<any[]>([])
+  const [trashLoading, setTrashLoading] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
 
   const commentApiMemo = useMemo(() => selectedDoc ? ({
@@ -173,6 +176,48 @@ export function DocsPage() {
     }
   }
 
+  const loadTrash = async () => {
+    setTrashLoading(true)
+    try {
+      const res = await docsApi.listTrash()
+      setTrashDocs(res.documents)
+    } catch { /* ignore */ }
+    setTrashLoading(false)
+  }
+
+  const restoreDoc = async (id: string) => {
+    try {
+      await docsApi.restore(id)
+      useToastStore.getState().addToast('success', '복원되었습니다')
+      loadTrash()
+      refreshTree()
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '복원 실패', e.message)
+    }
+  }
+
+  const permanentDeleteDoc = async (id: string, title: string) => {
+    if (!confirm(`"${title}"을(를) 영구 삭제하시겠습니까? 복구할 수 없습니다.`)) return
+    try {
+      await docsApi.permanentDelete(id)
+      useToastStore.getState().addToast('success', '영구 삭제되었습니다')
+      loadTrash()
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '삭제 실패', e.message)
+    }
+  }
+
+  const emptyTrash = async () => {
+    if (!confirm('휴지통을 비우시겠습니까? 모든 문서가 영구 삭제됩니다.')) return
+    try {
+      await docsApi.emptyTrash()
+      useToastStore.getState().addToast('success', '휴지통을 비웠습니다')
+      setTrashDocs([])
+    } catch (e: any) {
+      useToastStore.getState().addToast('error', '실패', e.message)
+    }
+  }
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) { setSearchResults(null); return }
     try {
@@ -222,6 +267,12 @@ export function DocsPage() {
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">
             <FilePlus size={14} /> 새문서
           </button>
+          <button onClick={() => { setShowTrash(!showTrash); if (!showTrash) loadTrash() }}
+            className={`flex items-center gap-1 text-xs px-2 py-1 rounded ml-auto ${showTrash ? 'text-red-600 bg-red-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+            title="휴지통"
+          >
+            <Trash2 size={14} />
+          </button>
         </div>
 
         {/* Line 2: 권한필터 | 정렬필터 */}
@@ -267,12 +318,44 @@ export function DocsPage() {
           />
         </div>
 
-        {/* Document Tree */}
-        {searchResults ? (
+        {/* Trash View */}
+        {showTrash ? (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-gray-500">휴지통 ({trashDocs.length})</span>
+              {trashDocs.length > 0 && (
+                <button onClick={emptyTrash} className="text-[10px] text-red-500 hover:text-red-700">비우기</button>
+              )}
+            </div>
+            {trashLoading ? (
+              <p className="text-xs text-gray-400 py-4 text-center">로딩 중...</p>
+            ) : trashDocs.length === 0 ? (
+              <p className="text-xs text-gray-400 py-4 text-center">휴지통이 비어있습니다</p>
+            ) : (
+              trashDocs.map(doc => (
+                <div key={doc.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 group text-xs">
+                  {doc.is_folder ? <Folder size={14} className="text-gray-400 shrink-0" /> : <FileText size={14} className="text-gray-400 shrink-0" />}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-gray-600">{doc.title}</div>
+                    <div className="text-[10px] text-gray-400">{doc.deleted_at ? new Date(doc.deleted_at + 'Z').toLocaleDateString('ko-KR') : ''}</div>
+                  </div>
+                  <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 shrink-0">
+                    <button onClick={() => restoreDoc(doc.id)} className="p-1 text-blue-500 hover:bg-blue-50 rounded" title="복원">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                    </button>
+                    <button onClick={() => permanentDeleteDoc(doc.id, doc.title)} className="p-1 text-red-400 hover:bg-red-50 rounded" title="영구삭제">
+                      <XIcon size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : searchResults ? (
           <div className="space-y-0.5">
             {searchResults.map(doc => (
               <TreeItem key={doc.id} doc={doc} selectedId={selectedDoc?.id} onSelect={openDocument} onDelete={async (d) => {
-                if (!confirm(`"${d.title}" 을(를) 삭제하시겠습니까?`)) return
+                if (!confirm(`"${d.title}" 을(를) 휴지통으로 이동하시겠습니까?`)) return
                 await docsApi.delete(d.id)
                 if (selectedDoc?.id === d.id) setSelectedDoc(null)
                 refreshTree()
@@ -304,7 +387,7 @@ export function DocsPage() {
               selectedId={selectedDoc?.id}
               onSelect={openDocument}
               onDelete={async (doc) => {
-                if (!confirm(`"${doc.title}" ${doc.is_folder ? '폴더를 삭제하시겠습니까? 하위 문서도 모두 삭제됩니다.' : '을(를) 삭제하시겠습니까?'}`)) return
+                if (!confirm(`"${doc.title}" ${doc.is_folder ? '폴더를 휴지통으로 이동하시겠습니까? 하위 문서도 함께 이동됩니다.' : '을(를) 휴지통으로 이동하시겠습니까?'}`)) return
                 try {
                   await docsApi.delete(doc.id)
                   if (selectedDoc?.id === doc.id) setSelectedDoc(null)
