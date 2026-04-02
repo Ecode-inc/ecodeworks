@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Bot, MessageSquare, Heart, Clock, ArrowLeft, Eye, Share2, Plus, Send, User } from 'lucide-react'
-import { getAccessToken } from '../../lib/api'
+import { getAccessToken, getStoredRefreshToken, setTokens } from '../../lib/api'
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api$/, '/api')
 
@@ -74,17 +74,42 @@ export function AIBoardPublic() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [commentText, setCommentText] = useState('')
+  const [showAvatarModal, setShowAvatarModal] = useState(false)
   const PAGE_SIZE = 20
 
-  // Check if user is logged in
+  // Check if user is logged in (restore session from refreshToken if needed)
   useEffect(() => {
-    const token = getAccessToken()
-    if (token) {
-      fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d?.user) setLoggedInUser({ name: d.user.name, position: d.user.position_name }) })
-        .catch(() => {})
+    const tryAuth = async () => {
+      let token = getAccessToken()
+      // If no access token in memory, try restoring from refresh token
+      if (!token) {
+        const rt = getStoredRefreshToken()
+        if (rt) {
+          try {
+            const res = await fetch(`${API_BASE}/auth/refresh`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refreshToken: rt }),
+            })
+            if (res.ok) {
+              const data = await res.json()
+              setTokens(data.accessToken, data.refreshToken)
+              token = data.accessToken
+            }
+          } catch {}
+        }
+      }
+      if (token) {
+        try {
+          const r = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+          if (r.ok) {
+            const d = await r.json()
+            if (d?.user) setLoggedInUser({ name: d.user.name, position: d.user.position_name })
+          }
+        } catch {}
+      }
     }
+    tryAuth()
   }, [])
 
   // Extract post ID from URL path: /board/{postId}
@@ -262,7 +287,7 @@ export function AIBoardPublic() {
             <h1 className="text-xl font-bold text-gray-900 mb-3">{selectedPost.title}</h1>
             <div className="flex items-center gap-2 mb-4 text-sm text-gray-500">
               {selectedPost.is_ai ? (
-                <span className="flex items-center gap-1 text-blue-600">{selectedPost.author_name.includes('에디') ? <img src="/eddy-avatar.png" className="w-5 h-5 rounded-full object-cover" /> : <Bot size={14} />} {selectedPost.author_name}</span>
+                <span className="flex items-center gap-2 text-blue-600">{selectedPost.author_name.includes('에디') ? <img src="/eddy-avatar.png" className="w-8 h-8 rounded-full object-cover cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all" onClick={() => setShowAvatarModal(true)} /> : <Bot size={18} />} {selectedPost.author_name}</span>
               ) : (
                 <span>{selectedPost.author_name}</span>
               )}
@@ -305,7 +330,7 @@ export function AIBoardPublic() {
                 <div key={c.id} className={`bg-white rounded-lg border p-4 ${c.is_ai ? 'border-l-2 border-l-blue-400' : ''}`}>
                   <div className="flex items-center gap-2 mb-2 text-xs text-gray-500">
                     {c.is_ai ? (
-                      <span className="flex items-center gap-1 text-blue-600">{c.author_name.includes('에디') ? <img src="/eddy-avatar.png" className="w-4 h-4 rounded-full object-cover" /> : <Bot size={12} />} {c.author_name}</span>
+                      <span className="flex items-center gap-1.5 text-blue-600">{c.author_name.includes('에디') ? <img src="/eddy-avatar.png" className="w-6 h-6 rounded-full object-cover cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all" onClick={() => setShowAvatarModal(true)} /> : <Bot size={14} />} {c.author_name}</span>
                     ) : (
                       <span>{c.author_name}</span>
                     )}
@@ -368,6 +393,11 @@ export function AIBoardPublic() {
                 >작성</button>
               </div>
             </div>
+          </div>
+        )}
+        {showAvatarModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer" onClick={() => setShowAvatarModal(false)}>
+            <img src="/eddy-avatar.png" className="max-w-[90vw] max-h-[90vh] rounded-2xl shadow-2xl object-contain" />
           </div>
         )}
       </div>
