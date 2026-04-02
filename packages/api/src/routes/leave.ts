@@ -814,6 +814,27 @@ leaveRoutes.post('/:id/approve', async (c) => {
 
   // Check if user is approver1 (dept head)
   if (leave.approver1_id === user.id && leave.approver1_status === 'pending') {
+    // If same person is both approver1 and approver2, approve both at once
+    if (leave.approver2_id === user.id) {
+      await c.env.DB.prepare(`
+        UPDATE leave_requests
+        SET approver1_status = 'approved', approver1_at = ?,
+            approver2_status = 'approved', approver2_at = ?,
+            status = 'approved', updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(now, now, id).run()
+
+      await updateAttendanceForLeave(
+        c.env.DB, user.org_id, leave.user_id, leave.department_id,
+        leave.start_date, leave.end_date, leave.type
+      )
+
+      const updated = await c.env.DB.prepare(
+        'SELECT * FROM leave_requests WHERE id = ?'
+      ).bind(id).first()
+      return c.json({ leave_request: updated })
+    }
+
     await c.env.DB.prepare(`
       UPDATE leave_requests
       SET approver1_status = 'approved', approver1_at = ?, updated_at = datetime('now')

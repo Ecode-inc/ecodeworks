@@ -61,12 +61,16 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
   const [taskCounts, setTaskCounts] = useState<{ todo: number; in_progress: number }>({ todo: 0, in_progress: 0 })
 
   useEffect(() => {
-    if (user) {
+    if (!user) return
+    const fetchCount = () => {
       leaveApi.pendingCount()
         .then(res => setPendingLeaveCount(res.count))
-        .catch((e) => { console.error(e) })
+        .catch(() => {})
     }
-  }, [user, location.pathname])
+    fetchCount()
+    const interval = setInterval(fetchCount, 30000)
+    return () => clearInterval(interval)
+  }, [user])
 
   useEffect(() => {
     if (!user) return
