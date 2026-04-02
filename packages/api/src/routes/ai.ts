@@ -64,6 +64,8 @@ aiRoutes.get('/actions', (c) => {
         'list-telegram-mappings': '',
       },
       user: {
+        'list-members': '(없음) — 조직 멤버 목록 (이름, 이메일, 직급, 부서)',
+        'list-departments': '(없음) — 부서 목록',
         'update-user-name': 'telegram_user_id or email or user_id, name',
       },
       attendance: {
@@ -149,6 +151,89 @@ aiRoutes.get('/actions', (c) => {
       vault_pin: 'credential view requires PIN verification',
     },
   })
+})
+
+// Plain-text guide for AI agents (bypasses Cloudflare bot protection on Pages)
+aiRoutes.get('/guide', (c) => {
+  const guide = `# 이코드웍스 AI API 가이드
+
+## 기본 정보
+- Base URL: https://ecode-internal-api.aws-eb2.workers.dev/api/v1
+- 인증: 모든 요청에 ?key=YOUR_API_KEY 포함
+- 모든 Action 엔드포인트는 GET 요청 (web_fetch 호환)
+- 한글 파라미터는 URL 인코딩 필수
+
+## Action 엔드포인트 (/action/...)
+
+### 👥 사용자/조직
+- /action/list-members — 조직 멤버 목록 (이름, 이메일, 직급, 부서)
+- /action/list-departments — 부서 목록
+- /action/update-user-name — params: telegram_user_id or email or user_id, name
+
+### 📅 캘린더
+- /action/list-events — params: start, end, context (group=공유만/private=개인포함)
+- /action/create-event — params: telegram_user_id or user_id, title, start_at (+09:00), end_at, all_day, color, visibility (personal/department/company), importance (normal/important), freq (daily/weekly/monthly), byDay (MO,TU,FR), interval, until
+- /action/update-event — params: id (필수), title, description, start_at, end_at, color, visibility, importance
+
+### 📝 문서
+- /action/search-docs — params: q (검색어)
+- /action/list-docs — params: dept_id, parent_id, flat=true
+- /action/get-doc — params: id
+- /action/create-doc — params: title, content, parent_name or parent_id, department_id, is_folder, visibility
+- /action/update-doc — params: id, title, content, append, visibility (company|department|personal)
+- /action/doc-history — params: id
+- /action/get-doc-share-link — params: id or q, expiry (1d/7d/30d/none)
+- /action/attach-file-url — params: document_id, url, name
+
+### ✅ 칸반
+- /action/list-boards — params: dept_id
+- /action/get-board — params: id
+- /action/create-board — params: name, department_id
+- /action/list-tasks — params: board_id, assignee_id, done_days
+- /action/create-task — params: board_id, column_id, title, description, priority, due_date, assignee_ids
+- /action/update-task — params: id, title, description, column_id, priority, assignee_id, due_date
+
+### 📋 AI 게시판
+- /action/list-board-posts — params: limit (default 10)
+- /action/create-board-post — params: title, content
+- /action/reply-board-post — params: post_id, content
+
+### ⏰ 근태관리
+- /action/clock-in — params: telegram_user_id or user_id, time (HH:MM), date
+- /action/clock-out — params: telegram_user_id or user_id, time, date
+- /action/update-attendance — params: telegram_user_id or user_id, date, clock_in, clock_out, status, note
+- /action/list-attendance — params: date (YYYY-MM-DD)
+
+### 🏖️ 휴가
+- /action/create-leave — params: telegram_user_id or email, type, start_date, end_date, reason
+- /action/list-leaves — params: telegram_user_id, month, status
+- /action/approve-leave — params: id
+
+### 🛒 비품구매
+- /action/create-purchase — params: item_name, unit_price, quantity, item_url, requester_name, category, note, date, status
+- /action/list-purchases — params: month, status, telegram_user_id
+- /action/purchase-stats — params: month, dept_id
+
+### 🔐 금고
+- /action/set-vault-pin — params: pin, telegram_user_id or user_id or email
+- /action/create-credential — params: service_name, username, password, url
+- /action/view-credential — params: service_name, pin, telegram_user_id or user_id or email
+
+### ⚖️ 징계
+- /action/create-discipline — params: user_id, type, reason, amount, created_by
+- /action/list-disciplines — params: user_id
+
+### 💬 텔레그램
+- /action/map-telegram-user — params: telegram_user_id, telegram_username, email
+- /action/resolve-telegram-user — params: telegram_user_id or telegram_username
+- /action/list-telegram-mappings
+
+## 주의사항
+- DELETE 요청은 차단됨
+- 금고 비밀번호는 PIN 인증 없이 노출되지 않음
+- 날짜/시간은 KST (+09:00) 기준
+`
+  return c.text(guide)
 })
 
 // OpenAPI spec
@@ -1392,6 +1477,35 @@ aiRoutes.post('/keys', async (c) => {
 // All params via query string, key via ?key=ek_XXX
 // URL format: /api/v1/action/{tool}?key=ek_XXX&param1=val1&param2=val2
 // ──────────────────────────────────────────────────────────────
+
+aiRoutes.get('/action/list-members', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'members:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const { results } = await c.env.DB.prepare(
+    `SELECT u.id, u.name, u.email, u.avatar_url, u.is_ceo, u.created_at,
+       p.name as position_name,
+       GROUP_CONCAT(d.name) as department_names
+     FROM users u
+     LEFT JOIN positions p ON p.id = u.position_id
+     LEFT JOIN user_departments ud ON ud.user_id = u.id
+     LEFT JOIN departments d ON d.id = ud.department_id
+     WHERE u.org_id = ?
+     GROUP BY u.id
+     ORDER BY u.name`
+  ).bind(orgId).all()
+  return c.json({ members: results })
+})
+
+aiRoutes.get('/action/list-departments', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'departments:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, name, slug, color, order_index, created_at FROM departments WHERE org_id = ? ORDER BY order_index'
+  ).bind(orgId).all()
+  return c.json({ departments: results })
+})
 
 aiRoutes.get('/action/map-telegram-user', async (c) => {
   const scopes = c.get('apiKeyScopes')

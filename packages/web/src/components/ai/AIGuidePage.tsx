@@ -35,8 +35,10 @@ const getActions = [
     ],
   },
   {
-    category: '👥 사용자 관리',
+    category: '👥 사용자/조직',
     items: [
+      { path: '/action/list-members', desc: '조직 멤버 목록 (이름, 이메일, 직급, 부서)', params: '(없음)' },
+      { path: '/action/list-departments', desc: '부서 목록', params: '(없음)' },
       { path: '/action/update-user-name', desc: '사용자 이름 변경', params: 'telegram_user_id or email or user_id, name (새 이름)' },
     ],
   },
