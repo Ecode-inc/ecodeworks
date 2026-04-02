@@ -96,6 +96,9 @@ aiRoutes.get('/actions', (c) => {
         'create-doc': 'title, content, department_id, parent_id OR parent_name (폴더이름으로 검색), is_folder, visibility',
         'update-doc': 'id, title, content, append (텍스트를 기존에 추가, 또는 append=true&content=텍스트), visibility (company|department|personal)',
         'doc-history': 'id (문서ID) - 변경 이력 조회',
+        'trash-doc': 'id (문서ID) - 휴지통으로 이동',
+        'restore-doc': 'id (문서ID) - 휴지통에서 복원',
+        'list-trash-docs': '(없음) - 휴지통 목록 조회',
         'get-doc-share-link': 'q (title search) or id, expiry (1d/7d/30d/none)',
         'get-folder-guide': 'parent_id',
         'update-folder-guide': 'parent_id, content',
@@ -182,6 +185,9 @@ aiRoutes.get('/guide', (c) => {
 - /action/create-doc — params: title, content, parent_name or parent_id, department_id, is_folder, visibility
 - /action/update-doc — params: id, title, content, append, visibility (company|department|personal)
 - /action/doc-history — params: id
+- /action/trash-doc — params: id (문서를 휴지통으로 이동)
+- /action/restore-doc — params: id (휴지통에서 복원)
+- /action/list-trash-docs — 휴지통 목록 조회
 - /action/get-doc-share-link — params: id or q, expiry (1d/7d/30d/none)
 - /action/attach-file-url — params: document_id, url, name
 
@@ -2535,6 +2541,72 @@ aiRoutes.get('/action/doc-history', async (c) => {
   `).bind(docId).all()
 
   return c.json({ document: doc, versions: results || [] })
+})
+
+// 문서 휴지통 이동 (soft delete)
+aiRoutes.get('/action/trash-doc', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const docId = c.req.query('id')
+  if (!docId) return c.json({ error: 'id required' }, 400)
+
+  const doc = await c.env.DB.prepare(`
+    SELECT d.id, d.title, d.is_folder FROM documents d JOIN departments dept ON dept.id = d.department_id WHERE d.id = ? AND dept.org_id = ? AND d.deleted_at IS NULL
+  `).bind(docId, orgId).first<any>()
+  if (!doc) return c.json({ error: 'Document not found' }, 404)
+
+  if (doc.is_folder) {
+    await c.env.DB.prepare("UPDATE documents SET deleted_at = datetime('now') WHERE parent_id = ? AND deleted_at IS NULL").bind(docId).run()
+  }
+  await c.env.DB.prepare("UPDATE documents SET deleted_at = datetime('now') WHERE id = ?").bind(docId).run()
+  return c.json({ success: true, message: `"${doc.title}" 을(를) 휴지통으로 이동했습니다` })
+})
+
+// 문서 휴지통에서 복원
+aiRoutes.get('/action/restore-doc', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:write')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+  const docId = c.req.query('id')
+  if (!docId) return c.json({ error: 'id required' }, 400)
+
+  const doc = await c.env.DB.prepare(`
+    SELECT d.id, d.title, d.is_folder, d.parent_id FROM documents d JOIN departments dept ON dept.id = d.department_id WHERE d.id = ? AND dept.org_id = ? AND d.deleted_at IS NOT NULL
+  `).bind(docId, orgId).first<any>()
+  if (!doc) return c.json({ error: 'Document not found in trash' }, 404)
+
+  if (doc.parent_id) {
+    const parent = await c.env.DB.prepare('SELECT deleted_at FROM documents WHERE id = ?').bind(doc.parent_id).first<any>()
+    if (parent?.deleted_at) {
+      await c.env.DB.prepare('UPDATE documents SET deleted_at = NULL, parent_id = NULL WHERE id = ?').bind(docId).run()
+    } else {
+      await c.env.DB.prepare('UPDATE documents SET deleted_at = NULL WHERE id = ?').bind(docId).run()
+    }
+  } else {
+    await c.env.DB.prepare('UPDATE documents SET deleted_at = NULL WHERE id = ?').bind(docId).run()
+  }
+  if (doc.is_folder) {
+    await c.env.DB.prepare('UPDATE documents SET deleted_at = NULL WHERE parent_id = ?').bind(docId).run()
+  }
+  return c.json({ success: true, message: `"${doc.title}" 을(를) 복원했습니다` })
+})
+
+// 휴지통 목록 조회
+aiRoutes.get('/action/list-trash-docs', async (c) => {
+  const scopes = c.get('apiKeyScopes')
+  if (!checkScope(scopes, 'docs:read')) return c.json({ error: 'Insufficient scope' }, 403)
+  const orgId = c.get('apiKeyOrgId')
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT d.id, d.title, d.is_folder, d.deleted_at, u.name as created_by_name
+    FROM documents d
+    LEFT JOIN users u ON u.id = d.created_by
+    JOIN departments dept ON dept.id = d.department_id
+    WHERE d.deleted_at IS NOT NULL AND dept.org_id = ?
+    ORDER BY d.deleted_at DESC
+  `).bind(orgId).all()
+  return c.json({ documents: results || [] })
 })
 
 // 폴더 AI 가이드 조회
