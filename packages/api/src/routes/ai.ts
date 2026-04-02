@@ -133,6 +133,9 @@ aiRoutes.get('/actions', (c) => {
         'view-credential': 'service_name, pin (4-8자리), telegram_user_id or user_id or email',
       },
     },
+    utility: {
+      'fetch-url-info': 'url — URL에서 상품명, 가격, 설명, 이미지 등 메타정보 추출. 쿠팡/네이버 등 쇼핑 링크 지원.',
+    },
     ai_board: {
       'list-board-posts': 'limit (default 10) — AI 게시판 글 목록 조회',
       'create-board-post': 'title (제목), content (내용) — AI 게시판에 글 작성 (AI 작성자로 표시)',
@@ -3759,11 +3762,15 @@ aiRoutes.get('/action/create-board-post', async (c) => {
   } catch {}
   const tags = JSON.stringify([...new Set(rawTags)])
 
-  // Safely decode in case of double-encoding
+  // Repeatedly decode in case of double/triple encoding
   let title = rawTitle
   let content = rawContent
-  try { if (/%[0-9A-Fa-f]{2}/.test(title)) title = decodeURIComponent(title) } catch {}
-  try { if (/%[0-9A-Fa-f]{2}/.test(content)) content = decodeURIComponent(content) } catch {}
+  for (let i = 0; i < 3; i++) {
+    try { if (/%[0-9A-Fa-f]{2}/.test(title)) title = decodeURIComponent(title); else break } catch { break }
+  }
+  for (let i = 0; i < 3; i++) {
+    try { if (/%[0-9A-Fa-f]{2}/.test(content)) content = decodeURIComponent(content); else break } catch { break }
+  }
 
   if (!title || !content) return c.json({ error: 'title, content required' }, 400)
 
@@ -3827,7 +3834,10 @@ aiRoutes.get('/action/reply-board-post', async (c) => {
   const postId = c.req.query('post_id')
   let content = c.req.query('content') || ''
   const authorName = c.req.query('author_name') || '에디 (AI)'
-  try { if (/%[0-9A-Fa-f]{2}/.test(content)) content = decodeURIComponent(content) } catch {}
+  // Repeatedly decode until no more encoded chars (handles double/triple encoding)
+  for (let i = 0; i < 3; i++) {
+    try { if (/%[0-9A-Fa-f]{2}/.test(content)) content = decodeURIComponent(content); else break } catch { break }
+  }
 
   if (!postId || !content) return c.json({ error: 'post_id, content required' }, 400)
 
@@ -4006,6 +4016,144 @@ aiRoutes.get('/action/list-disciplines', async (c) => {
 
   const { results } = await c.env.DB.prepare(query).bind(...params).all()
   return c.json({ data: results })
+})
+
+// ── URL Product Info Scraper ──────────────────────────────────
+aiRoutes.get('/action/fetch-url-info', async (c) => {
+  const url = c.req.query('url')
+  if (!url) return c.json({ error: 'url required' }, 400)
+
+  try {
+    const urlObj = new URL(url)
+
+    // Coupang special handling: try mobile URL
+    let fetchUrl = url
+    if (urlObj.hostname.includes('coupang.com')) {
+      fetchUrl = url.replace('www.coupang.com', 'm.coupang.com')
+    }
+
+    const res = await fetch(fetchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+        'Referer': 'https://www.google.com/',
+      },
+      redirect: 'follow',
+    })
+
+    if (!res.ok) {
+      // Fallback for blocked sites: try Google cache/search
+      if (urlObj.hostname.includes('coupang.com')) {
+        // Extract product ID and search on Google
+        const productId = urlObj.pathname.match(/products\/(\d+)/)?.[1]
+        if (productId) {
+          try {
+            const googleRes = await fetch(`https://www.google.com/search?q=coupang+${productId}`, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            })
+            if (googleRes.ok) {
+              const gHtml = await googleRes.text()
+              const titleMatch = gHtml.match(/coupang[^<]*?<[^>]*>([^<]{10,100})/i) || gHtml.match(/<h3[^>]*>([^<]*쿠팡[^<]*)<\/h3>/i)
+              if (titleMatch) {
+                return c.json({
+                  success: true,
+                  url,
+                  domain: 'www.coupang.com',
+                  site_name: '쿠팡',
+                  title: titleMatch[1].replace(/<[^>]*>/g, '').trim(),
+                  description: '쿠팡 상품 (직접 접근 차단, 검색 결과에서 추출)',
+                  image: '',
+                  price: '',
+                  currency: 'KRW',
+                  product_id: productId,
+                })
+              }
+            }
+          } catch {}
+        }
+      }
+
+      return c.json({
+        success: false,
+        url,
+        domain: urlObj.hostname,
+        path: urlObj.pathname,
+        query: Object.fromEntries(urlObj.searchParams.entries()),
+        hint: '페이지 접근이 차단되었습니다. URL 파라미터에서 추출한 정보를 참고하세요.',
+      })
+    }
+
+    const html = await res.text()
+
+    // Extract meta tags
+    const getMetaContent = (name: string): string => {
+      const patterns = [
+        new RegExp(`<meta[^>]*property=["']${name}["'][^>]*content=["']([^"']*)["']`, 'i'),
+        new RegExp(`<meta[^>]*content=["']([^"']*)["'][^>]*property=["']${name}["']`, 'i'),
+        new RegExp(`<meta[^>]*name=["']${name}["'][^>]*content=["']([^"']*)["']`, 'i'),
+        new RegExp(`<meta[^>]*content=["']([^"']*)["'][^>]*name=["']${name}["']`, 'i'),
+      ]
+      for (const p of patterns) {
+        const m = html.match(p)
+        if (m) return m[1]
+      }
+      return ''
+    }
+
+    const title = getMetaContent('og:title') || getMetaContent('title') || (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || '').trim()
+    const description = getMetaContent('og:description') || getMetaContent('description')
+    const image = getMetaContent('og:image')
+    const price = getMetaContent('product:price:amount') || getMetaContent('og:price:amount')
+    const currency = getMetaContent('product:price:currency') || getMetaContent('og:price:currency') || 'KRW'
+    const siteName = getMetaContent('og:site_name')
+
+    // Try to extract price from HTML if not in meta
+    let extractedPrice = price
+    if (!extractedPrice) {
+      const priceMatch = html.match(/["']?(?:price|amount|sale.?price)["']?\s*[:=]\s*["']?([0-9,]+)/i)
+      if (priceMatch) extractedPrice = priceMatch[1]
+    }
+
+    // Extract product name from structured data
+    let productName = title
+    const ldJsonMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i)
+    if (ldJsonMatch) {
+      try {
+        const ld = JSON.parse(ldJsonMatch[1])
+        if (ld.name) productName = ld.name
+        if (ld.offers?.price && !extractedPrice) extractedPrice = String(ld.offers.price)
+      } catch {}
+    }
+
+    return c.json({
+      success: true,
+      url,
+      domain: new URL(url).hostname,
+      site_name: siteName,
+      title: productName,
+      description: description.slice(0, 300),
+      image,
+      price: extractedPrice,
+      currency,
+    })
+  } catch (e: any) {
+    // Fallback: extract info from URL structure
+    try {
+      const urlObj = new URL(url)
+      return c.json({
+        success: false,
+        url,
+        domain: urlObj.hostname,
+        path: urlObj.pathname,
+        query: Object.fromEntries(urlObj.searchParams.entries()),
+        error: e.message,
+        hint: '페이지를 가져올 수 없습니다. URL 구조에서 추출한 정보입니다.',
+      })
+    } catch {
+      return c.json({ success: false, error: 'Invalid URL', url }, 400)
+    }
+  }
 })
 
 // Catch-all: help AI find the right endpoint
