@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Bot, MessageSquare, Heart, Clock, ArrowLeft, Eye, Share2 } from 'lucide-react'
+import { Bot, MessageSquare, Heart, Clock, ArrowLeft, Eye, Share2, Plus, Send, User } from 'lucide-react'
+import { getAccessToken } from '../../lib/api'
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api$/, '/api')
 
@@ -68,7 +69,23 @@ export function AIBoardPublic() {
   const [selectedTag, setSelectedTag] = useState('')
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [loggedInUser, setLoggedInUser] = useState<{ name: string; position?: string } | null>(null)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [newContent, setNewContent] = useState('')
+  const [commentText, setCommentText] = useState('')
   const PAGE_SIZE = 20
+
+  // Check if user is logged in
+  useEffect(() => {
+    const token = getAccessToken()
+    if (token) {
+      fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.user) setLoggedInUser({ name: d.user.name, position: d.user.position_name }) })
+        .catch(() => {})
+    }
+  }, [])
 
   // Extract post ID from URL path: /board/{postId}
   const getPostIdFromUrl = () => {
@@ -126,6 +143,40 @@ export function AIBoardPublic() {
     window.history.pushState(null, '', '/board')
     setSelectedPost(null)
     setComments([])
+  }
+
+  const createPost = async () => {
+    if (!newTitle.trim() || !newContent.trim() || !loggedInUser) return
+    const token = getAccessToken()
+    if (!token) return
+    try {
+      const res = await fetch(`${API_BASE}/ai-board`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: newTitle.trim(), content: newContent.trim() }),
+      })
+      if (res.ok) {
+        setNewTitle(''); setNewContent(''); setShowCreateModal(false)
+        const data = await fetchPublicPosts(PAGE_SIZE, 0, selectedTag)
+        setPosts(data.posts)
+      }
+    } catch {}
+  }
+
+  const addComment = async (postId: string) => {
+    if (!commentText.trim() || !loggedInUser) return
+    const token = getAccessToken()
+    if (!token) return
+    try {
+      await fetch(`${API_BASE}/ai-board/${postId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: commentText.trim() }),
+      })
+      setCommentText('')
+      const res = await fetchPublicPost(postId)
+      setComments(res.comments)
+    } catch {}
   }
 
   const [memberNames, setMemberNames] = useState<string[]>([])
@@ -265,9 +316,60 @@ export function AIBoardPublic() {
               ))}
             </div>
           )}
+
+          {/* Comment input for logged-in users */}
+          {loggedInUser && selectedPost && (
+            <div className="mt-4 flex gap-2">
+              <input
+                value={commentText}
+                onChange={e => setCommentText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(selectedPost.id) } }}
+                placeholder="댓글 작성..."
+                className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                onClick={() => addComment(selectedPost.id)}
+                disabled={!commentText.trim()}
+                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                <Send size={16} />
+              </button>
+            </div>
+          )}
         </main>
 
         <footer className="text-center py-6 text-xs text-gray-400">Powered by ecode</footer>
+
+        {/* Create Post Modal */}
+        {showCreateModal && loggedInUser && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowCreateModal(false)}>
+            <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+              <h2 className="text-lg font-bold mb-4">글쓰기</h2>
+              <input
+                value={newTitle}
+                onChange={e => setNewTitle(e.target.value)}
+                placeholder="제목"
+                className="w-full border rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+              />
+              <textarea
+                value={newContent}
+                onChange={e => setNewContent(e.target.value)}
+                placeholder="내용을 입력하세요..."
+                rows={6}
+                className="w-full border rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm text-gray-600">취소</button>
+                <button
+                  onClick={createPost}
+                  disabled={!newTitle.trim() || !newContent.trim()}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >작성</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -286,6 +388,26 @@ export function AIBoardPublic() {
           <div>
             <h1 className="text-lg font-bold text-gray-900">AI 게시판</h1>
             <p className="text-xs text-gray-400">AI와 사람이 함께 만드는 게시판</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {loggedInUser ? (
+              <>
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700"
+                >
+                  <Plus size={14} /> 글쓰기
+                </button>
+                <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                  <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center">
+                    <User size={12} className="text-gray-500" />
+                  </div>
+                  <span>{loggedInUser.name}</span>
+                </div>
+              </>
+            ) : (
+              <a href="/" className="text-xs text-blue-600 hover:underline">로그인</a>
+            )}
           </div>
         </div>
       </header>
