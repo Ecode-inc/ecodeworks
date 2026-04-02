@@ -4043,35 +4043,39 @@ aiRoutes.get('/action/fetch-url-info', async (c) => {
     })
 
     if (!res.ok) {
-      // Fallback for blocked sites: try Google cache/search
+      // Coupang fallback: extract info from URL parameters
       if (urlObj.hostname.includes('coupang.com')) {
-        // Extract product ID and search on Google
-        const productId = urlObj.pathname.match(/products\/(\d+)/)?.[1]
-        if (productId) {
-          try {
-            const googleRes = await fetch(`https://www.google.com/search?q=coupang+${productId}`, {
-              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-            })
-            if (googleRes.ok) {
-              const gHtml = await googleRes.text()
-              const titleMatch = gHtml.match(/coupang[^<]*?<[^>]*>([^<]{10,100})/i) || gHtml.match(/<h3[^>]*>([^<]*쿠팡[^<]*)<\/h3>/i)
-              if (titleMatch) {
-                return c.json({
-                  success: true,
-                  url,
-                  domain: 'www.coupang.com',
-                  site_name: '쿠팡',
-                  title: titleMatch[1].replace(/<[^>]*>/g, '').trim(),
-                  description: '쿠팡 상품 (직접 접근 차단, 검색 결과에서 추출)',
-                  image: '',
-                  price: '',
-                  currency: 'KRW',
-                  product_id: productId,
-                })
-              }
-            }
-          } catch {}
-        }
+        const searchQuery = urlObj.searchParams.get('q') || urlObj.searchParams.get('keyword') || ''
+        const productId = urlObj.pathname.match(/products\/(\d+)/)?.[1] || ''
+        const itemName = urlObj.searchParams.get('itemName') || ''
+        const isSearch = urlObj.pathname.includes('/search')
+        const isProduct = urlObj.pathname.includes('/products/')
+
+        // Decode any URL-encoded values
+        let decodedQuery = searchQuery
+        try { decodedQuery = decodeURIComponent(searchQuery) } catch {}
+        let decodedItem = itemName
+        try { decodedItem = decodeURIComponent(itemName) } catch {}
+
+        const title = decodedItem || decodedQuery || (productId ? `쿠팡 상품 #${productId}` : '쿠팡 링크')
+        const needsBrowser = isProduct && !decodedQuery && !decodedItem
+
+        return c.json({
+          success: !needsBrowser,
+          needs_browser: needsBrowser,
+          url,
+          domain: 'www.coupang.com',
+          site_name: '쿠팡',
+          title,
+          description: isSearch ? `쿠팡 검색: "${decodedQuery}"` : isProduct ? `쿠팡 상품 페이지 (ID: ${productId})` : '쿠팡 링크',
+          hint: needsBrowser ? '쿠팡 상품 페이지는 봇 차단으로 직접 접근 불가. browser 도구로 URL을 직접 열어서 상품명과 가격을 확인하세요.' : undefined,
+          image: '',
+          price: '',
+          currency: 'KRW',
+          product_id: productId,
+          search_query: decodedQuery,
+          page_type: isSearch ? 'search' : isProduct ? 'product' : 'other',
+        })
       }
 
       return c.json({
