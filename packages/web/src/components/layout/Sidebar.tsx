@@ -89,7 +89,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
     if (!user) return
     const fetchQa = () => {
       qaApi.qaDashboardStats()
-        .then(res => setQaUnresolved((res.projects || []).reduce((s: number, p: any) => s + (p.unresolved_count || 0), 0)))
+        .then((res: any) => setQaUnresolved(((res.stats || res.projects || [])).reduce((s: number, p: any) => s + (p.unresolved || p.unresolved_count || 0), 0)))
         .catch(() => {})
     }
     fetchQa()

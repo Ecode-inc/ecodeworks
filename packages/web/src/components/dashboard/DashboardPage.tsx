@@ -21,7 +21,7 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [taskCounts, setTaskCounts] = useState<{ todo: number; in_progress: number }>({ todo: 0, in_progress: 0 })
   const [myTasks, setMyTasks] = useState<any[]>([])
-  const [qaStats, setQaStats] = useState<{ projects: any[] }>({ projects: [] })
+  const [qaStats, setQaStats] = useState<any[]>([])
 
   useEffect(() => {
     dashboardApi.stats()
@@ -35,7 +35,7 @@ export function DashboardPage() {
       .then(res => setMyTasks(res.tasks || []))
       .catch(() => {})
     qaApi.qaDashboardStats()
-      .then(setQaStats)
+      .then((res: any) => setQaStats(res.stats || res.projects || []))
       .catch(() => {})
   }, [])
 
@@ -79,7 +79,7 @@ export function DashboardPage() {
 
       {/* QA unresolved banner */}
       {(() => {
-        const totalQa = qaStats.projects.reduce((s: number, p: any) => s + (p.unresolved_count || 0), 0)
+        const totalQa = qaStats.reduce((s: number, p: any) => s + (p.unresolved || p.unresolved_count || 0), 0)
         return totalQa > 0 ? (
           <div
             onClick={() => navigate('/qa')}
@@ -93,7 +93,7 @@ export function DashboardPage() {
                     미처리 QA 이슈가 <span className="text-red-600 font-bold">{totalQa}건</span> 있습니다
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {qaStats.projects.filter((p: any) => p.unresolved_count > 0).map((p: any) => `${p.name} ${p.unresolved_count}건`).join(' · ')}
+                    {qaStats.filter((p: any) => (p.unresolved || p.unresolved_count || 0) > 0).map((p: any) => `${p.project_name || p.name} ${p.unresolved || p.unresolved_count}건`).join(' · ')}
                   </p>
                 </div>
               </div>
