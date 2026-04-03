@@ -18,7 +18,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
-import { leaveApi, taskCountApi } from '../../lib/api'
+import { leaveApi, taskCountApi, qaApi } from '../../lib/api'
 
 interface SidebarProps {
   collapsed: boolean
@@ -35,7 +35,7 @@ const navItems = [
   { path: '/purchases', icon: ShoppingCart, label: '비품구매' },
   { path: '/docs', icon: FileText, label: '문서' },
   { path: '/vault', icon: KeyRound, label: '비밀번호 금고' },
-  { path: '/qa', icon: Bug, label: 'QA' },
+  { path: '/qa', icon: Bug, label: 'QA', badgeKey: 'qa' as const },
   { path: '/ai', icon: Bot, label: 'AI' },
 ]
 
@@ -59,6 +59,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
   const apiBase = import.meta.env.VITE_API_URL || '/api'
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0)
   const [taskCounts, setTaskCounts] = useState<{ todo: number; in_progress: number }>({ todo: 0, in_progress: 0 })
+  const [qaUnresolved, setQaUnresolved] = useState(0)
 
   useEffect(() => {
     if (!user) return
@@ -77,10 +78,22 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
     const fetchCounts = () => {
       taskCountApi.my()
         .then(setTaskCounts)
-        .catch((e) => { console.error(e) })
+        .catch(() => {})
     }
     fetchCounts()
     const interval = setInterval(fetchCounts, 60000)
+    return () => clearInterval(interval)
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    const fetchQa = () => {
+      qaApi.qaDashboardStats()
+        .then(res => setQaUnresolved((res.projects || []).reduce((s: number, p: any) => s + (p.unresolved_count || 0), 0)))
+        .catch(() => {})
+    }
+    fetchQa()
+    const interval = setInterval(fetchQa, 60000)
     return () => clearInterval(interval)
   }, [user])
 
@@ -205,6 +218,11 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
               {'badgeKey' in item && item.badgeKey === 'tasks' && collapsed && (taskCounts.todo > 0 || taskCounts.in_progress > 0) && (
                 <span className="absolute top-0.5 right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
                   {taskCounts.todo + taskCounts.in_progress}
+                </span>
+              )}
+              {'badgeKey' in item && item.badgeKey === 'qa' && qaUnresolved > 0 && (
+                <span className={`${collapsed ? 'absolute top-0.5 right-0.5' : 'ml-auto'} bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1`}>
+                  {qaUnresolved}
                 </span>
               )}
             </button>
