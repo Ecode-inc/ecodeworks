@@ -27,6 +27,51 @@ type Variables = { apiKeyOrgId: string; apiKeyScopes: string[] }
 
 export const aiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
+// Safe decode: handles malformed URI sequences by decoding valid parts only
+function safeDecode(str: string): string {
+  if (!str || !/%[0-9A-Fa-f]{2}/.test(str)) return str
+  try { return decodeURIComponent(str) } catch {}
+  // Fallback: decode character by character
+  let result = ''
+  let i = 0
+  while (i < str.length) {
+    if (str[i] === '%' && i + 2 < str.length && /[0-9A-Fa-f]{2}/.test(str.substring(i + 1, i + 3))) {
+      // Collect consecutive %XX
+      let encoded = ''
+      while (i < str.length && str[i] === '%' && i + 2 < str.length && /[0-9A-Fa-f]{2}/.test(str.substring(i + 1, i + 3))) {
+        encoded += str.substring(i, i + 3)
+        i += 3
+      }
+      try { result += decodeURIComponent(encoded) } catch {
+        // Try progressively: find valid UTF-8 sequences
+        let j = 0
+        while (j < encoded.length) {
+          let decoded = false
+          for (let len = Math.min(4, (encoded.length - j) / 3); len >= 1; len--) {
+            const chunk = encoded.substring(j, j + len * 3)
+            try { result += decodeURIComponent(chunk); j += len * 3; decoded = true; break } catch {}
+          }
+          if (!decoded) { j += 3 } // skip broken byte
+        }
+      }
+    } else {
+      result += str[i]
+      i++
+    }
+  }
+  return result
+}
+
+function fullyDecode(str: string): string {
+  let prev = str
+  for (let i = 0; i < 5; i++) {
+    const decoded = safeDecode(prev)
+    if (decoded === prev) break
+    prev = decoded
+  }
+  return prev
+}
+
 // Auto-log all /action/* calls to telegram_command_log
 aiRoutes.use('/action/*', async (c, next) => {
   await next()
@@ -3952,15 +3997,9 @@ aiRoutes.get('/action/create-board-post', async (c) => {
   } catch {}
   const tags = JSON.stringify([...new Set(rawTags)])
 
-  // Repeatedly decode in case of double/triple encoding
-  let title = rawTitle
-  let content = rawContent
-  for (let i = 0; i < 3; i++) {
-    try { if (/%[0-9A-Fa-f]{2}/.test(title)) title = decodeURIComponent(title); else break } catch { break }
-  }
-  for (let i = 0; i < 3; i++) {
-    try { if (/%[0-9A-Fa-f]{2}/.test(content)) content = decodeURIComponent(content); else break } catch { break }
-  }
+  // Decode URL-encoded content (handles malformed sequences safely)
+  let title = fullyDecode(rawTitle)
+  let content = fullyDecode(rawContent)
 
   if (!title || !content) return c.json({ error: 'title, content required' }, 400)
 
@@ -4022,12 +4061,8 @@ aiRoutes.get('/action/reply-board-post', async (c) => {
   const orgId = c.get('apiKeyOrgId')
 
   const postId = c.req.query('post_id')
-  let content = c.req.query('content') || ''
+  let content = fullyDecode(c.req.query('content') || '')
   const authorName = c.req.query('author_name') || '에디 (AI)'
-  // Repeatedly decode until no more encoded chars (handles double/triple encoding)
-  for (let i = 0; i < 3; i++) {
-    try { if (/%[0-9A-Fa-f]{2}/.test(content)) content = decodeURIComponent(content); else break } catch { break }
-  }
 
   if (!postId || !content) return c.json({ error: 'post_id, content required' }, 400)
 
