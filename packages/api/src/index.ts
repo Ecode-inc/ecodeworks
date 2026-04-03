@@ -11,7 +11,7 @@ import { boardsRoutes } from './routes/boards'
 import { tasksRoutes } from './routes/tasks'
 import { documentsRoutes } from './routes/documents'
 import { credentialsRoutes } from './routes/credentials'
-import { qaRoutes } from './routes/qa'
+import { qaRoutes, qaExternalRoutes } from './routes/qa'
 import { aiRoutes } from './routes/ai'
 import { aiKeysRoutes } from './routes/aiKeys'
 import { telegramRoutes } from './routes/telegram'
@@ -264,7 +264,8 @@ app.post('/api/share/:token/comments', async (c) => {
 // Phase 5: Vault
 app.route('/api/vault', credentialsRoutes)
 
-// Phase 6: QA proxy
+// Phase 6: QA
+app.route('/api/qa/external', qaExternalRoutes)
 app.route('/api/qa', qaRoutes)
 
 // Phase 7: AI API

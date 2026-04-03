@@ -316,6 +316,26 @@ export const qaApi = {
     request<{ success: boolean }>(`/qa/links/${id}`, { method: 'DELETE' }),
   markSeen: (id: string) =>
     request<{ success: boolean }>(`/qa/links/${id}/seen`, { method: 'POST' }),
+  // QA Projects & Issues
+  qaProjects: () => request<{ projects: any[] }>('/qa'),
+  qaProjectCreate: (data: any) => request<{ project: any }>('/qa', { method: 'POST', body: JSON.stringify(data) }),
+  qaProjectUpdate: (id: string, data: any) => request<{ project: any }>(`/qa/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  qaProjectDelete: (id: string) => request<{ success: boolean }>(`/qa/${id}`, { method: 'DELETE' }),
+  qaProjectReorder: (orders: any[]) => request<{ success: boolean }>('/qa/reorder', { method: 'PATCH', body: JSON.stringify({ orders }) }),
+  qaIssues: (projectId: string, params?: { status?: string; assignee_id?: string }) => {
+    const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v) as [string, string][]).toString()
+    return request<{ issues: any[] }>(`/qa/${projectId}/issues${qs ? '?' + qs : ''}`)
+  },
+  qaIssueCreate: (projectId: string, data: any) => request<{ issue: any }>(`/qa/${projectId}/issues`, { method: 'POST', body: JSON.stringify(data) }),
+  qaIssueUpdate: (id: string, data: any) => request<{ issue: any }>(`/qa/issues/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  qaIssueDelete: (id: string) => request<{ success: boolean }>(`/qa/issues/${id}`, { method: 'DELETE' }),
+  qaIssueTest: (id: string, result: string, comment?: string) => request<{ issue: any }>(`/qa/issues/${id}/test`, { method: 'POST', body: JSON.stringify({ result, comment }) }),
+  qaDashboardStats: () => request<{ projects: any[] }>('/qa/dashboard-stats'),
+  qaImageUpload: async (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request<{ url: string; name: string }>('/qa/images/upload', { method: 'POST', body: fd, headers: {} })
+  },
 }
 
 // Attendance

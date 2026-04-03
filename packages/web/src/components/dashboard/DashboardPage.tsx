@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../../stores/authStore'
-import { dashboardApi, taskCountApi } from '../../lib/api'
+import { dashboardApi, taskCountApi, qaApi } from '../../lib/api'
 import type { DashboardStats } from '../../lib/api'
 import { Calendar, KanbanSquare, FileText, KeyRound, Bug, ClipboardCheck, Users, Loader2, ArrowRight, AlertCircle, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -21,6 +21,7 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [taskCounts, setTaskCounts] = useState<{ todo: number; in_progress: number }>({ todo: 0, in_progress: 0 })
   const [myTasks, setMyTasks] = useState<any[]>([])
+  const [qaStats, setQaStats] = useState<{ projects: any[] }>({ projects: [] })
 
   useEffect(() => {
     dashboardApi.stats()
@@ -32,6 +33,9 @@ export function DashboardPage() {
       .catch(() => {})
     taskCountApi.myTasks()
       .then(res => setMyTasks(res.tasks || []))
+      .catch(() => {})
+    qaApi.qaDashboardStats()
+      .then(setQaStats)
       .catch(() => {})
   }, [])
 
@@ -72,6 +76,32 @@ export function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* QA unresolved banner */}
+      {(() => {
+        const totalQa = qaStats.projects.reduce((s: number, p: any) => s + (p.unresolved_count || 0), 0)
+        return totalQa > 0 ? (
+          <div
+            onClick={() => navigate('/qa')}
+            className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4 mb-4 cursor-pointer hover:shadow-sm transition-shadow"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Bug className="text-red-500 flex-shrink-0" size={22} />
+                <div>
+                  <p className="text-sm font-medium text-gray-800">
+                    미처리 QA 이슈가 <span className="text-red-600 font-bold">{totalQa}건</span> 있습니다
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {qaStats.projects.filter((p: any) => p.unresolved_count > 0).map((p: any) => `${p.name} ${p.unresolved_count}건`).join(' · ')}
+                  </p>
+                </div>
+              </div>
+              <ArrowRight className="text-gray-400 flex-shrink-0" size={18} />
+            </div>
+          </div>
+        ) : null
+      })()}
 
       {/* Stat widgets */}
       {loading ? (
