@@ -368,12 +368,12 @@ export function QAPage() {
                   )}
                 </button>
                 {/* Project context menu */}
-                {isActive && isManager && (
+                {isActive && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowProjectMenu(showProjectMenu === project.id ? null : project.id) }}
-                    className="absolute -right-1 top-1 p-0.5 text-gray-400 hover:text-gray-600 rounded"
+                    className="absolute -right-0.5 -top-0.5 p-0.5 text-gray-400 hover:text-gray-600 rounded bg-white border shadow-sm"
                   >
-                    <MoreVertical size={12} />
+                    <MoreVertical size={14} />
                   </button>
                 )}
                 {showProjectMenu === project.id && (
@@ -538,11 +538,13 @@ function ProjectContextMenu({ project, onEdit, onDelete, onTogglePublic, onClose
       className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-lg border py-1 z-20 w-44"
       onClick={e => e.stopPropagation()}
     >
+      {project.is_public && project.public_token && (
+        <button onClick={copyShareLink} className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2">
+          <Link size={14} /> 공유 링크 복사
+        </button>
+      )}
       <button onClick={onEdit} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
         <Edit2 size={14} /> 수정
-      </button>
-      <button onClick={copyShareLink} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-        <Link size={14} /> 공유 링크 복사
       </button>
       <button onClick={onTogglePublic} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
         {project.is_public ? <><EyeOff size={14} /> 비공개 전환</> : <><Eye size={14} /> 공개 전환</>}
