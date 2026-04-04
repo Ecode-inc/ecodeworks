@@ -18,7 +18,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
-import { leaveApi, taskCountApi, qaApi } from '../../lib/api'
+import { leaveApi, taskCountApi, qaApi, purchaseApi } from '../../lib/api'
 
 interface SidebarProps {
   collapsed: boolean
@@ -32,7 +32,7 @@ const navItems = [
   { path: '/calendar', icon: Calendar, label: '캘린더' },
   { path: '/attendance', icon: Clock, label: '근태관리' },
   { path: '/leave', icon: CalendarDays, label: '휴가/결재', badgeKey: 'leave' as const },
-  { path: '/purchases', icon: ShoppingCart, label: '비품구매' },
+  { path: '/purchases', icon: ShoppingCart, label: '비품구매', badgeKey: 'purchases' as const },
   { path: '/docs', icon: FileText, label: '문서' },
   { path: '/vault', icon: KeyRound, label: '비밀번호 금고' },
   { path: '/qa', icon: Bug, label: 'QA', badgeKey: 'qa' as const },
@@ -60,6 +60,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0)
   const [taskCounts, setTaskCounts] = useState<{ todo: number; in_progress: number }>({ todo: 0, in_progress: 0 })
   const [qaUnresolved, setQaUnresolved] = useState(0)
+  const [purchasePending, setPurchasePending] = useState(0)
 
   useEffect(() => {
     if (!user) return
@@ -94,6 +95,18 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
     }
     fetchQa()
     const interval = setInterval(fetchQa, 60000)
+    return () => clearInterval(interval)
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    const fetch = () => {
+      purchaseApi.pendingCount()
+        .then(res => setPurchasePending(res.count))
+        .catch(() => {})
+    }
+    fetch()
+    const interval = setInterval(fetch, 60000)
     return () => clearInterval(interval)
   }, [user])
 
@@ -223,6 +236,11 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
               {'badgeKey' in item && item.badgeKey === 'qa' && qaUnresolved > 0 && (
                 <span className={`${collapsed ? 'absolute top-0.5 right-0.5' : 'ml-auto'} bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1`}>
                   {qaUnresolved}
+                </span>
+              )}
+              {'badgeKey' in item && item.badgeKey === 'purchases' && purchasePending > 0 && (
+                <span className={`${collapsed ? 'absolute top-0.5 right-0.5' : 'ml-auto'} bg-orange-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1`}>
+                  {purchasePending}
                 </span>
               )}
             </button>

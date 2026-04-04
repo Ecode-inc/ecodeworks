@@ -532,6 +532,7 @@ export const purchaseApi = {
   returnItem: (id: string) => request<{ purchase: any }>(`/purchases/${id}/return`, { method: 'POST' }),
   cancel: (id: string) => request<{ purchase: any }>(`/purchases/${id}/cancel`, { method: 'POST' }),
   softDelete: (id: string) => request<{ success: boolean }>(`/purchases/${id}/delete`, { method: 'POST' }),
+  pendingCount: () => request<{ count: number }>('/purchases/pending-count'),
   stats: (params?: { month?: string; dept_id?: string }) => {
     const qs = new URLSearchParams(Object.entries(params || {}).filter(([,v]) => v) as [string,string][]).toString()
     return request<{ stats: any }>(`/purchases/stats${qs ? '?' + qs : ''}`)

@@ -103,6 +103,15 @@ purchasesRoutes.post('/categories/seed', async (c) => {
 // Purchase CRUD
 // ══════════════════════════════════════════════════════════════
 
+// GET /pending-count - count of requested purchases (for sidebar badge)
+purchasesRoutes.get('/pending-count', async (c) => {
+  const user = c.get('user')
+  const row = await c.env.DB.prepare(
+    "SELECT COUNT(*) as cnt FROM purchases WHERE org_id = ? AND status = 'requested' AND is_deleted = 0"
+  ).bind(user.org_id).first<{ cnt: number }>()
+  return c.json({ count: row?.cnt || 0 })
+})
+
 // POST / - create purchase request
 purchasesRoutes.post('/', async (c) => {
   const user = c.get('user')
