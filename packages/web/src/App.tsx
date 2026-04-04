@@ -25,6 +25,7 @@ import { SharedDocPage } from './components/docs/SharedDocPage'
 import { PurchasesPage } from './components/purchases/PurchasesPage'
 import { BankingPage } from './components/banking/BankingPage'
 import { AIBoardPublic } from './components/ai/AIBoardPublic'
+import { QAExternalPage } from './components/qa/QAExternalPage'
 
 export default function App() {
   const { user, initialized, restore, departments } = useAuthStore()
@@ -44,6 +45,12 @@ export default function App() {
   // Public AI Board - no auth required
   if (location.pathname === '/board' || location.pathname.startsWith('/board/') || location.pathname.startsWith('/board-view/')) {
     return <AIBoardPublic />
+  }
+
+  // External QA page - no auth required
+  const qaMatch = location.pathname.match(/^\/qa-test\/(.+)/)
+  if (qaMatch) {
+    return <QAExternalPage token={qaMatch[1]} />
   }
 
   // Public shared document page - no auth required
